@@ -142,6 +142,8 @@ Use a clean publisher to validate a patch/artifact and write an allowed branch o
 
 Never execute arbitrary project PHP under the cPanel account that holds the vault. A second directory or subdomain under the same Unix account is not sufficient process isolation.
 
+Existing websites running as that same Unix user also share this trust boundary. Phase 0 must inventory them: preferably place AIcontrol under a separate hosting account/user; otherwise explicitly record that a vulnerability in any of those applications could expose the vault. Private file permissions do not isolate applications sharing the same user.
+
 ## 7. The control panel: a working project record
 
 ### 7.1 Overview and project workspaces
