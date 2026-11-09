@@ -839,4 +839,4 @@ if ($home !== null) {
         echo '<p><a href="' . $escape($entry . '?receipt=' . $completedReceipt) . '">Signed installation result</a></p>';
     }
 }
-echo '<p>No provider keys are needed. Trusted-device approval is deferred; protect installer access through your hosting account. This testing release does not run agents or deployments.</p></main></html>';
+echo '<p>Installation needs no provider key. AI task responses need a provider connection on the server. Autonomous code execution and production deployment are not connected.</p></main></html>';

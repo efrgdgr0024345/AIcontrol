@@ -240,11 +240,11 @@ final class Panel
             } elseif ($view === 'systems') {
                 echo '<section><h2>Available integrations</h2><p>These are planned integrations. No connection has been configured or verified.</p><table><thead><tr><th>System</th><th>Status</th><th>Intended use</th></tr></thead><tbody>';
                 foreach (['OpenAI' => 'Bounded provider operations', 'GitHub' => 'Repository and pull request evidence', 'GitHub Actions' => 'Isolated test jobs', 'cPanel' => 'Hosting and reviewed deployments'] as $name => $purpose) {
-                    echo '<tr><td>' . $name . '</td><td>Not configured</td><td>' . $purpose . '</td></tr>';
+                    echo '<tr><td>' . $name . '</td><td>' . ($name === 'OpenAI' && AgentRunner::configured() ? 'Configured · not verified' : 'Not configured') . '</td><td>' . $purpose . '</td></tr>';
                 }
                 echo '</tbody></table></section>';
             } else {
-                echo '<section><h2>Recent activity</h2><p>Latest 100 proposal events, newest first. All timestamps are UTC. No external work is tracked yet.</p>';
+                echo '<section><h2>Recent activity</h2><p>Latest 100 recorded events, newest first. All timestamps are UTC. Includes AI task requests and outcomes when connected.</p>';
                 if ($data['events'] === []) {
                     echo '<p>No activity recorded.</p>';
                 }
@@ -255,6 +255,6 @@ final class Panel
                 echo '</section>';
             }
         }
-        echo '<footer>AIcontrol · Planning release · No provider or deployment authority</footer></main></body></html>';
+        echo '<footer>AIcontrol · Testing release · No autonomous code execution or production deployment</footer></main></body></html>';
     }
 }

@@ -7,8 +7,9 @@ system availability, and durable activity history. A bounded OpenAI task-respons
 configured directly on the server. Autonomous code execution, publishing and
 production deployment remain unconnected.
 
-Trusted-device approval is deferred at the owner's request. The current session
-can propose work only; it cannot authorize consequential operations.
+Trusted-device approval and access protection are deferred at the owner's
+request. Public testing permits proposals, checked AIcontrol installation and
+bounded AI responses when configured. Use test data.
 
 - [Specification](docs/TEAM_HANDOVER.md)
 - [Baseline review and architecture](docs/BASELINE_REVIEW.md)
