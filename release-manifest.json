@@ -7,7 +7,7 @@
         "src/AgentRunner.php": "5f0383b05ce78e7548ae776d60d431e669981f6b575fee0051e04b35c15f11fb",
         "src/Bootstrap.php": "68184329531c1526cb67b6e8068d98e238b3571feaccd4ff6c81d1f012245409",
         "src/HostingRequirements.php": "7d062f0a54c10dc206ce731d31ad7b7efb9993900d3f87c24a7bc5cb110e655b",
-        "src/Panel.php": "a82bcb2fba65b4a986c013490981449b3f9251e30f5cba72f7003d617672cf3a",
+        "src/Panel.php": "4a2cd6c256d1be8029f7d8d790c08617530d7935be313c6bba07e9d73336562a",
         "src/PanelStore.php": "3110e75250bb351d68f87d1accf86d0895aa593f4d446f4dce60e67c96f1a454",
         "src/PrivateStorage.php": "2b8dc6200eb49b248dfe2908de331a583d9ef0b3c324c8cfd2fc8159734c7836"
     }

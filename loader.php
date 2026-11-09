@@ -851,6 +851,8 @@ try {
     }
 
     session_name('aicontrol_installer');
+    $installerCookie = $_COOKIE['aicontrol_installer'] ?? '';
+    session_id(is_string($installerCookie) && preg_match('/^[A-Za-z0-9,-]{16,128}$/D', $installerCookie) ? $installerCookie : '');
     ini_set('session.use_strict_mode', '1');
     ini_set('session.use_only_cookies', '1');
     ini_set('session.use_trans_sid', '0');

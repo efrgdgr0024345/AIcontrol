@@ -82,7 +82,12 @@ class PinSmokeTest(unittest.TestCase):
                 token = csrf(page)
                 self.assertEqual(request(fields={"pin_action": "login", "pin": pin, "pin_csrf": "wrong"})[0], 403)
                 self.assertEqual(request(fields={"pin_action": "login", "pin": pin, "pin_csrf": token})[0], 303)
-                self.assertIn("Check GitHub", request()[2])
+                _, _, installer = request()
+                self.assertIn("Check GitHub", installer)
+                installer_csrf = re.search(r'name="csrf" value="([a-f0-9]+)"', installer).group(1)
+                probe = request(fields={"action": "fixture_probe", "csrf": installer_csrf})[2]
+                self.assertIn("Unknown installer operation", probe)
+                self.assertNotIn("Request verification failed", probe)
                 _, _, anonymous = request(visitor, query="?installer=1")
                 self.assertIn("Enter your PIN", anonymous)
                 self.assertNotIn("Check GitHub", anonymous)

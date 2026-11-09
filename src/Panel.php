@@ -74,6 +74,8 @@ final class Panel
             return;
         }
         session_name('aicontrol_panel');
+        $panelCookie = $_COOKIE['aicontrol_panel'] ?? '';
+        session_id(is_string($panelCookie) && preg_match('/^[A-Za-z0-9,-]{16,128}$/D', $panelCookie) ? $panelCookie : '');
         ini_set('session.use_strict_mode', '1');
         ini_set('session.use_only_cookies', '1');
         ini_set('session.use_trans_sid', '0');
