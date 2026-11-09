@@ -1,0 +1,23 @@
+{
+  "name": "@tabler/core",
+  "version": "1.7.4",
+  "license": "MIT",
+  "upstream_commit": "85e7da0193cf498dd72a6bfd651ce2a784d3e0a2",
+  "tarball": "https://registry.npmjs.org/@tabler/core/-/core-1.7.4.tgz",
+  "integrity": "sha512-fHAPnsKl9JnJJkLxE5UbPkLUBlgn/G1b0urLh5LMGt2DnebpK2tZNEKD/8YiwGz67EoNahGretSsHovDOvJGWA==",
+  "signatures": [
+    {
+      "sig": "MEQCIDTwvsciLjXbWFHfspKhgdMb3IZp+akUj7bkSx/6bCieAiACD25XkINv9bzXazVRRTEJHcyCkLrNpx8YUx/RzAefMA==",
+      "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+    },
+    {
+      "sig": "MEUCIDgGPylL4pRHOBfSJ5CqV7L1clYsc/6FUrvVKhVvnYNqAiEA0d5Lu2VsktJNIPEcp3eHTMUs5cQQwrLgVce128ST4RM=",
+      "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+    }
+  ],
+  "local_css_changes": [
+    "removed sourceMappingURL comment; no CSS rules changed"
+  ],
+  "vendored_css_sha256": "d75139f3ec33bff19063eca16f8628dbd3d9e43066878ade0b9ccc9780fd1de1",
+  "license_sha256": "4f88a82d13be3c5c63a12c5631eae914aa4381b6dc17641bf1ab85f3f8f6c8a5"
+}

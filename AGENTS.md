@@ -25,6 +25,7 @@ API authentication or independent owner authorization.
 Use PHP 8.2–8.5. In the prepared cloud snapshot PHP may be available at
 `/workspace/toolchains/php/php`; otherwise inspect the current environment rather
 than assuming this path exists. Run the checks in PROJECT_STATE after changes,
+run `php bin/build-ui.php` before the release manifest when UI sources change,
 regenerate the release manifest after application-source changes, and confirm
 the required GitHub Actions check on the exact release commit.
 

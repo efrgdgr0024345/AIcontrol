@@ -18,6 +18,7 @@ visit to protect the panel and updater. Use test data.
 - [Run locally and install on cPanel](docs/RUNNING.md)
 - [Upload only loader.php: standalone installation](docs/STANDALONE_LOADER.md)
 - [Server-generated signing keys and update receipts](docs/SIGNING.md)
+- [Tabler interface and UI build](docs/UI.md)
 
 `loader.php` asks you to set and confirm a 6–12 digit PIN on the first visit.
 On the next visit, sign in with that PIN and install a checked GitHub commit.

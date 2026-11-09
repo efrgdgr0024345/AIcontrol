@@ -10,6 +10,8 @@ if (getenv('AICONTROL_PRIVATE_DIR') !== false) {
     require_once __DIR__ . '/src/PrivateStorage.php';
     require_once __DIR__ . '/src/PanelStore.php';
     require_once __DIR__ . '/src/Panel.php';
+    require_once __DIR__ . '/src/Ui.php';
+    require_once __DIR__ . '/src/PanelView.php';
     require_once __DIR__ . '/src/AccessPolicy.php';
     require_once __DIR__ . '/src/AgentRunner.php';
     try {

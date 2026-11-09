@@ -16,7 +16,9 @@ jobs:
           php bin/check-host.php
           find . -name '*.php' -not -path './.git/*' -print0 | xargs -0 -n1 php -l
       - name: Verify release manifest
-        run: php bin/build-manifest.php --check
+        run: |
+          php bin/build-ui.php --check
+          php bin/build-manifest.php --check
       - name: Application and installer checks
         run: |
           php tests/run.php
@@ -29,3 +31,15 @@ jobs:
           python3 -B -m unittest -v tests/standalone_smoke.py
           python3 -B -m unittest -v tests/passwordless_smoke.py
           python3 -B -m unittest -v tests/pin_smoke.py
+      - name: Browser UI and accessibility
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run test:ui
+      - name: Retain UI review artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ui-review
+          path: test-artifacts/
+          if-no-files-found: ignore
+          retention-days: 7

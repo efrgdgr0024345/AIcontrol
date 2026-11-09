@@ -97,12 +97,19 @@ class PanelHttpTest(unittest.TestCase):
                 self.assertIn("Draft · not dispatched", page)
                 self.assertNotIn("Bad task", page)
                 self.assertNotIn(password, page)
+                filtered = request("/loader.php?view=projects&q=no-such-task")[2]
+                self.assertIn("No matching tasks", filtered)
+                self.assertNotIn('id="task-1"', filtered)
+                self.assertIn("No agent runs yet", request("/loader.php?view=runs")[2])
                 _, _, history = request("/loader.php?view=history")
                 self.assertIn("project.proposed", history)
                 self.assertIn("task.proposed", history)
                 self.assertIn("view=projects#task-1", history)
                 _, _, systems = request("/loader.php?view=systems")
-                self.assertEqual(systems.count("<td>Not configured</td>"), 4)
+                for system in ["OpenAI", "GitHub Actions", "Hosting"]:
+                    self.assertIn(system, systems)
+                self.assertIn("Not configured", systems)
+                self.assertNotIn("Configured · not verified", systems)
                 self.assertEqual(request("/assets/panel.css")[0], 200)
                 for path in ["/vault", "/install", "/approve", "/src/PanelStore.php", "/bin/setup.php", "/tests/run.php"]:
                     with self.subTest(path=path):

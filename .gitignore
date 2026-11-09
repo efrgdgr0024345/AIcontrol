@@ -6,3 +6,5 @@
 /.aicontrol-location.php
 /.aicontrol-pin.php
 __pycache__/
+/node_modules/
+/test-artifacts/
