@@ -77,6 +77,8 @@ The arrows represent authenticated server interactions or restricted UI calls. T
 
 Provider-issued credentials cannot be invented locally. Where the provider supports an authorized server-side provisioning or OAuth flow, let cPanel complete it directly. Otherwise, the owner imports the provider key through the trusted phone into cPanel once. Do not use the laptop clipboard, a chat message, a GitHub issue or a workflow input as the transfer channel.
 
+That one-time import necessarily places the owner-entered value in the trusted phone's input and HTTPS request. It is an explicit provisioning exception: never return it in a response, save it in browser storage, reflect it after validation errors or log it. The laptop has no such exception.
+
 ### 4.2 Storage rules
 
 - Use a site-specific directory outside **every document root serving this account**, with private directories `0700` and sensitive files `0600`.
@@ -254,7 +256,7 @@ Deliver a narrow working path before expanding the number of providers or adding
 | Phase | Work and owner | Evidence required to finish |
 |---|---|---|
 | 0 — Review baseline | Lead/security engineer inventories prototype, documents threat boundaries, confirms hosting and chooses auth/database libraries | Reviewed architecture, data classification, explicit prototype gaps, reproducible build |
-| 1 — Server custody | Backend/security engineer implements private vault, server generation/import, metadata catalog, rotation and backup/recovery | No secret in browser/Git/logs; tampering and wrong-permission tests pass; restore demonstrated |
+| 1 — Server custody | Backend/security engineer implements private vault, server generation/import, metadata catalog, rotation and backup/recovery | No service secret in laptop traffic/storage, browser responses, Git or logs; trusted-phone import isolated; tampering tests and restore demonstrated |
 | 2 — Laptop boundary | Identity engineer implements requester/approver separation, trusted-device enrollment and exact-action approvals | Stolen laptop session cannot approve, enroll, export, redirect or raise limits; replay/race tests pass |
 | 3 — Useful panel | Application engineer builds projects/tasks, systems, agents and attributable timeline | One project can be followed from brief to result; stale/blocked work visible; all statuses have evidence |
 | 4 — Direct broker path | Integration engineer connects one GitHub OIDC workflow and one limited provider operation | cPanel-to-agent flow succeeds with no provider secret in worker/browser; wrong identity/action fails |
@@ -272,7 +274,7 @@ These are release gates, not optional UI checks.
 
 | Test | Required result |
 |---|---|
-| Inspect browser traffic/storage, HTML, errors, exported history and Git artifacts | No service passwords, API keys, operational private keys or master key |
+| Inspect laptop traffic/storage, browser responses, HTML, errors, exported history and Git artifacts | No service passwords, API keys, operational private keys or master key; owner-entered provisioning values allowed only in the trusted-phone HTTPS input request |
 | Generate/rotate an internal credential with laptop disconnected | Created and stored on cPanel; only metadata appears afterward |
 | Steal the laptop requester session | Can only exercise its limited role; cannot approve or obtain owner authority |
 | Tamper with an approved repo, commit, model, input, destination, credential version or budget | Execution rejected; new approval required |
