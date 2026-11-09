@@ -14,6 +14,7 @@ can propose work only; it cannot authorize consequential operations.
 - [Implementation tickets](docs/IMPLEMENTATION_TICKETS.md)
 - [Run locally and install on cPanel](docs/RUNNING.md)
 - [Upload only loader.php: standalone installation](docs/STANDALONE_LOADER.md)
+- [Server-generated signing keys and update receipts](docs/SIGNING.md)
 
 `loader.php` is a standalone host-protected installer. Upload that one file
 inside a directory protected by your hosting server, then check and install an

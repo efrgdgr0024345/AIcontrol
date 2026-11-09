@@ -112,9 +112,31 @@ class StandaloneSmokeTest(unittest.TestCase):
                 private_json(home / "current.json", {"sha": "b" * 40, "manifest_hash": "c" * 64})
                 self.assertEqual(request()[0], 200)
                 self.assertEqual(json.loads((home / "journal.json").read_text())["phase"], "recovered")
+                import base64
+                recovered = []
+                for receipt_file in (home / "receipts").glob("*.json"):
+                    receipt = json.loads(receipt_file.read_text())
+                    payload = json.loads(base64.b64decode(receipt["payload"]))
+                    if payload["event"] == "update.recovered":
+                        recovered.append((payload["receipt_id"], receipt))
+                self.assertEqual(len(recovered), 1)
+                self.assertEqual(json.loads(request("?receipt=" + recovered[0][0])[2]), recovered[0][1])
                 (home / "runtime/config.json").rename(home / "runtime/config.saved")
                 self.assertEqual(request()[0], 503)
                 self.assertFalse((home / "runtime/config.json").exists())
+                (home / "runtime/config.saved").rename(home / "runtime/config.json")
+                status, _, public_identity = request("?identity=1")
+                self.assertEqual(status, 200)
+                identity = json.loads(public_identity)
+                self.assertEqual(identity["algorithm"], "Ed25519")
+                self.assertNotIn("private_key", identity)
+                self.assertEqual(json.loads(request("?identity=1")[2]), identity)
+                key_path = home / "signing/identity.json"
+                secret = json.loads(key_path.read_text())["private_key"]
+                self.assertTrue(secret not in public_identity, "private key leaked")
+                key_path.unlink()
+                self.assertEqual(request()[0], 503)
+                self.assertFalse(key_path.exists(), "lost signing key must not be regenerated")
             finally:
                 server.terminate()
                 server.wait(timeout=5)

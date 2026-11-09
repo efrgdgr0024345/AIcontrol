@@ -9,9 +9,167 @@ const AICONTROL_REPOSITORY = 'efrgdgr0024345/AIcontrol';
 const AICONTROL_RELEASE_REF = 'feature/control-panel-foundation';
 const AICONTROL_REQUIRED_CHECK = 'planning-panel';
 
+/** Server-held installation identity. Never serialize or return its private key. */
+final class AIcontrolSigning
+{
+    private string $secret;
+    private string $public;
+    private string $home;
+
+    public function __construct(string $home, ?string $pinnedPublic, bool $allowCreation = false)
+    {
+        $this->home = $home;
+        $directory = $home . '/signing';
+        if (!is_dir($directory)) {
+            if (!$allowCreation || $pinnedPublic !== null || file_exists($directory) || is_link($directory) || !mkdir($directory, 0700)) {
+                throw new RuntimeException('Signing identity is missing; refusing to replace it.');
+            }
+            $pair = sodium_crypto_sign_keypair();
+            $secret = sodium_crypto_sign_secretkey($pair);
+            $public = sodium_crypto_sign_publickey($pair);
+            $file = fopen($directory . '/identity.json', 'x');
+            if (!$file) {
+                throw new RuntimeException('Cannot create signing identity.');
+            }
+            chmod($directory . '/identity.json', 0600);
+            $json = json_encode(['version' => 1, 'algorithm' => 'Ed25519', 'public_key' => base64_encode($public), 'private_key' => base64_encode($secret)], JSON_THROW_ON_ERROR);
+            $expectedLength = strlen($json);
+            $written = fwrite($file, $json);
+            fflush($file);
+            fclose($file);
+            sodium_memzero($pair);
+            sodium_memzero($secret);
+            sodium_memzero($json);
+            if ($written !== $expectedLength) {
+                throw new RuntimeException('Cannot store signing identity.');
+            }
+            mkdir($home . '/receipts', 0700);
+        }
+        foreach ([$directory, $home . '/receipts'] as $path) {
+            clearstatcache(true, $path);
+            if (is_link($path) || realpath($path) !== $path || (fileperms($path) & 0777) !== 0700) {
+                throw new RuntimeException('Unsafe signing storage.');
+            }
+        }
+        $keyFile = $directory . '/identity.json';
+        if (!is_file($keyFile) || is_link($keyFile)) {
+            throw new RuntimeException('Signing identity is missing; refusing to replace it.');
+        }
+        if (function_exists('posix_geteuid') && fileowner($keyFile) !== posix_geteuid()) {
+            throw new RuntimeException('Signing identity owner mismatch.');
+        }
+        $identity = AIcontrolInstaller::readJson($keyFile);
+        $secret = base64_decode($identity['private_key'] ?? '', true);
+        $public = base64_decode($identity['public_key'] ?? '', true);
+        if (($identity['version'] ?? null) !== 1 || ($identity['algorithm'] ?? '') !== 'Ed25519'
+            || $secret === false || strlen($secret) !== SODIUM_CRYPTO_SIGN_SECRETKEYBYTES
+            || $public === false || strlen($public) !== SODIUM_CRYPTO_SIGN_PUBLICKEYBYTES) {
+            throw new RuntimeException('Signing identity is damaged.');
+        }
+        $derived = sodium_crypto_sign_seed_keypair(substr($secret, 0, SODIUM_CRYPTO_SIGN_SEEDBYTES));
+        $matches = hash_equals(sodium_crypto_sign_secretkey($derived), $secret)
+            && hash_equals(sodium_crypto_sign_publickey($derived), $public);
+        sodium_memzero($derived);
+        if (!$matches || ($pinnedPublic !== null && !hash_equals($pinnedPublic, base64_encode($public)))) {
+            throw new RuntimeException('Signing identity does not match its pinned public key.');
+        }
+        $this->secret = $secret;
+        $this->public = $public;
+        unset($identity);
+    }
+
+    public function __destruct()
+    {
+        if (isset($this->secret)) {
+            sodium_memzero($this->secret);
+        }
+    }
+
+    public function identity(): array
+    {
+        return ['version' => 1, 'algorithm' => 'Ed25519', 'key_id' => hash('sha256', $this->public), 'public_key' => base64_encode($this->public)];
+    }
+
+    public static function canonical(array $payload): string
+    {
+        $sort = static function (mixed $value) use (&$sort): mixed {
+            if (is_array($value)) {
+                if (!array_is_list($value)) {
+                    ksort($value, SORT_STRING);
+                }
+                foreach ($value as $key => $item) {
+                    $value[$key] = $sort($item);
+                }
+            } elseif (!is_string($value) && !is_int($value) && !is_bool($value) && $value !== null) {
+                throw new RuntimeException('Unsupported signing payload.');
+            }
+            return $value;
+        };
+        return json_encode($sort($payload), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+    }
+
+    public function sign(array $payload): array
+    {
+        $raw = self::canonical($payload);
+        return $this->identity() + ['payload' => base64_encode($raw), 'signature' => base64_encode(sodium_crypto_sign_detached("AIcontrol/receipt/v1\0" . $raw, $this->secret))];
+    }
+
+    /** A separately pinned key is mandatory; never trust the envelope's key alone. */
+    public static function verify(array $envelope, string $pinnedPublic): ?array
+    {
+        try {
+            $public = base64_decode($pinnedPublic, true);
+            $payload = base64_decode($envelope['payload'] ?? '', true);
+            $signature = base64_decode($envelope['signature'] ?? '', true);
+            if ($public === false || strlen($public) !== SODIUM_CRYPTO_SIGN_PUBLICKEYBYTES
+                || $payload === false || strlen($payload) > 32768 || $signature === false || strlen($signature) !== SODIUM_CRYPTO_SIGN_BYTES
+                || ($envelope['version'] ?? null) !== 1 || ($envelope['algorithm'] ?? '') !== 'Ed25519'
+                || !hash_equals($pinnedPublic, $envelope['public_key'] ?? '')
+                || !hash_equals(hash('sha256', $public), $envelope['key_id'] ?? '')
+                || !sodium_crypto_sign_verify_detached($signature, "AIcontrol/receipt/v1\0" . $payload, $public)) {
+                return null;
+            }
+            $decoded = json_decode($payload, true, 32, JSON_THROW_ON_ERROR);
+            return is_array($decoded) && self::canonical($decoded) === $payload ? $decoded : null;
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    public function record(array $payload): array
+    {
+        $id = bin2hex(random_bytes(16));
+        $envelope = $this->sign($payload + ['receipt_id' => $id, 'recorded_at' => gmdate('c')]);
+        $file = fopen($this->home . '/receipts/' . $id . '.json', 'x');
+        if (!$file) {
+            throw new RuntimeException('Cannot retain a signed receipt.');
+        }
+        try {
+            $json = json_encode($envelope, JSON_THROW_ON_ERROR);
+            if (fwrite($file, $json) !== strlen($json) || !fflush($file)) {
+                throw new RuntimeException('Cannot retain a complete signed receipt.');
+            }
+        } finally {
+            fclose($file);
+        }
+        return $envelope;
+    }
+}
+
 final class AIcontrolInstaller
 {
     public const LOCATION_PREFIX = "<?php exit; ?>\n";
+    public static ?AIcontrolSigning $signer = null;
+    public static array $operation = [];
+
+    public static function writeLocation(string $location, array $config): void
+    {
+        $temporary = $location . '.' . bin2hex(random_bytes(8));
+        $data = self::LOCATION_PREFIX . json_encode($config, JSON_THROW_ON_ERROR);
+        if (file_put_contents($temporary, $data, LOCK_EX) !== strlen($data) || !chmod($temporary, 0600) || !rename($temporary, $location)) {
+            throw new RuntimeException('Cannot retain loader location and signing pin.');
+        }
+    }
 
     public static function sha(string $sha): string
     {
@@ -79,16 +237,36 @@ final class AIcontrolInstaller
                 throw new RuntimeException('GitHub returned an unapproved download destination.');
             }
             $headers = ['Accept: application/vnd.github+json', 'X-GitHub-Api-Version: 2022-11-28'];
+            if (self::$signer === null) {
+                throw new RuntimeException('A server signing identity is required before GitHub requests.');
+            }
+            $requestId = bin2hex(random_bytes(16));
+            $started = microtime(true);
+            $proof = self::$signer->record(self::$operation + [
+                'event' => 'github.request', 'request_id' => $requestId, 'method' => 'GET',
+                'destination_host' => $parts['host'], 'url_sha256' => hash('sha256', $url),
+                'issued_at' => time(), 'expires_at' => time() + 120, 'nonce' => bin2hex(random_bytes(16)),
+            ]);
+            $headers[] = 'X-AIcontrol-Key-Id: ' . $proof['key_id'];
+            $headers[] = 'X-AIcontrol-Payload: ' . $proof['payload'];
+            $headers[] = 'X-AIcontrol-Signature: ' . $proof['signature'];
             $token = getenv('AICONTROL_GITHUB_TOKEN');
             if ($parts['host'] === 'api.github.com' && is_string($token) && $token !== '') {
                 $headers[] = 'Authorization: Bearer ' . $token;
             }
             $body = '';
+            $providerRequestId = null;
             $client = curl_init($url);
             curl_setopt_array($client, [
                 CURLOPT_HTTPHEADER => $headers, CURLOPT_USERAGENT => 'AIcontrol-standalone-loader/1',
                 CURLOPT_CONNECTTIMEOUT => 10, CURLOPT_TIMEOUT => 45, CURLOPT_FOLLOWLOCATION => false,
                 CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
+                CURLOPT_HEADERFUNCTION => static function ($handle, string $line) use (&$providerRequestId): int {
+                    if (preg_match('/^x-github-request-id:\s*([A-Za-z0-9:-]{1,128})\s*$/i', trim($line), $match)) {
+                        $providerRequestId = $match[1];
+                    }
+                    return strlen($line);
+                },
                 CURLOPT_WRITEFUNCTION => static function ($handle, string $chunk) use (&$body): int {
                     if (strlen($body) + strlen($chunk) > 10 * 1024 * 1024) {
                         return 0;
@@ -101,6 +279,13 @@ final class AIcontrolInstaller
             $status = curl_getinfo($client, CURLINFO_RESPONSE_CODE);
             $next = curl_getinfo($client, CURLINFO_REDIRECT_URL);
             curl_close($client);
+            self::$signer->record(self::$operation + [
+                'event' => 'github.response', 'request_id' => $requestId,
+                'request_receipt_id' => AIcontrolSigning::verify($proof, $proof['public_key'])['receipt_id'],
+                'http_status' => $status, 'transport_succeeded' => $ok !== false,
+                'provider_request_id' => $providerRequestId, 'body_sha256' => hash('sha256', $body),
+                'duration_ms' => (int) round((microtime(true) - $started) * 1000),
+            ]);
             if ($ok === false) {
                 throw new RuntimeException('GitHub download failed TLS, size, timeout or connectivity checks.');
             }
@@ -124,6 +309,7 @@ final class AIcontrolInstaller
         $base = 'https://api.github.com/repos/' . AICONTROL_REPOSITORY;
         $commit = json_decode(self::request($base . '/commits/' . rawurlencode($ref)), true, 64, JSON_THROW_ON_ERROR);
         $sha = self::sha($commit['sha'] ?? '');
+        self::$operation['source_commit'] = $sha;
         self::checks($sha);
         $file = json_decode(self::request($base . '/contents/release-manifest.json?ref=' . $sha), true, 32, JSON_THROW_ON_ERROR);
         $manifest = base64_decode(str_replace("\n", '', $file['content'] ?? ''), true);
@@ -187,6 +373,31 @@ final class AIcontrolInstaller
             || time() - $selection['checked_at'] >= 600 || $selection['checked_at'] > time()
             || !preg_match('/^[a-f0-9]{64}$/D', $selection['manifest_hash'] ?? '')) {
             throw new RuntimeException('Selection changed or expired. Check GitHub again.');
+        }
+    }
+
+    public static function selectionPayload(array $selection): array
+    {
+        return [
+            'event' => 'selection.checked', 'repository' => AICONTROL_REPOSITORY,
+            'source_commit' => self::sha($selection['sha']), 'manifest_hash' => $selection['manifest_hash'],
+            'destination_sha256' => hash('sha256', $selection['home']),
+            'roots_sha256' => hash('sha256', AIcontrolSigning::canonical($selection['roots'])),
+            'access_mode' => $selection['access_mode'], 'host_identity' => $selection['host_identity'],
+            'checked_at' => $selection['checked_at'], 'expires_at' => $selection['checked_at'] + 600,
+            'correlation_id' => $selection['correlation_id'], 'ref' => $selection['ref'], 'uses' => 1,
+        ];
+    }
+
+    public static function verifySelection(array $selection, AIcontrolSigning $signer): void
+    {
+        $payload = AIcontrolSigning::verify($selection['proof'] ?? [], $signer->identity()['public_key']);
+        if ($payload === null) {
+            throw new RuntimeException('Checked selection signature is invalid.');
+        }
+        unset($payload['receipt_id'], $payload['recorded_at']);
+        if (AIcontrolSigning::canonical($payload) !== AIcontrolSigning::canonical(self::selectionPayload($selection))) {
+            throw new RuntimeException('Checked selection changed after signing. Check GitHub again.');
         }
     }
 
@@ -352,7 +563,7 @@ try {
     if (PHP_VERSION_ID < 80200 || PHP_VERSION_ID >= 80600) {
         throw new RuntimeException('PHP 8.2–8.5 is required.');
     }
-    foreach (['curl', 'zip', 'mbstring', 'pdo_sqlite', 'session', 'tokenizer'] as $extension) {
+    foreach (['curl', 'zip', 'mbstring', 'pdo_sqlite', 'session', 'tokenizer', 'sodium'] as $extension) {
         if (!extension_loaded($extension)) {
             throw new RuntimeException('Enable the PHP ' . $extension . ' extension.');
         }
@@ -395,7 +606,34 @@ try {
         if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) {
             throw new RuntimeException('An installation is in progress. Try again shortly.');
         }
+        $signer = new AIcontrolSigning($home, $config['signing_public_key'] ?? null, !isset($config['signing_public_key']));
+        AIcontrolInstaller::$signer = $signer;
+        if (!isset($config['signing_public_key'])) {
+            $config['signing_public_key'] = $signer->identity()['public_key'];
+            AIcontrolInstaller::writeLocation($location, $config);
+        }
+        $wasInterrupted = is_file($home . '/journal.json') && (AIcontrolInstaller::readJson($home . '/journal.json')['phase'] ?? '') === 'activating';
         AIcontrolInstaller::recover($home);
+        if ($wasInterrupted) {
+            $signer->record(['event' => 'update.recovered', 'repository' => AICONTROL_REPOSITORY, 'outcome' => 'prior_code_pointer_restored']);
+        }
+        if (isset($_GET['identity']) || isset($_GET['receipt'])) {
+            $export = $signer->identity();
+            if (isset($_GET['receipt'])) {
+                if (!is_string($_GET['receipt']) || !preg_match('/^[a-f0-9]{32}$/D', $_GET['receipt'])) {
+                    throw new RuntimeException('Invalid receipt reference.');
+                }
+                $export = AIcontrolInstaller::readJson($home . '/receipts/' . $_GET['receipt'] . '.json');
+                if (AIcontrolSigning::verify($export, $signer->identity()['public_key']) === null) {
+                    throw new RuntimeException('Receipt verification failed.');
+                }
+            }
+            flock($lock, LOCK_UN);
+            fclose($lock);
+            header('Content-Type: application/json');
+            echo json_encode($export, JSON_THROW_ON_ERROR);
+            return;
+        }
         if (!isset($_GET['installer']) && is_file($home . '/current.json')) {
             $current = AIcontrolInstaller::readJson($home . '/current.json');
             $release = $home . '/releases/' . AIcontrolInstaller::sha($current['sha']);
@@ -441,44 +679,59 @@ try {
         if ($action === 'check') {
             unset($_SESSION['selection']);
             $roots = array_values(array_unique(array_merge([__DIR__, $_SERVER['DOCUMENT_ROOT'] ?: __DIR__], array_filter(array_map('trim', explode("\n", $input('roots')))))));
+            if ($home !== null) {
+                $roots = $config['roots'];
+            }
             $directory = $home ?? AIcontrolInstaller::home(trim($input('home')), $roots);
             if ($home === null && file_exists($directory) && count(scandir($directory)) > 2) {
                 throw new RuntimeException('Choose a new, empty private directory; existing files will not be overwritten.');
             }
+            if ($home === null) {
+                $home = AIcontrolInstaller::home($directory, $roots, true);
+                if (count(scandir($home)) > 2) {
+                    throw new RuntimeException('Private directory changed before initialization.');
+                }
+                mkdir($home . '/releases', 0700);
+                AIcontrolInstaller::jsonFile($home . '/bootstrap.json', ['access_mode' => $accessMode, 'roots' => $roots]);
+                $signer = new AIcontrolSigning($home, null, true);
+                AIcontrolInstaller::$signer = $signer;
+                if (file_exists($location)) {
+                    throw new RuntimeException('A loader location already exists.');
+                }
+                AIcontrolInstaller::writeLocation($location, ['home' => $home, 'roots' => $roots, 'signing_public_key' => $signer->identity()['public_key']]);
+            }
+            $correlationId = bin2hex(random_bytes(16));
+            AIcontrolInstaller::$operation = ['correlation_id' => $correlationId, 'repository' => AICONTROL_REPOSITORY, 'source_commit' => null];
             $selection = AIcontrolInstaller::check($input('ref'));
             $selection['home'] = $directory;
             $selection['roots'] = $roots;
             $selection['access_mode'] = $accessMode;
+            $selection['host_identity'] = $identity;
+            $selection['correlation_id'] = $correlationId;
+            $selection['proof'] = $signer->record(AIcontrolInstaller::selectionPayload($selection));
             $_SESSION['selection'] = $selection;
             $message = 'GitHub checked. Review the exact commit below; the selection expires in ten minutes.';
         } elseif ($action === 'install') {
             $selected = $_SESSION['selection'] ?? [];
             AIcontrolInstaller::selection($selected, $input('sha'));
-            unset($_SESSION['selection']); // one checked selection permits one installation attempt
-            if ($home === null) {
-                $home = AIcontrolInstaller::home($selected['home'], $selected['roots'], true);
-                if (count(scandir($home)) > 2) {
-                    throw new RuntimeException('Private directory changed since checking.');
-                }
-                mkdir($home . '/releases', 0700);
-                AIcontrolInstaller::jsonFile($home . '/bootstrap.json', ['access_mode' => $selected['access_mode'], 'roots' => $selected['roots']]);
-                $file = fopen($location, 'x');
-                if (!$file) {
-                    throw new RuntimeException('Loader location already exists.');
-                }
-                fwrite($file, AIcontrolInstaller::LOCATION_PREFIX . json_encode(['home' => $home, 'roots' => $selected['roots']], JSON_THROW_ON_ERROR));
-                fclose($file);
+            if ($home === null || !isset($signer) || ($selected['host_identity'] ?? '') !== $identity) {
+                throw new RuntimeException('The checked signing identity is unavailable. Check GitHub again.');
             }
+            AIcontrolInstaller::verifySelection($selected, $signer);
+            unset($_SESSION['selection']); // one checked selection permits one installation attempt
             $lock = fopen($home . '/deployment.lock', 'c');
             if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) {
                 throw new RuntimeException('Another installation is in progress.');
             }
+            AIcontrolInstaller::$operation = ['correlation_id' => $selected['correlation_id'], 'repository' => AICONTROL_REPOSITORY, 'source_commit' => $selected['sha'], 'manifest_hash' => $selected['manifest_hash']];
+            $activated = false;
             try {
                 AIcontrolInstaller::recover($home);
                 if (is_file($home . '/current.json')) {
                     $current = AIcontrolInstaller::readJson($home . '/current.json');
                     AIcontrolInstaller::verify($home . '/releases/' . AIcontrolInstaller::sha($current['sha']), $current['manifest_hash']);
                 }
+                $signer->record(AIcontrolInstaller::$operation + ['event' => 'update.requested', 'prior_commit' => $current['sha'] ?? null]);
                 AIcontrolInstaller::checks($selected['sha']);
                 $archive = AIcontrolInstaller::request('https://api.github.com/repos/' . AICONTROL_REPOSITORY . '/zipball/' . $selected['sha']);
                 $zipPath = $home . '/download-' . bin2hex(random_bytes(8)) . '.zip';
@@ -525,10 +778,16 @@ try {
                     }
                     (new \AIcontrol\PanelStore($runtime . '/panel.sqlite'))->snapshot();
                 });
+                $activated = true;
+                $completed = $signer->record(AIcontrolInstaller::$operation + ['event' => 'update.completed', 'outcome' => 'local_readiness_passed']);
                 if (is_file($home . '/bootstrap.json')) {
                     unlink($home . '/bootstrap.json');
                 }
                 $message = 'Installed checked commit ' . $selected['sha'] . '. Open the panel below.';
+                $completedReceipt = AIcontrolSigning::verify($completed, $signer->identity()['public_key'])['receipt_id'];
+            } catch (Throwable $error) {
+                $signer->record(AIcontrolInstaller::$operation + ['event' => 'update.stopped', 'outcome' => $activated ? 'code_activated_receipt_or_cleanup_failed' : 'installation_failed_or_recovered']);
+                throw $error;
             } finally {
                 flock($lock, LOCK_UN);
                 fclose($lock);
@@ -568,5 +827,11 @@ if (isset($_SESSION['csrf'])) {
 }
 if ($home !== null) {
     echo '<p><a href="' . $escape($entry) . '">Open panel</a></p>';
+    if (isset($signer)) {
+        echo '<h2>Server signing identity</h2><p>Ed25519 key fingerprint: <code>' . $escape($signer->identity()['key_id']) . '</code></p><p><a href="' . $escape($entry . '?identity=1') . '">Public verification key</a></p>';
+    }
+    if (isset($completedReceipt)) {
+        echo '<p><a href="' . $escape($entry . '?receipt=' . $completedReceipt) . '">Signed installation result</a></p>';
+    }
 }
 echo '<p>No provider keys are needed. Trusted-device approval is deferred; protect installer access through your hosting account. This testing release does not run agents or deployments.</p></main></html>';

@@ -25,6 +25,11 @@ It needs no Composer, shell commands, password hashes or manual source upload.
 7. Open the panel. There is **no application password, hash-generation step or
    separate panel sign-in**. Create a project and task, then inspect Activity.
 
+The loader now generates and retains its own server-side signing key before
+checking GitHub. Request/result receipts and checked selections are signed;
+see [signing keys and verification](SIGNING.md). The installer shows the public
+key fingerprint. No private key is sent to the browser or GitHub.
+
 If Directory Privacy authenticates successfully but the installer still returns
 403, ask the host to propagate authenticated `REMOTE_USER` into PHP-FPM/CGI.
 Do not substitute `PHP_AUTH_USER`, `HTTP_REMOTE_USER` or forwarded headers; those
@@ -40,6 +45,7 @@ AIcontrol code, so protect the entire directory, including `?installer=1`.
 ## Host requirements
 
 PHP 8.2–8.5; curl, zip, tokenizer, mbstring, PDO SQLite and sessions; HTTPS;
+PHP sodium is also required for server-generated signing identities.
 outbound verified HTTPS to `api.github.com` and `codeload.github.com`; writable
 private storage and permission to create a small location file beside the loader.
 No Apache rewrite rules are required when visiting `loader.php` directly.
@@ -64,6 +70,8 @@ not credentials. Keep its mode 0600. Private storage (0700) contains:
 - `runtime/panel.sqlite`: project/task proposals and append-only proposal events.
 - `runtime/sessions/`: server-side sessions used for CSRF protection.
 - `current.json`, `journal.json`, `deployment.lock`: activation/recovery state.
+- `signing/identity.json`: server-private Ed25519 identity, preserved across updates.
+- `receipts/`: signed GitHub request/result and update evidence.
 
 Do not put private storage in Git, release archives or any web document root.
 The loader validates archive paths/types/duplicates/size, manifest file hashes,
