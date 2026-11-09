@@ -10,6 +10,7 @@ if (getenv('AICONTROL_PRIVATE_DIR') !== false) {
     require_once __DIR__ . '/src/PrivateStorage.php';
     require_once __DIR__ . '/src/PanelStore.php';
     require_once __DIR__ . '/src/Panel.php';
+    require_once __DIR__ . '/src/AccessPolicy.php';
     try {
         if (PHP_VERSION_ID < 80200 || PHP_VERSION_ID >= 80600
             || !extension_loaded('pdo_sqlite') || !extension_loaded('mbstring') || !extension_loaded('session')) {

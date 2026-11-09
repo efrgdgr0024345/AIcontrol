@@ -31,6 +31,14 @@ final class Panel
     {
         umask(0077);
         $config = PrivateStorage::config($directory);
+        $passwordMode = $config['access_mode'] === 'password';
+        if (!$passwordMode && !AccessPolicy::permits($config['access_mode'], $_SERVER, getenv('AICONTROL_LOCAL_DEV') === '1')) {
+            http_response_code(403);
+            header('Cache-Control: no-store');
+            header('Content-Type: text/plain; charset=utf-8');
+            echo 'Host-protected access is required. Configure server authentication for this directory.';
+            return;
+        }
         $store = new PanelStore($directory . '/panel.sqlite');
         $secure = ($_SERVER['HTTPS'] ?? '') === 'on' || ($_SERVER['HTTPS'] ?? '') === '1';
         $local = getenv('AICONTROL_LOCAL_DEV') === '1'
@@ -69,11 +77,23 @@ final class Panel
         if (!session_start()) {
             throw new RuntimeException('Session storage unavailable.');
         }
+        if (!$passwordMode) {
+            $identity = hash('sha256', $config['access_mode'] . ':' . ($_SERVER['REMOTE_USER'] ?? 'loopback'));
+            if (($_SESSION['host_identity'] ?? '') !== $identity) {
+                session_regenerate_id(true);
+                $_SESSION = ['host_identity' => $identity];
+            }
+        }
         if (($_SESSION['authenticated'] ?? false) && (($_SESSION['expires'] ?? 0) < time())) {
             $_SESSION = [];
             session_regenerate_id(true);
         }
         $_SESSION['csrf'] ??= bin2hex(random_bytes(32));
+        if (!$passwordMode) {
+            // Recheck server identity on every request; an old app cookie cannot bypass its removal.
+            $_SESSION['authenticated'] = true;
+            $_SESSION['expires'] = time() + 1800;
+        }
         $error = '';
         if ($method === 'POST') {
             if ((int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 16384) {
@@ -86,7 +106,7 @@ final class Panel
                 return;
             }
             $action = self::input('action');
-            if ($action === 'login') {
+            if ($action === 'login' && $passwordMode) {
                 $client = hash('sha256', $_SERVER['REMOTE_ADDR'] ?? 'unknown');
                 if (!$store->loginAllowed($client)) {
                     http_response_code(429);
@@ -105,7 +125,7 @@ final class Panel
             } elseif (!($_SESSION['authenticated'] ?? false)) {
                 http_response_code(401);
                 $error = 'Sign in to record a proposal.';
-            } elseif ($action === 'logout') {
+            } elseif ($action === 'logout' && $passwordMode) {
                 $_SESSION = [];
                 session_destroy();
                 setcookie(session_name(), '', ['expires' => time() - 3600, 'path' => '/', 'secure' => $secure, 'httponly' => true, 'samesite' => 'Strict']);
@@ -152,7 +172,11 @@ final class Panel
             foreach ($views as $key => $label) {
                 echo '<a class="nav ' . ($view === $key ? 'selected' : '') . '" href="/loader.php?view=' . $key . '">' . $label . '</a>';
             }
-            echo '<form method="post" action="/loader.php">' . $csrf . '<input type="hidden" name="action" value="logout"><button class="secondary">Sign out</button></form>';
+            if ($passwordMode) {
+                echo '<form method="post" action="/loader.php">' . $csrf . '<input type="hidden" name="action" value="logout"><button class="secondary">Sign out</button></form>';
+            } else {
+                echo '<p>Access managed by hosting</p>';
+            }
         }
         echo '</aside><main><div class="notice">Planning mode · Proposals only. Agents, credential use and deployments are disabled.</div>';
         if ($error !== '') {

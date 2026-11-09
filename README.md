@@ -1,8 +1,8 @@
 # AIcontrol
 
-A cPanel project control panel, starting with a password-protected planning release.
+A cPanel project control panel, starting with a host-protected planning release.
 
-Available now: sign-in, project briefs, task proposals with acceptance criteria,
+Available now: project briefs, task proposals with acceptance criteria,
 system availability, and durable activity history. No agent runs, provider calls,
 credential storage, approvals, publishing or deployments are enabled.
 
@@ -15,9 +15,9 @@ can propose work only; it cannot authorize consequential operations.
 - [Run locally and install on cPanel](docs/RUNNING.md)
 - [Upload only loader.php: standalone installation](docs/STANDALONE_LOADER.md)
 
-`loader.php` is now a standalone authenticated installer. Upload that one file,
-configure its installer password hash, then check and install an exact GitHub
-commit. The application and data are downloaded/created in private server
+`loader.php` is a standalone host-protected installer. Upload that one file
+inside a directory protected by your hosting server, then check and install an
+exact GitHub commit. No app password or hash configuration is needed. The application and data are downloaded/created in private server
 storage. See the standalone guide for prerequisites and the testing channel.
 
 ## Development

@@ -23,3 +23,4 @@ jobs:
           php tests/loader.php
           python3 -B -m unittest -v tests/http_smoke.py
           python3 -B -m unittest -v tests/standalone_smoke.py
+          python3 -B -m unittest -v tests/passwordless_smoke.py

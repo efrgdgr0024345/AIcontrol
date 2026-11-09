@@ -1,11 +1,10 @@
 <?php
 declare(strict_types=1);
 
-/** Standalone AIcontrol bootstrap. Upload this file only; no vendor or shell needed.
- * Set the installer password HASH here or in AICONTROL_INSTALL_PASSWORD_HASH.
- * Generate the hash on the server; never put a service/provider key in this file.
+/** Standalone bootstrap. Protect this directory with server authentication.
+ * No application password or hash configuration. REMOTE_USER must be supplied
+ * by the web server; client identity headers are never trusted.
  */
-const AICONTROL_INSTALL_PASSWORD_HASH = '';
 const AICONTROL_REPOSITORY = 'efrgdgr0024345/AIcontrol';
 const AICONTROL_RELEASE_REF = 'feature/control-panel-foundation';
 const AICONTROL_REQUIRED_CHECK = 'planning-panel';
@@ -132,6 +131,9 @@ final class AIcontrolInstaller
             throw new RuntimeException('GitHub manifest is unavailable.');
         }
         self::manifest($manifest);
+        if (json_decode($manifest, true, 32, JSON_THROW_ON_ERROR)['version'] !== 2) {
+            throw new RuntimeException('Select a current password-free release (manifest version 2).');
+        }
         return ['sha' => $sha, 'manifest_hash' => hash('sha256', $manifest), 'checked_at' => time(), 'ref' => $ref];
     }
 
@@ -157,7 +159,7 @@ final class AIcontrolInstaller
     public static function manifest(string $raw): array
     {
         $manifest = json_decode($raw, true, 32, JSON_THROW_ON_ERROR);
-        if (($manifest['version'] ?? null) !== 1 || !is_array($manifest['files'] ?? null)
+        if (!in_array($manifest['version'] ?? null, [1, 2], true) || !is_array($manifest['files'] ?? null)
             || count($manifest['files']) < 3 || count($manifest['files']) > 100) {
             throw new RuntimeException('Invalid release manifest.');
         }
@@ -167,7 +169,11 @@ final class AIcontrolInstaller
                 throw new RuntimeException('Unsafe release manifest entry.');
             }
         }
-        foreach (['app.php', 'src/Panel.php', 'src/PanelStore.php', 'src/PrivateStorage.php', 'assets/panel.css'] as $path) {
+        $required = ['app.php', 'src/Panel.php', 'src/PanelStore.php', 'src/PrivateStorage.php', 'src/Bootstrap.php', 'src/HostingRequirements.php', 'assets/panel.css'];
+        if ($manifest['version'] === 2) {
+            $required[] = 'src/AccessPolicy.php';
+        }
+        foreach ($required as $path) {
             if (!isset($manifest['files'][$path])) {
                 throw new RuntimeException('Release manifest is incomplete.');
             }
@@ -293,46 +299,6 @@ final class AIcontrolInstaller
         rmdir($stage);
     }
 
-    public static function loginAttempt(string $password, string $hash): bool
-    {
-        // Account-wide throttle survives new cookies and simultaneous requests.
-        $path = sys_get_temp_dir() . '/aicontrol-login-' . hash('sha256', __FILE__);
-        if (is_link($path)) {
-            throw new RuntimeException('Unsafe installer throttle state.');
-        }
-        $file = @fopen($path, 'x+');
-        if ($file === false) {
-            if (!is_file($path) || (fileperms($path) & 0777) !== 0600
-                || (function_exists('posix_geteuid') && fileowner($path) !== posix_geteuid())) {
-                throw new RuntimeException('Unsafe installer throttle state.');
-            }
-            $file = fopen($path, 'r+');
-        }
-        if (!$file || !flock($file, LOCK_EX)) {
-            throw new RuntimeException('Cannot lock installer sign-in state.');
-        }
-        try {
-            $raw = stream_get_contents($file);
-            $attempts = $raw === '' ? ['start' => time(), 'failures' => 0] : json_decode($raw, true, 8, JSON_THROW_ON_ERROR);
-            if (time() - $attempts['start'] >= 600) {
-                $attempts = ['start' => time(), 'failures' => 0];
-            }
-            if ($attempts['failures'] >= 5) {
-                throw new RuntimeException('Installer sign-in temporarily locked. Try again in ten minutes.');
-            }
-            $valid = strlen($password) <= 256 && password_verify($password, $hash);
-            $attempts['failures'] = $valid ? 0 : $attempts['failures'] + 1;
-            rewind($file);
-            ftruncate($file, 0);
-            fwrite($file, json_encode($attempts, JSON_THROW_ON_ERROR));
-            fflush($file);
-            return $valid;
-        } finally {
-            flock($file, LOCK_UN);
-            fclose($file);
-        }
-    }
-
     public static function recover(string $home): void
     {
         if (!file_exists($home . '/journal.json')) {
@@ -396,6 +362,15 @@ try {
     if (!$secure && !$local) {
         throw new RuntimeException('Open the installer over HTTPS.');
     }
+    $hostUser = $_SERVER['REMOTE_USER'] ?? null;
+    $hostProtected = is_string($hostUser) && trim($hostUser) !== '';
+    if (!$hostProtected && !$local) {
+        http_response_code(403);
+        header('Content-Type: text/plain; charset=utf-8');
+        echo 'Enable hosting access protection for this directory. The server must supply REMOTE_USER. No app password is required.';
+        return;
+    }
+    $accessMode = $hostProtected ? 'host' : 'local';
     if (file_exists($location)) {
         if (is_link($location) || (fileperms($location) & 0777) !== 0600) {
             throw new RuntimeException('Unsafe loader location file.');
@@ -440,16 +415,17 @@ try {
         fclose($lock);
     }
 
-    $passwordHash = getenv('AICONTROL_INSTALL_PASSWORD_HASH') ?: AICONTROL_INSTALL_PASSWORD_HASH;
-    if ((password_get_info($passwordHash)['algo'] ?? null) === null) {
-        throw new RuntimeException('Installer is locked. Configure AICONTROL_INSTALL_PASSWORD_HASH on the server, or set its hash in this single loader file. See the installation guide.');
-    }
     session_name('aicontrol_installer');
     ini_set('session.use_strict_mode', '1');
     ini_set('session.use_only_cookies', '1');
     ini_set('session.use_trans_sid', '0');
     session_set_cookie_params(['path' => $entry, 'secure' => $secure, 'httponly' => true, 'samesite' => 'Strict']);
     session_start();
+    $identity = hash('sha256', $accessMode . ':' . ($hostProtected ? $hostUser : 'loopback'));
+    if (($_SESSION['host_identity'] ?? '') !== $identity) {
+        session_regenerate_id(true);
+        $_SESSION = ['host_identity' => $identity];
+    }
     $_SESSION['csrf'] ??= bin2hex(random_bytes(32));
     $input = static function (string $name): string {
         if (!is_string($_POST[$name] ?? '')) {
@@ -462,31 +438,17 @@ try {
             throw new RuntimeException('Request verification failed.');
         }
         $action = $input('action');
-        if ($action === 'login') {
-            if (!AIcontrolInstaller::loginAttempt($input('password'), $passwordHash)) {
-                throw new RuntimeException('Installer sign-in failed.');
-            }
-            session_regenerate_id(true);
-            $_SESSION = ['csrf' => bin2hex(random_bytes(32)), 'authorized_until' => time() + 900];
-        } elseif (($_SESSION['authorized_until'] ?? 0) < time()) {
-            throw new RuntimeException('Sign in to the installer again.');
-        } elseif ($action === 'check') {
+        if ($action === 'check') {
             unset($_SESSION['selection']);
             $roots = array_values(array_unique(array_merge([__DIR__, $_SERVER['DOCUMENT_ROOT'] ?: __DIR__], array_filter(array_map('trim', explode("\n", $input('roots')))))));
             $directory = $home ?? AIcontrolInstaller::home(trim($input('home')), $roots);
             if ($home === null && file_exists($directory) && count(scandir($directory)) > 2) {
                 throw new RuntimeException('Choose a new, empty private directory; existing files will not be overwritten.');
             }
-            if ($home === null && (strlen($input('panel_password')) < 14 || strlen($input('panel_password')) > 256)) {
-                throw new RuntimeException('Choose a separate panel password of 14–256 bytes.');
-            }
-            if ($home === null && password_verify($input('panel_password'), $passwordHash)) {
-                throw new RuntimeException('Use a different password for the proposal-only panel.');
-            }
             $selection = AIcontrolInstaller::check($input('ref'));
             $selection['home'] = $directory;
             $selection['roots'] = $roots;
-            $selection['panel_hash'] = $home === null ? password_hash($input('panel_password'), PASSWORD_DEFAULT) : null;
+            $selection['access_mode'] = $accessMode;
             $_SESSION['selection'] = $selection;
             $message = 'GitHub checked. Review the exact commit below; the selection expires in ten minutes.';
         } elseif ($action === 'install') {
@@ -499,7 +461,7 @@ try {
                     throw new RuntimeException('Private directory changed since checking.');
                 }
                 mkdir($home . '/releases', 0700);
-                AIcontrolInstaller::jsonFile($home . '/bootstrap.json', ['panel_hash' => $selected['panel_hash'], 'roots' => $selected['roots']]);
+                AIcontrolInstaller::jsonFile($home . '/bootstrap.json', ['access_mode' => $selected['access_mode'], 'roots' => $selected['roots']]);
                 $file = fopen($location, 'x');
                 if (!$file) {
                     throw new RuntimeException('Loader location already exists.');
@@ -552,9 +514,15 @@ try {
                         mkdir($runtime, 0700);
                         new \AIcontrol\PanelStore($runtime . '/panel.sqlite', true);
                         mkdir($runtime . '/sessions', 0700);
-                        AIcontrolInstaller::jsonFile($runtime . '/config.json', ['version' => 1, 'public_roots' => $bootstrap['roots'], 'password_hash' => $bootstrap['panel_hash']]);
+                        AIcontrolInstaller::jsonFile($runtime . '/config.json', ['version' => 2, 'public_roots' => $bootstrap['roots'], 'access_mode' => $bootstrap['access_mode']]);
                     }
-                    \AIcontrol\PrivateStorage::config($runtime);
+                    $runtimeConfig = \AIcontrol\PrivateStorage::config($runtime);
+                    if ($runtimeConfig['access_mode'] === 'password') {
+                        // Explicit no-app-password upgrade. Retain the legacy hash/version
+                        // for compatibility with retained old code; it is not used now.
+                        $runtimeConfig['access_mode'] = $selected['access_mode'];
+                        AIcontrolInstaller::jsonFile($runtime . '/config.json', $runtimeConfig);
+                    }
                     (new \AIcontrol\PanelStore($runtime . '/panel.sqlite'))->snapshot();
                 });
                 if (is_file($home . '/bootstrap.json')) {
@@ -565,9 +533,6 @@ try {
                 flock($lock, LOCK_UN);
                 fclose($lock);
             }
-        } elseif ($action === 'logout') {
-            $_SESSION = [];
-            session_destroy();
         } else {
             throw new RuntimeException('Unknown installer operation.');
         }
@@ -588,19 +553,17 @@ echo '<p>' . $escape($message) . '</p>';
 if (isset($_SESSION['csrf'])) {
     $csrf = '<input type="hidden" name="csrf" value="' . $escape($_SESSION['csrf']) . '">';
     $actionUrl = $escape($entry . '?installer=1');
-    if (($_SESSION['authorized_until'] ?? 0) < time()) {
-        echo '<form method="post" action="' . $actionUrl . '">' . $csrf . '<input type="hidden" name="action" value="login"><label>Installer password <input type="password" name="password" autocomplete="current-password" required maxlength="256"></label><button>Sign in</button></form>';
-    } else {
+    {
+        echo '<p>Access is controlled by your hosting server. No app password is needed.</p>';
         echo '<p>Repository: ' . AICONTROL_REPOSITORY . '. Required check: ' . AICONTROL_REQUIRED_CHECK . '.</p><form method="post" action="' . $actionUrl . '">' . $csrf . '<input type="hidden" name="action" value="check"><p><label>GitHub ref <input name="ref" value="' . AICONTROL_RELEASE_REF . '" required></label></p>';
         if ($home === null) {
-            echo '<p><label>Private directory (outside every public document root) <input name="home" required size="60"></label></p><p><label>All additional public document roots, one per line <textarea name="roots" rows="4" cols="60"></textarea></label></p><p><label>New panel password (14–256 bytes; separate from installer password) <input type="password" name="panel_password" required minlength="14" maxlength="256" autocomplete="new-password"></label></p>';
+            echo '<p><label>Private directory (outside every public document root) <input name="home" required size="60"></label></p><p><label>All additional public document roots, one per line <textarea name="roots" rows="4" cols="60"></textarea></label></p>';
         }
         echo '<button>Check GitHub</button></form>';
         if (isset($_SESSION['selection'])) {
             $selected = $_SESSION['selection'];
             echo '<h2>Checked selection</h2><dl><dt>Commit</dt><dd>' . $escape($selected['sha']) . '</dd><dt>Manifest SHA-256</dt><dd>' . $escape($selected['manifest_hash']) . '</dd><dt>Private storage</dt><dd>' . $escape($selected['home']) . '</dd><dt>Expires (UTC)</dt><dd>' . gmdate('c', $selected['checked_at'] + 600) . '</dd></dl><form method="post" action="' . $actionUrl . '">' . $csrf . '<input type="hidden" name="action" value="install"><input type="hidden" name="sha" value="' . $escape($selected['sha']) . '"><button>Install this checked commit</button></form>';
         }
-        echo '<form method="post" action="' . $actionUrl . '">' . $csrf . '<input type="hidden" name="action" value="logout"><button>Sign out of installer</button></form>';
     }
 }
 if ($home !== null) {

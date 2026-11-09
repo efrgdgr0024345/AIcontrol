@@ -87,3 +87,12 @@ release is not approval to load real credentials or run generated code.
 Review status: implementation proposal and locally tested foundation. Host
 inventory, live cPanel validation, independent security review and production
 acceptance are outstanding. No reviewer approval is implied by this document.
+
+## Subsequent owner scope: host access, no app password
+
+The owner selected a host-protected panel without an application password. New
+installs use web-server authentication (`REMOTE_USER`); local demos require an
+explicit loopback mode. Installer and panel recheck host access every request.
+No independent phone approval is implemented. Android approval-device design,
+provider-log integration and backup trust analysis are deferred; these do not
+block the metadata-only planning workflow.

@@ -12,7 +12,7 @@ $files = [];
 foreach ($paths as $path) {
     $files[$path] = hash_file('sha256', $root . '/' . $path);
 }
-$json = json_encode(['version' => 1, 'files' => $files], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n";
+$json = json_encode(['version' => 2, 'files' => $files], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n";
 if (in_array('--check', $argv, true)) {
     if (!is_file($root . '/release-manifest.json') || file_get_contents($root . '/release-manifest.json') !== $json) {
         fwrite(STDERR, "Release manifest is stale. Run php bin/build-manifest.php.\n");

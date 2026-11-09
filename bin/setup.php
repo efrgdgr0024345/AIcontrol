@@ -10,11 +10,11 @@ require_once dirname(__DIR__) . '/src/PanelStore.php';
 
 umask(0077);
 try {
-    $options = getopt('', ['private-dir:', 'public-root:']);
+    $options = getopt('', ['private-dir:', 'public-root:', 'access-mode:']);
     $directory = $options['private-dir'] ?? '';
     $roots = (array) ($options['public-root'] ?? []);
     if ($directory === '' || $roots === []) {
-        throw new RuntimeException('Supply --private-dir and every --public-root. Read the login password from stdin.');
+        throw new RuntimeException('Supply --private-dir and every --public-root. Default access mode is host-protected.');
     }
     if (is_dir($directory) && count(scandir($directory)) > 2) {
         throw new RuntimeException('Refusing to overwrite existing private state.');
@@ -23,12 +23,19 @@ try {
         throw new RuntimeException('Cannot create private directory.');
     }
     \AIcontrol\PrivateStorage::validate($directory, $roots);
-    $password = rtrim(stream_get_contents(STDIN, 1024), "\r\n");
-    if (strlen($password) < 14 || strlen($password) > 256) {
-        throw new RuntimeException('Login password must contain 14–256 bytes.');
+    $mode = $options['access-mode'] ?? 'host';
+    if (!in_array($mode, ['host', 'local', 'password'], true)) {
+        throw new RuntimeException('Unsupported access mode.');
     }
-    $config = ['version' => 1, 'public_roots' => $roots, 'password_hash' => password_hash($password, PASSWORD_DEFAULT)];
-    unset($password);
+    $config = ['version' => 2, 'public_roots' => $roots, 'access_mode' => $mode];
+    if ($mode === 'password') { // Compatibility/testing only, not the default setup.
+        $password = rtrim(stream_get_contents(STDIN, 1024), "\r\n");
+        if (strlen($password) < 14 || strlen($password) > 256) {
+            throw new RuntimeException('Legacy login password must contain 14–256 bytes.');
+        }
+        $config['password_hash'] = password_hash($password, PASSWORD_DEFAULT);
+        unset($password);
+    }
     new \AIcontrol\PanelStore($directory . '/panel.sqlite', true);
     mkdir($directory . '/sessions', 0700);
     // Config is the final initialization marker; never silently recreate lost state.

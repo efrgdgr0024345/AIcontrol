@@ -33,7 +33,7 @@ class PanelHttpTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="aicontrol-http-") as directory:
             private = Path(directory) / "private"
             password = secrets.token_urlsafe(32)
-            setup = [PHP, "bin/setup.php", f"--private-dir={private}", f"--public-root={ROOT}"]
+            setup = [PHP, "bin/setup.php", "--access-mode=password", f"--private-dir={private}", f"--public-root={ROOT}"]
             result = subprocess.run(setup, cwd=ROOT, input=password, text=True, capture_output=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             duplicate = subprocess.run(setup, cwd=ROOT, input=password, text=True, capture_output=True)

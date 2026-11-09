@@ -51,8 +51,7 @@ class StandaloneSmokeTest(unittest.TestCase):
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy(ROOT / name, destination)
             password = secrets.token_urlsafe(32)
-            subprocess.run([PHP, "bin/setup.php", f"--private-dir={home / 'runtime'}", f"--public-root={public}"], cwd=ROOT, input=password, text=True, check=True, capture_output=True)
-            installer_hash = subprocess.run([PHP, "-r", "echo password_hash(stream_get_contents(STDIN), PASSWORD_DEFAULT);"], input=secrets.token_urlsafe(32), text=True, check=True, capture_output=True).stdout
+            subprocess.run([PHP, "bin/setup.php", "--access-mode=password", f"--private-dir={home / 'runtime'}", f"--public-root={public}"], cwd=ROOT, input=password, text=True, check=True, capture_output=True)
             def private_json(path, value, prefix=""):
                 path.write_text(prefix + json.dumps(value))
                 path.chmod(0o600)
@@ -63,7 +62,7 @@ class StandaloneSmokeTest(unittest.TestCase):
             with socket.socket() as listener:
                 listener.bind(("127.0.0.1", 0))
                 port = listener.getsockname()[1]
-            environment = dict(os.environ, AICONTROL_LOCAL_DEV="1", AICONTROL_INSTALL_PASSWORD_HASH=installer_hash)
+            environment = dict(os.environ, AICONTROL_LOCAL_DEV="1")
             server = subprocess.Popen([PHP, "-d", f"session.save_path={sessions}", "-S", f"127.0.0.1:{port}", "-t", str(public)], cwd=ROOT, env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             cookies = http.cookiejar.CookieJar()
             client = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookies), NoRedirect())
@@ -86,7 +85,8 @@ class StandaloneSmokeTest(unittest.TestCase):
                 else:
                     self.fail("Standalone server did not start")
                 self.assertEqual(status, 200)
-                self.assertIn("Installer password", page)
+                self.assertIn("Check GitHub", page)
+                self.assertNotIn('type="password"', page)
                 self.assertNotIn("Panel password", page)
                 private_json(control / ".aicontrol-location.php", {"home": str(home), "roots": [str(public)]}, "<?php exit; ?>\n")
                 status, _, page = request()
@@ -99,7 +99,8 @@ class StandaloneSmokeTest(unittest.TestCase):
                 self.assertEqual(headers["Location"], "/control/loader.php")
                 self.assertEqual(request("?asset=panel.css")[0], 200)
                 self.assertEqual(json.loads(request("?health=1")[2])["scope"], "metadata_panel_only")
-                self.assertIn("Installer password", request("?installer=1")[2])
+                self.assertIn("Check GitHub", request("?installer=1")[2])
+                self.assertNotIn('type="password"', request("?installer=1")[2])
                 self.assertEqual(set(p.name for p in control.iterdir()), {"loader.php", ".aicontrol-location.php"})
                 app = release / "app.php"
                 original = app.read_bytes()
