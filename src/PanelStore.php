@@ -29,6 +29,11 @@ final class PanelStore
             // Missing/damaged tables are an error, never an implicit reset.
             $this->db->query('SELECT id FROM events LIMIT 1');
         }
+        $this->db->exec('CREATE TABLE IF NOT EXISTS agent_runs (
+            id INTEGER PRIMARY KEY, task_id INTEGER NOT NULL REFERENCES tasks(id),
+            status TEXT NOT NULL, model TEXT NOT NULL, output TEXT NOT NULL DEFAULT "",
+            provider_request_id TEXT, input_tokens INTEGER, output_tokens INTEGER,
+            started_at INTEGER NOT NULL, finished_at INTEGER)');
     }
 
     private function transaction(callable $work): int
@@ -90,7 +95,63 @@ final class PanelStore
             'projects' => $this->db->query('SELECT * FROM projects ORDER BY id DESC')->fetchAll(PDO::FETCH_ASSOC),
             'tasks' => $this->db->query('SELECT tasks.*, projects.name AS project_name FROM tasks JOIN projects ON projects.id=tasks.project_id ORDER BY tasks.id DESC')->fetchAll(PDO::FETCH_ASSOC),
             'events' => $this->db->query('SELECT * FROM events ORDER BY id DESC LIMIT 100')->fetchAll(PDO::FETCH_ASSOC),
+            'runs' => $this->db->query('SELECT * FROM agent_runs ORDER BY id DESC LIMIT 100')->fetchAll(PDO::FETCH_ASSOC),
         ];
+    }
+
+    public function startAgent(int $task, string $model): array
+    {
+        $run = [];
+        $this->transaction(function () use ($task, $model, &$run): int {
+            $query = $this->db->prepare('SELECT tasks.*, projects.brief FROM tasks JOIN projects ON projects.id=tasks.project_id WHERE tasks.id=?');
+            $query->execute([$task]);
+            $record = $query->fetch(PDO::FETCH_ASSOC);
+            if (!$record) {
+                throw new RuntimeException('Task not found.');
+            }
+            $stale = $this->db->prepare('SELECT agent_runs.id,agent_runs.task_id,tasks.project_id FROM agent_runs JOIN tasks ON tasks.id=agent_runs.task_id WHERE agent_runs.status="working" AND agent_runs.started_at<?');
+            $stale->execute([time() - 90]);
+            foreach ($stale->fetchAll(PDO::FETCH_ASSOC) as $old) {
+                $this->db->prepare('UPDATE agent_runs SET status="outcome_uncertain",finished_at=? WHERE id=? AND status="working"')->execute([time(), $old['id']]);
+                $this->db->prepare('UPDATE tasks SET status="outcome_uncertain" WHERE id=?')->execute([$old['task_id']]);
+                $this->event('agent.outcome_uncertain', (int) $old['project_id'], (int) $old['task_id'], 'Worker stopped reporting. Provider outcome is unverified; no automatic retry.');
+            }
+            if ((int) $this->db->query('SELECT COUNT(*) FROM agent_runs WHERE status="working"')->fetchColumn() > 0) {
+                throw new RuntimeException('An agent run is already active.');
+            }
+            $limit = $this->db->prepare('SELECT COUNT(*) FROM agent_runs WHERE started_at>?');
+            $limit->execute([time() - 3600]);
+            if ((int) $limit->fetchColumn() >= 3) {
+                throw new RuntimeException('Testing limit reached: three runs per hour.');
+            }
+            $this->db->prepare('INSERT INTO agent_runs(task_id,status,model,started_at) VALUES (?,"working",?,?)')->execute([$task, $model, time()]);
+            $id = (int) $this->db->lastInsertId();
+            $this->db->prepare('UPDATE tasks SET status="working" WHERE id=?')->execute([$task]);
+            $this->event('agent.started', (int) $record['project_id'], $task, 'Bounded OpenAI task response requested; model ' . $model . '.');
+            $run = ['id' => $id, 'task' => $record];
+            return $id;
+        });
+        return $run;
+    }
+
+    public function finishAgent(int $id, string $status, string $output = '', ?string $providerId = null, ?int $inputTokens = null, ?int $outputTokens = null): void
+    {
+        if (!in_array($status, ['in_review', 'failed', 'outcome_uncertain'], true)) {
+            throw new RuntimeException('Invalid agent outcome.');
+        }
+        $this->transaction(function () use ($id, $status, $output, $providerId, $inputTokens, $outputTokens): int {
+            $query = $this->db->prepare('SELECT agent_runs.task_id,tasks.project_id FROM agent_runs JOIN tasks ON tasks.id=agent_runs.task_id WHERE agent_runs.id=? AND agent_runs.status="working"');
+            $query->execute([$id]);
+            $record = $query->fetch(PDO::FETCH_ASSOC);
+            if (!$record) {
+                throw new RuntimeException('Agent run is no longer active.');
+            }
+            $this->db->prepare('UPDATE agent_runs SET status=?,output=?,provider_request_id=?,input_tokens=?,output_tokens=?,finished_at=? WHERE id=? AND status="working"')
+                ->execute([$status, substr($output, 0, 16000), $providerId, $inputTokens, $outputTokens, time(), $id]);
+            $this->db->prepare('UPDATE tasks SET status=? WHERE id=?')->execute([$status, $record['task_id']]);
+            $this->event('agent.' . $status, (int) $record['project_id'], (int) $record['task_id'], $status === 'in_review' ? 'AI response recorded for review. No code executed or published. Cost unknown.' : 'Run stopped. No automatic retry; review outcome before another request.');
+            return $id;
+        });
     }
 
     public function loginAllowed(string $client): bool

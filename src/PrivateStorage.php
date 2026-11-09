@@ -42,7 +42,7 @@ final class PrivateStorage
         $config = json_decode(file_get_contents($file), true, 32, JSON_THROW_ON_ERROR);
         $mode = $config['access_mode'] ?? 'password'; // Preserve existing installations until explicitly migrated.
         if (!in_array($config['version'] ?? null, [1, 2], true) || !is_array($config['public_roots'] ?? null)
-            || ($config['public_roots'] ?? []) === [] || !in_array($mode, ['host', 'local', 'password'], true)
+            || ($config['public_roots'] ?? []) === [] || !in_array($mode, ['host', 'local', 'testing', 'password'], true)
             || ($mode === 'password' && (!is_string($config['password_hash'] ?? null)
                 || (password_get_info($config['password_hash'])['algo'] ?? null) === null))) {
             throw new RuntimeException('Invalid configuration.');

@@ -24,7 +24,7 @@ try {
     }
     \AIcontrol\PrivateStorage::validate($directory, $roots);
     $mode = $options['access-mode'] ?? 'host';
-    if (!in_array($mode, ['host', 'local', 'password'], true)) {
+    if (!in_array($mode, ['host', 'local', 'testing', 'password'], true)) {
         throw new RuntimeException('Unsupported access mode.');
     }
     $config = ['version' => 2, 'public_roots' => $roots, 'access_mode' => $mode];

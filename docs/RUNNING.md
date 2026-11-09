@@ -1,4 +1,15 @@
-# Running the planning panel
+# Current testing workflow
+
+Use [the current standalone guide](STANDALONE_LOADER.md). The latest loader opens
+without Directory Privacy, REMOTE_USER or an app password. It retains private
+signing keys and checked GitHub update verification. AI task responses require a
+server-side OpenAI connection; missing credentials are reported explicitly.
+
+For source-checkout public testing, initialize with `--access-mode=testing` and
+run the development server on loopback. Host and legacy password modes remain
+compatibility options, not current installation requirements.
+
+## Previous protected development notes (optional)
 
 For cPanel, use [the standalone loader guide](STANDALONE_LOADER.md): protect the
 hosting directory, upload one loader file, check GitHub and install. No app

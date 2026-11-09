@@ -31,6 +31,9 @@ final class Panel
     {
         umask(0077);
         $config = PrivateStorage::config($directory);
+        if (getenv('AICONTROL_PUBLIC_TESTING') === '1') {
+            $config['access_mode'] = 'testing';
+        }
         $passwordMode = $config['access_mode'] === 'password';
         if (!$passwordMode && !AccessPolicy::permits($config['access_mode'], $_SERVER, getenv('AICONTROL_LOCAL_DEV') === '1')) {
             http_response_code(403);
@@ -141,6 +144,12 @@ final class Panel
                             throw new RuntimeException('Invalid project.');
                         }
                         $store->createTask($project, self::input('title'), self::input('criteria'));
+                    } elseif ($action === 'run_agent') {
+                        $task = filter_var(self::input('task_id'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+                        if ($task === false) {
+                            throw new RuntimeException('Invalid task.');
+                        }
+                        AgentRunner::run($store, $task);
                     } else {
                         throw new RuntimeException('Operation unavailable.');
                     }
@@ -175,10 +184,10 @@ final class Panel
             if ($passwordMode) {
                 echo '<form method="post" action="/loader.php">' . $csrf . '<input type="hidden" name="action" value="logout"><button class="secondary">Sign out</button></form>';
             } else {
-                echo '<p>Access managed by hosting</p>';
+                echo $config['access_mode'] === 'testing' ? '<p>Public testing mode</p>' : '<p>Access managed by hosting</p>';
             }
         }
-        echo '</aside><main><div class="notice">Planning mode · Proposals only. Agents, credential use and deployments are disabled.</div>';
+        echo '</aside><main><div class="notice">Testing workspace · Projects, tasks and bounded AI responses. Code execution and deployment are not connected.</div>';
         if ($error !== '') {
             echo '<p role="alert" class="error">' . $e($error) . '</p>';
         }
@@ -189,8 +198,8 @@ final class Panel
             $data = $store->snapshot();
             echo '<header><p class="eyebrow">WORKSPACE</p><h1>' . $views[$view] . '</h1></header>';
             if ($view === 'overview') {
-                echo '<div class="stats"><section><span>Projects</span><strong>' . count($data['projects']) . '</strong></section><section><span>Task proposals</span><strong>' . count($data['tasks']) . '</strong></section><section><span>Connected agents</span><strong>0</strong></section><section><span>Provider cost</span><strong>Unknown</strong></section></div>';
-                echo '<section><h2>Start with a clear brief</h2><p>Create a project, then record a task and its acceptance criteria. Proposals do not dispatch work or grant permissions.</p><a class="button" href="/loader.php?view=projects">Manage projects</a></section><section><h2>What is available</h2><p>Project and task proposals, durable activity history and system availability. Independent approval is deferred. No service credentials are accepted in this release.</p></section>';
+                echo '<div class="stats"><section><span>Projects</span><strong>' . count($data['projects']) . '</strong></section><section><span>Task proposals</span><strong>' . count($data['tasks']) . '</strong></section><section><span>AI connection</span><strong>' . (AgentRunner::configured() ? 'Configured' : 'Not configured') . '</strong></section><section><span>Provider cost</span><strong>Unknown</strong></section></div>';
+                echo '<section><h2>Start with a clear brief</h2><p>Create a project, then add a task and its acceptance criteria. A configured AI connection can return a proposed solution for review.</p><a class="button" href="/loader.php?view=projects">Manage projects</a></section><section><h2>Next connection</h2><p>Connect OpenAI on the server to run a bounded task response. Repository checkout, isolated code execution and pull-request publishing are not connected yet.</p></section>';
             } elseif ($view === 'projects') {
                 echo '<div class="columns"><section><h2>New project</h2><form method="post" action="/loader.php">' . $csrf . '<input type="hidden" name="action" value="project"><label>Name<input name="name" required maxlength="160"></label><label>Brief and intended outcome<textarea name="brief" required maxlength="4000"></textarea></label><button>Create project</button></form></section>';
                 echo '<section><h2>Propose a task</h2>';
@@ -215,7 +224,18 @@ final class Panel
                     echo '<section><p>No tasks yet. No agent is running.</p></section>';
                 }
                 foreach ($data['tasks'] as $task) {
-                    echo '<section id="task-' . $e($task['id']) . '"><span class="badge">Draft · not dispatched</span><h3>' . $e($task['title']) . '</h3><p>Project: ' . $e($task['project_name']) . '</p><p class="preserve">' . $e($task['criteria']) . '</p></section>';
+                    echo '<section id="task-' . $e($task['id']) . '"><span class="badge">' . ($task['status'] === 'draft' ? 'Draft · not dispatched' : $e($task['status'])) . '</span><h3>' . $e($task['title']) . '</h3><p>Project: ' . $e($task['project_name']) . '</p><p class="preserve">' . $e($task['criteria']) . '</p>';
+                    if (AgentRunner::configured()) {
+                        echo '<form method="post" action="/loader.php">' . $csrf . '<input type="hidden" name="action" value="run_agent"><input type="hidden" name="task_id" value="' . $e($task['id']) . '"><button>Run AI task</button><p>One response, up to 1,000 output tokens. Testing limit: three runs per hour. Cost unknown.</p></form>';
+                    } else {
+                        echo '<p>Agent not connected yet. Configure the OpenAI connection on the server to run this task.</p>';
+                    }
+                    foreach ($data['runs'] as $run) {
+                        if ((int) $run['task_id'] === (int) $task['id']) {
+                            echo '<article><h3>Agent run #' . $e($run['id']) . ' · ' . $e($run['status']) . '</h3><p>Model: ' . $e($run['model']) . ' · Cost: unknown</p><pre class="preserve">' . $e($run['output']) . '</pre></article>';
+                        }
+                    }
+                    echo '</section>';
                 }
             } elseif ($view === 'systems') {
                 echo '<section><h2>Available integrations</h2><p>These are planned integrations. No connection has been configured or verified.</p><table><thead><tr><th>System</th><th>Status</th><th>Intended use</th></tr></thead><tbody>';

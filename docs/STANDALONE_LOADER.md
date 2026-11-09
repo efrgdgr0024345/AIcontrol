@@ -1,124 +1,88 @@
-# Single-file installation — no app password
+# Testing installation — upload one file and open it
 
-Upload **only `loader.php`** into a directory protected by the hosting server.
-The loader downloads the checked application from GitHub into private storage.
-It needs no Composer, shell commands, password hashes or manual source upload.
+The current testing release has **no password, Directory Privacy or REMOTE_USER
+requirement**. Security-device enrollment is deferred. Anyone who can reach this
+URL can use the testing panel and installer; use test data.
 
-## cPanel steps
+1. Upload the latest `loader.php` into a dedicated website folder.
+2. Open its HTTPS URL. If Directory Privacy was enabled earlier, disable it for
+   this test folder to remove the hosting password prompt.
+3. Enter a new empty private directory outside every web document root. Its
+   parent must already exist and be writable. List any addon-domain public roots.
+4. Click **Check GitHub**, review the exact commit, then **Install this checked
+   commit** within ten minutes. The testing branch is
+   `feature/control-panel-foundation`.
+5. Open the panel, create a project, add a task and its acceptance criteria.
 
-1. Create a dedicated directory, for example `public_html/control`.
-2. In **cPanel → Directory Privacy**, protect that directory with a dedicated
-   restricted web-access user. This is hosting access protection, not another
-   AIcontrol login. Do not use the cPanel administrator password.
-3. Upload `loader.php`, then open its HTTPS URL. The server must authenticate the
-   request and supply PHP's `REMOTE_USER`. The installer checks that value on
-   every request. Missing identity returns 403; entering a client identity header
-   or ordinary Basic Authorization header cannot bypass the check.
-4. Enter a new empty private directory outside **every** public document root.
-   Its canonical parent must already exist and be writable. List all additional
-   addon-domain document roots. Shared Unix-user websites are not isolated from
-   each other by directory permissions.
-5. Click **Check GitHub**. The testing channel is
-   `feature/control-panel-foundation`; main still requires normal reviewed merge.
-6. Review the exact full commit SHA, manifest digest, destination and expiry,
-   then click **Install this checked commit** within ten minutes.
-7. Open the panel. There is **no application password, hash-generation step or
-   separate panel sign-in**. Create a project and task, then inspect Activity.
+No password hash, copied signing key or extra application-file upload is needed.
+PHP 8.2–8.5 with curl, zip, tokenizer, mbstring, PDO SQLite, sessions and sodium
+is required. GitHub downloads need verified outbound HTTPS to `api.github.com`
+and `codeload.github.com`. The required GitHub Actions check must pass. These
+requirements still apply even though the access gate is removed.
 
-The loader now generates and retains its own server-side signing key before
-checking GitHub. Request/result receipts and checked selections are signed;
-see [signing keys and verification](SIGNING.md). The installer shows the public
-key fingerprint. No private key is sent to the browser or GitHub.
+The loader generates its own signing identity in private server storage before
+checking GitHub. It signs requests, selections and update results, preserves
+keys/data on updates, and recovers interrupted code activation. Public testing
+signatures identify the server key; they do not identify an authenticated owner.
+See [signing details](SIGNING.md). There is no raw private-key download endpoint.
 
-If Directory Privacy authenticates successfully but the installer still returns
-403, ask the host to propagate authenticated `REMOTE_USER` into PHP-FPM/CGI.
-Do not substitute `PHP_AUTH_USER`, `HTTP_REMOTE_USER` or forwarded headers; those
-can be derived from unverified client input. Verify the host actually rejects
-unauthorized requests, not merely that it sets a username variable.
+## First AI task connection
 
-The host login still protects the site from other internet visitors. It does not
-make a compromised laptop trustworthy. Independent phone approval remains a
-future phase. This testing panel cannot use provider keys, run agents, spend
-money, publish PRs or deploy production projects. Installer access can change
-AIcontrol code, so protect the entire directory, including `?installer=1`.
+The panel includes a real OpenAI Responses API adapter. It sends the project
+brief, task and acceptance criteria from cPanel, retains the proposed answer,
+usage and provider result ID, and marks the result **in review**. It never claims
+that generated code ran, passed tests or was committed.
 
-## Host requirements
+Configure `AICONTROL_OPENAI_API_KEY` directly in the server's PHP environment,
+through the hosting provider's supported server configuration. Do not paste a
+key into chat, GitHub, loader source or the browser. The optional
+`AICONTROL_OPENAI_MODEL` selects the model; the default is `gpt-4.1-mini`.
+The hosting environment must also allow HTTPS to `api.openai.com`.
 
-PHP 8.2–8.5; curl, zip, tokenizer, mbstring, PDO SQLite and sessions; HTTPS;
-PHP sodium is also required for server-generated signing identities.
-outbound verified HTTPS to `api.github.com` and `codeload.github.com`; writable
-private storage and permission to create a small location file beside the loader.
-No Apache rewrite rules are required when visiting `loader.php` directly.
+Without this connection the panel explicitly says **Agent not connected yet**.
+This chat subscription does not supply API authentication or API billing. No
+provider call has been validated against a real account in the cloud tests.
 
-The public AIcontrol repository needs no token. Private repositories require a
-narrowly scoped GitHub token configured directly in the server environment as
-`AICONTROL_GITHUB_TOKEN`; there is no browser token-import form. Credentials are
-sent only to the fixed GitHub API host, not forwarded to redirect destinations.
+Once configured, a task shows **Run AI task**. One request permits up to 1,000
+output tokens, with one active run globally and at most three requests per hour
+for this test installation. Costs are shown as unknown, not zero. Timeouts can
+mean the provider did work; uncertain outcomes are retained without automatic
+retry. Results are displayed as escaped text. Any visitor can trigger these
+bounded calls in public testing mode.
 
-GitHub Actions must have a successful `planning-panel` result for the exact
-selected SHA. Missing or pending checks block installation. This is not a claim
-of independent security review or signed publisher provenance.
+Repository checkout, autonomous code execution, isolated tests, PR publishing
+and production deployment are still unconnected. This is a first bounded task
+response, not a completed autonomous coding-to-PR workflow.
 
-## Storage and recovery
+## Later access protection
 
-Only `loader.php` and generated `.aicontrol-location.php` live publicly. The
-location file exits without displaying data; it contains a path/root inventory,
-not credentials. Keep its mode 0600. Private storage (0700) contains:
+`AICONTROL_TESTING_MODE` near the top of the loader defaults to true in this test
+release. Setting it false restores server-authenticated `REMOTE_USER` access
+(or explicit loopback development). Changing the PHP constant requires a reviewed
+loader upload. Android/phone approval and production authorization remain later
+work, not prerequisites for this testing panel.
 
-- `releases/<full-sha>/`: immutable checked code, manifest and prior releases.
-- `runtime/config.json`: access mode and public-root inventory, no new password hash.
-- `runtime/panel.sqlite`: project/task proposals and append-only proposal events.
-- `runtime/sessions/`: server-side sessions used for CSRF protection.
-- `current.json`, `journal.json`, `deployment.lock`: activation/recovery state.
-- `signing/identity.json`: server-private Ed25519 identity, preserved across updates.
-- `receipts/`: signed GitHub request/result and update evidence.
+## Private storage
 
-Do not put private storage in Git, release archives or any web document root.
-The loader validates archive paths/types/duplicates/size, manifest file hashes,
-and PHP syntax before activating. It refuses modified local releases. A lock
-serializes updates; the journal restores the previous code pointer after failed
-or interrupted activation. The bounded local health probe verifies private
-configuration and database readability; SQLite waits at most five seconds on a
-busy database. Project records, sessions and access state are not rolled back.
+Only `loader.php` and its generated `.aicontrol-location.php` live publicly.
+The location file contains a private path/root inventory and public signing pin.
+Private storage contains releases, runtime configuration, SQLite records,
+sessions, signing identity, receipts and activation/recovery state. Keep it
+outside every public document root, with directories 0700 and sensitive files
+0600. Updates do not overwrite private state or silently recreate a missing key.
+A shared hosting Unix user is not filesystem isolation from other sites.
 
-Missing/damaged private state fails closed instead of being reset. Partial first
-setup may require operator inspection. Old releases are retained; monitor disk
-usage. The bootstrap itself is replaced only by an explicitly reviewed upload.
-Production security floors, migration windows, grants and independent approval
-are still future work. There is no background coding or deployment process yet.
-
-## Existing password-based testing installations
-
-Upload the new loader into the host-protected directory and install a current
-checked release. The updater changes the legacy runtime to host access without
-removing project records. A legacy hash/version may remain unused solely so the
-retained old code can still load during rollback; new installations create none.
-Old code can still ask its old password after a code rollback. Do not delete
-private state to remove a login prompt.
-
-## Local development and tests
-
-Source-checkout setup defaults to host access:
-
-```sh
-php bin/setup.php --private-dir=/private/path/panel --public-root=/path/to/checkout
-```
-
-For a password-free loopback demo, initialize with `--access-mode=local`, set
-`AICONTROL_PRIVATE_DIR` and `AICONTROL_LOCAL_DEV=1`, then run the development
-server. Local mode also requires the actual peer to be 127.0.0.1 or ::1; it is not
-an internet bypass. The standalone loader permits this same explicit loopback
-fixture. Leave `AICONTROL_LOCAL_DEV` unset on cPanel.
+## Validation
 
 ```sh
 php bin/build-manifest.php --check
 php tests/run.php
 php tests/loader.php
+php tests/signing.php
+php tests/agent.php
 python3 -B -m unittest -v tests/http_smoke.py tests/standalone_smoke.py tests/passwordless_smoke.py
 ```
 
-Legacy password-mode tests remain for backward compatibility. The host-auth HTTP
-fixture checks direct entry, no password forms, CSRF, forged-header rejection,
-identity revocation on existing cookies and installer protection. Its synthetic
-HTTPS/identity is test infrastructure, not a production authentication adapter.
-Actual cPanel authentication and identity propagation need live host validation.
+Tests include the public installer without REMOTE_USER, retained host/legacy
+compatibility, CSRF, signed selections, key loss, agent state/rate limits and
+private-release recovery. Agent lifecycle tests make no paid provider requests.

@@ -39,7 +39,7 @@ class PasswordlessSmokeTest(unittest.TestCase):
             identity = temporary / "identity"
             identity.write_text("")
             router = temporary / "router.php"
-            router.write_text("<?php\n$_SERVER['HTTPS']='on';\n$_SERVER['REMOTE_ADDR']='203.0.113.10';\n$_SERVER['REMOTE_USER']=trim(file_get_contents(getenv('TEST_IDENTITY_FILE')));\nif (isset($_GET['fixture_installer'])) { $_SERVER['SCRIPT_NAME']='/loader.php'; require getenv('TEST_SOURCE_ROOT').'/loader.php'; return; }\nrequire getenv('TEST_SOURCE_ROOT').'/bin/dev-router.php';\n")
+            router.write_text("<?php\n$_SERVER['HTTPS']='on';\n$_SERVER['REMOTE_ADDR']='203.0.113.10';\n$_SERVER['REMOTE_USER']=trim(file_get_contents(getenv('TEST_IDENTITY_FILE')));\nif (isset($_GET['fixture_public_installer'])) { $_SERVER['SCRIPT_NAME']='/loader.php'; require getenv('TEST_SOURCE_ROOT').'/loader.php'; return; }\nif (isset($_GET['fixture_installer'])) { define('AICONTROL_TESTING_MODE', false); $_SERVER['SCRIPT_NAME']='/loader.php'; require getenv('TEST_SOURCE_ROOT').'/loader.php'; return; }\nrequire getenv('TEST_SOURCE_ROOT').'/bin/dev-router.php';\n")
             with socket.socket() as listener:
                 listener.bind(("127.0.0.1", 0))
                 port = listener.getsockname()[1]
@@ -69,6 +69,11 @@ class PasswordlessSmokeTest(unittest.TestCase):
                 else:
                     self.fail("Host authentication fixture did not start")
                 self.assertEqual(status, 403)
+                public_status, _, public_page = request(query="?fixture_public_installer=1")
+                self.assertEqual(public_status, 200)
+                self.assertIn("Check GitHub", public_page)
+                self.assertNotIn("Enable hosting access protection", public_page)
+                self.assertNotIn('type="password"', public_page)
                 self.assertEqual(request(query="?fixture_installer=1")[0], 403)
                 self.assertEqual(request(headers={"Remote-User": "forged", "X-Remote-User": "forged", "Authorization": "Basic Zm9yZ2VkOnBhc3N3b3Jk"})[0], 403)
                 identity.write_text("hosting-user")

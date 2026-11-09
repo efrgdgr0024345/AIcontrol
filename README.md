@@ -1,10 +1,11 @@
 # AIcontrol
 
-A cPanel project control panel, starting with a host-protected planning release.
+A cPanel project control panel, starting with a public testing release.
 
 Available now: project briefs, task proposals with acceptance criteria,
-system availability, and durable activity history. No agent runs, provider calls,
-credential storage, approvals, publishing or deployments are enabled.
+system availability, and durable activity history. A bounded OpenAI task-response adapter is available once its API connection is
+configured directly on the server. Autonomous code execution, publishing and
+production deployment remain unconnected.
 
 Trusted-device approval is deferred at the owner's request. The current session
 can propose work only; it cannot authorize consequential operations.
@@ -16,9 +17,9 @@ can propose work only; it cannot authorize consequential operations.
 - [Upload only loader.php: standalone installation](docs/STANDALONE_LOADER.md)
 - [Server-generated signing keys and update receipts](docs/SIGNING.md)
 
-`loader.php` is a standalone host-protected installer. Upload that one file
-inside a directory protected by your hosting server, then check and install an
-exact GitHub commit. No app password or hash configuration is needed. The application and data are downloaded/created in private server
+`loader.php` opens directly in public testing mode. Upload that one file, then
+check and install an exact GitHub commit. No app password, Directory Privacy or
+hash configuration is needed. The application and data are downloaded/created in private server
 storage. See the standalone guide for prerequisites and the testing channel.
 
 ## Development

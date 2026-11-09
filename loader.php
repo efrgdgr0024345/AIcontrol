@@ -1,10 +1,10 @@
 <?php
 declare(strict_types=1);
 
-/** Standalone bootstrap. Protect this directory with server authentication.
- * No application password or hash configuration. REMOTE_USER must be supplied
- * by the web server; client identity headers are never trusted.
- */
+/** Standalone bootstrap. This development release opens directly in testing mode. */
+if (!defined('AICONTROL_TESTING_MODE')) {
+    define('AICONTROL_TESTING_MODE', true);
+}
 const AICONTROL_REPOSITORY = 'efrgdgr0024345/AIcontrol';
 const AICONTROL_RELEASE_REF = 'feature/control-panel-foundation';
 const AICONTROL_REQUIRED_CHECK = 'planning-panel';
@@ -575,13 +575,13 @@ try {
     }
     $hostUser = $_SERVER['REMOTE_USER'] ?? null;
     $hostProtected = is_string($hostUser) && trim($hostUser) !== '';
-    if (!$hostProtected && !$local) {
+    if (!AICONTROL_TESTING_MODE && !$hostProtected && !$local) {
         http_response_code(403);
         header('Content-Type: text/plain; charset=utf-8');
         echo 'Enable hosting access protection for this directory. The server must supply REMOTE_USER. No app password is required.';
         return;
     }
-    $accessMode = $hostProtected ? 'host' : 'local';
+    $accessMode = AICONTROL_TESTING_MODE ? 'testing' : ($hostProtected ? 'host' : 'local');
     if (file_exists($location)) {
         if (is_link($location) || (fileperms($location) & 0777) !== 0600) {
             throw new RuntimeException('Unsafe loader location file.');
@@ -646,6 +646,9 @@ try {
                 return;
             }
             putenv('AICONTROL_PRIVATE_DIR=' . $home . '/runtime');
+            if (AICONTROL_TESTING_MODE) {
+                putenv('AICONTROL_PUBLIC_TESTING=1');
+            }
             require $release . '/app.php';
             return;
         }
@@ -813,7 +816,9 @@ if (isset($_SESSION['csrf'])) {
     $csrf = '<input type="hidden" name="csrf" value="' . $escape($_SESSION['csrf']) . '">';
     $actionUrl = $escape($entry . '?installer=1');
     {
-        echo '<p>Access is controlled by your hosting server. No app password is needed.</p>';
+        echo AICONTROL_TESTING_MODE
+            ? '<p>Public testing mode. No password or Directory Privacy setup is required. Use test data.</p>'
+            : '<p>Access is controlled by your hosting server. No app password is needed.</p>';
         echo '<p>Repository: ' . AICONTROL_REPOSITORY . '. Required check: ' . AICONTROL_REQUIRED_CHECK . '.</p><form method="post" action="' . $actionUrl . '">' . $csrf . '<input type="hidden" name="action" value="check"><p><label>GitHub ref <input name="ref" value="' . AICONTROL_RELEASE_REF . '" required></label></p>';
         if ($home === null) {
             echo '<p><label>Private directory (outside every public document root) <input name="home" required size="60"></label></p><p><label>All additional public document roots, one per line <textarea name="roots" rows="4" cols="60"></textarea></label></p>';
