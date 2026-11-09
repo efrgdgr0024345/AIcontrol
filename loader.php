@@ -1,13 +1,206 @@
 <?php
 declare(strict_types=1);
 
-/** Standalone bootstrap. This development release opens directly in testing mode. */
-if (!defined('AICONTROL_TESTING_MODE')) {
-    define('AICONTROL_TESTING_MODE', true);
-}
+/** Standalone bootstrap. First visit sets a PIN; later visits sign in with it. */
 const AICONTROL_REPOSITORY = 'efrgdgr0024345/AIcontrol';
 const AICONTROL_RELEASE_REF = 'feature/control-panel-foundation';
 const AICONTROL_REQUIRED_CHECK = 'planning-panel';
+
+final class AIcontrolPin
+{
+    private const PREFIX = "<?php exit; ?>\n";
+
+    public static function read(string $marker): array
+    {
+        if (is_link($marker) || !is_file($marker) || (fileperms($marker) & 0777) !== 0600) {
+            throw new RuntimeException('PIN configuration is missing or unsafe. Server recovery is required.');
+        }
+        $raw = file_get_contents($marker);
+        if (!str_starts_with($raw, self::PREFIX)) {
+            throw new RuntimeException('PIN configuration is damaged. Server recovery is required.');
+        }
+        $pointer = json_decode(substr($raw, strlen(self::PREFIX)), true, 8, JSON_THROW_ON_ERROR);
+        $directory = $pointer['directory'] ?? '';
+        if (!is_string($directory) || realpath($directory) !== $directory || is_link($directory) || (fileperms($directory) & 0777) !== 0700) {
+            throw new RuntimeException('PIN storage is missing or unsafe. Server recovery is required.');
+        }
+        $state = AIcontrolInstaller::readJson($directory . '/auth.json');
+        if (($state['version'] ?? null) !== 1 || !is_string($state['hash'] ?? null) || (password_get_info($state['hash'])['algo'] ?? null) === null) {
+            throw new RuntimeException('PIN record is damaged. Server recovery is required.');
+        }
+        return ['directory' => $directory, 'state' => $state];
+    }
+
+    public static function relocate(string $marker, string $home): void
+    {
+        $record = self::read($marker);
+        $destination = $home . '/pin';
+        if ($record['directory'] === $destination) {
+            return;
+        }
+        if (file_exists($destination) || !mkdir($destination, 0700)) {
+            throw new RuntimeException('Existing PIN destination needs server inspection.');
+        }
+        AIcontrolInstaller::jsonFile($destination . '/auth.json', $record['state']);
+        AIcontrolInstaller::writeLocation($marker, ['directory' => $destination]);
+        // Old bootstrap copy is no longer authoritative; remove only known files.
+        unlink($record['directory'] . '/auth.json');
+        if (is_file($record['directory'] . '/attempts.lock')) {
+            unlink($record['directory'] . '/attempts.lock');
+        }
+        @rmdir($record['directory']);
+    }
+
+    public static function gate(string $entry, string $marker, bool $secure): ?array
+    {
+        session_name('aicontrol_pin');
+        ini_set('session.use_strict_mode', '1');
+        ini_set('session.use_only_cookies', '1');
+        ini_set('session.use_trans_sid', '0');
+        session_set_cookie_params(['lifetime' => 0, 'path' => $entry, 'secure' => $secure, 'httponly' => true, 'samesite' => 'Strict']);
+        if (!session_start()) {
+            throw new RuntimeException('PIN session storage is unavailable.');
+        }
+        $_SESSION['pin_csrf'] ??= bin2hex(random_bytes(32));
+        $record = file_exists($marker) || is_link($marker) ? self::read($marker) : null;
+        if ($record === null) {
+            $bootstrap = realpath(sys_get_temp_dir()) . '/aicontrol-pin-' . hash('sha256', __FILE__);
+            $location = dirname($marker) . '/.aicontrol-location.php';
+            $knownEnrollment = file_exists($bootstrap);
+            if (is_file($location)) {
+                $raw = file_get_contents($location);
+                if (!str_starts_with($raw, self::PREFIX)) {
+                    throw new RuntimeException('Installation configuration needs server recovery.');
+                }
+                $existing = json_decode(substr($raw, strlen(self::PREFIX)), true, 16, JSON_THROW_ON_ERROR);
+                $knownEnrollment = $knownEnrollment || ($existing['pin_required'] ?? false)
+                    || (is_string($existing['home'] ?? null) && is_dir($existing['home'] . '/pin'));
+            }
+            if ($knownEnrollment) {
+                throw new RuntimeException('PIN enrollment marker is missing. Server recovery is required.');
+            }
+        }
+        $error = '';
+        $saved = false;
+        if (isset($_POST['pin_action'])) {
+            $field = static fn(string $name): string => is_string($_POST[$name] ?? null) ? $_POST[$name] : '';
+            if ((int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 4096 || !hash_equals($_SESSION['pin_csrf'], $field('pin_csrf'))) {
+                http_response_code(403);
+                $error = 'Form expired. Reload and try again.';
+            } elseif ($field('pin_action') === 'setup' && $record === null) {
+                $pin = $field('pin');
+                if (!preg_match('/^[0-9]{6,12}$/D', $pin) || !hash_equals($pin, $field('pin_confirm'))) {
+                    http_response_code(422);
+                    $error = 'Choose a matching PIN of 6–12 digits.';
+                } else {
+                    $base = realpath(sys_get_temp_dir());
+                    foreach ([__DIR__, $_SERVER['DOCUMENT_ROOT'] ?? __DIR__] as $root) {
+                        $public = realpath($root);
+                        if ($base === false || $public === false || $public === '/' || $base === $public || str_starts_with($base . '/', $public . '/')) {
+                            throw new RuntimeException('Server temporary storage must be outside the website.');
+                        }
+                    }
+                    $directory = $base . '/aicontrol-pin-' . hash('sha256', __FILE__);
+                    $enrollment = @fopen($marker, 'x');
+                    if (!$enrollment) {
+                        throw new RuntimeException('A PIN has already been set. Reload to sign in.');
+                    }
+                    chmod($marker, 0600);
+                    try {
+                        if (file_exists($directory) || !mkdir($directory, 0700)) {
+                            throw new RuntimeException('Existing PIN bootstrap storage needs server inspection.');
+                        }
+                        AIcontrolInstaller::jsonFile($directory . '/auth.json', ['version' => 1, 'hash' => password_hash($pin, PASSWORD_DEFAULT), 'failures' => 0, 'window' => time()]);
+                        $pointer = self::PREFIX . json_encode(['directory' => $directory], JSON_THROW_ON_ERROR);
+                        if (fwrite($enrollment, $pointer) !== strlen($pointer) || !fflush($enrollment)) {
+                            throw new RuntimeException('PIN enrollment could not be retained.');
+                        }
+                    } finally {
+                        fclose($enrollment);
+                        unset($pin);
+                    }
+                    $_SESSION = ['pin_csrf' => bin2hex(random_bytes(32))];
+                    session_regenerate_id(true);
+                    $saved = true; // Do not authenticate enrollment: the next visit signs in.
+                    $record = self::read($marker);
+                }
+            } elseif ($field('pin_action') === 'login' && $record !== null) {
+                $lockPath = $record['directory'] . '/attempts.lock';
+                if (is_link($lockPath)) {
+                    throw new RuntimeException('Unsafe PIN attempt state.');
+                }
+                $lock = fopen($lockPath, 'c');
+                if (!$lock || !flock($lock, LOCK_EX)) {
+                    throw new RuntimeException('PIN attempt state is unavailable.');
+                }
+                try {
+                    $state = AIcontrolInstaller::readJson($record['directory'] . '/auth.json');
+                    if (time() - $state['window'] >= 600) {
+                        $state['window'] = time();
+                        $state['failures'] = 0;
+                    }
+                    if ($state['failures'] >= 5) {
+                        http_response_code(429);
+                        header('Retry-After: 600');
+                        $error = 'Too many incorrect PINs. Try again in ten minutes.';
+                    } elseif (preg_match('/^[0-9]{6,12}$/D', $field('pin')) && password_verify($field('pin'), $state['hash'])) {
+                        $state['failures'] = 0;
+                        session_regenerate_id(true);
+                        $_SESSION = ['pin_csrf' => bin2hex(random_bytes(32)), 'pin_identity' => hash('sha256', $state['hash']), 'pin_until' => time() + 1800];
+                        AIcontrolInstaller::jsonFile($record['directory'] . '/auth.json', $state);
+                        session_write_close();
+                        header('Location: ' . $entry, true, 303);
+                        return null;
+                    } else {
+                        $state['failures']++;
+                        http_response_code(401);
+                        $error = 'Incorrect PIN.';
+                    }
+                    AIcontrolInstaller::jsonFile($record['directory'] . '/auth.json', $state);
+                } finally {
+                    flock($lock, LOCK_UN);
+                    fclose($lock);
+                }
+            } elseif ($field('pin_action') === 'logout') {
+                $_SESSION = ['pin_csrf' => bin2hex(random_bytes(32))];
+                session_regenerate_id(true);
+            } else {
+                http_response_code(409);
+                $error = 'PIN setup is already complete. Sign in with the existing PIN.';
+            }
+        }
+        if (!$saved && $record !== null && ($_SESSION['pin_until'] ?? 0) > time()
+            && hash_equals(hash('sha256', $record['state']['hash']), $_SESSION['pin_identity'] ?? '')) {
+            if (($_GET['pin'] ?? '') === 'manage') {
+                $escape = static fn(string $text): string => htmlspecialchars($text, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+                header('Content-Type: text/html; charset=utf-8');
+                echo '<!doctype html><html lang="en"><meta charset="utf-8"><title>PIN session</title><main><h1>PIN session</h1><form method="post" action="' . $escape($entry) . '"><input type="hidden" name="pin_action" value="logout"><input type="hidden" name="pin_csrf" value="' . $escape($_SESSION['pin_csrf']) . '"><button>Lock panel</button></form><p><a href="' . $escape($entry) . '">Return to panel</a></p></main></html>';
+                session_write_close();
+                return null;
+            }
+            $result = ['identity' => $_SESSION['pin_identity'], 'csrf' => $_SESSION['pin_csrf']];
+            session_write_close();
+            session_id(''); // Installer/panel sessions must not reuse and overwrite the PIN session file.
+            return $result;
+        }
+        $escape = static fn(string $text): string => htmlspecialchars($text, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        header('Content-Type: text/html; charset=utf-8');
+        $setup = $record === null;
+        echo '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AIcontrol PIN</title><main><h1>' . ($saved ? 'PIN saved' : ($setup ? 'Set your PIN' : 'Enter your PIN')) . '</h1>';
+        if ($saved) {
+            echo '<p>Your PIN is set. On your next visit, sign in to set up the application.</p><p><a href="' . $escape($entry) . '">Continue to sign in</a></p>';
+        } else {
+            echo '<p>' . $escape($error) . '</p><form method="post" action="' . $escape($entry) . '"><input type="hidden" name="pin_action" value="' . ($setup ? 'setup' : 'login') . '"><input type="hidden" name="pin_csrf" value="' . $escape($_SESSION['pin_csrf']) . '"><label>PIN <input type="password" inputmode="numeric" name="pin" pattern="[0-9]{6,12}" minlength="6" maxlength="12" autocomplete="' . ($setup ? 'new-password' : 'current-password') . '" required></label>';
+            if ($setup) {
+                echo '<p><label>Confirm PIN <input type="password" inputmode="numeric" name="pin_confirm" pattern="[0-9]{6,12}" minlength="6" maxlength="12" autocomplete="new-password" required></label></p><p>Choose 6–12 digits.</p>';
+            }
+            echo '<button>' . ($setup ? 'Set PIN' : 'Sign in') . '</button></form>';
+        }
+        echo '</main></html>';
+        session_write_close();
+        return null;
+    }
+}
 
 /** Server-held installation identity. Never serialize or return its private key. */
 final class AIcontrolSigning
@@ -573,15 +766,13 @@ try {
     if (!$secure && !$local) {
         throw new RuntimeException('Open the installer over HTTPS.');
     }
-    $hostUser = $_SERVER['REMOTE_USER'] ?? null;
-    $hostProtected = is_string($hostUser) && trim($hostUser) !== '';
-    if (!AICONTROL_TESTING_MODE && !$hostProtected && !$local) {
-        http_response_code(403);
-        header('Content-Type: text/plain; charset=utf-8');
-        echo 'Enable hosting access protection for this directory. The server must supply REMOTE_USER. No app password is required.';
+    $pinMarker = __DIR__ . '/.aicontrol-pin.php';
+    $pinAccess = AIcontrolPin::gate($entry, $pinMarker, $secure);
+    if ($pinAccess === null) {
         return;
     }
-    $accessMode = AICONTROL_TESTING_MODE ? 'testing' : ($hostProtected ? 'host' : 'local');
+    $accessMode = 'pin';
+    putenv('AICONTROL_PIN_VERIFIED=1');
     if (file_exists($location)) {
         if (is_link($location) || (fileperms($location) & 0777) !== 0600) {
             throw new RuntimeException('Unsafe loader location file.');
@@ -605,6 +796,11 @@ try {
         $lock = fopen($lockPath, 'c');
         if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) {
             throw new RuntimeException('An installation is in progress. Try again shortly.');
+        }
+        AIcontrolPin::relocate($pinMarker, $home);
+        if (!($config['pin_required'] ?? false)) {
+            $config['pin_required'] = true;
+            AIcontrolInstaller::writeLocation($location, $config);
         }
         $signer = new AIcontrolSigning($home, $config['signing_public_key'] ?? null, !isset($config['signing_public_key']));
         AIcontrolInstaller::$signer = $signer;
@@ -646,9 +842,7 @@ try {
                 return;
             }
             putenv('AICONTROL_PRIVATE_DIR=' . $home . '/runtime');
-            if (AICONTROL_TESTING_MODE) {
-                putenv('AICONTROL_PUBLIC_TESTING=1');
-            }
+            putenv('AICONTROL_PIN_VERIFIED=1');
             require $release . '/app.php';
             return;
         }
@@ -662,7 +856,7 @@ try {
     ini_set('session.use_trans_sid', '0');
     session_set_cookie_params(['path' => $entry, 'secure' => $secure, 'httponly' => true, 'samesite' => 'Strict']);
     session_start();
-    $identity = hash('sha256', $accessMode . ':' . ($hostProtected ? $hostUser : 'loopback'));
+    $identity = $pinAccess['identity'];
     if (($_SESSION['host_identity'] ?? '') !== $identity) {
         session_regenerate_id(true);
         $_SESSION = ['host_identity' => $identity];
@@ -696,12 +890,13 @@ try {
                 }
                 mkdir($home . '/releases', 0700);
                 AIcontrolInstaller::jsonFile($home . '/bootstrap.json', ['access_mode' => $accessMode, 'roots' => $roots]);
+                AIcontrolPin::relocate($pinMarker, $home);
                 $signer = new AIcontrolSigning($home, null, true);
                 AIcontrolInstaller::$signer = $signer;
                 if (file_exists($location)) {
                     throw new RuntimeException('A loader location already exists.');
                 }
-                AIcontrolInstaller::writeLocation($location, ['home' => $home, 'roots' => $roots, 'signing_public_key' => $signer->identity()['public_key']]);
+                AIcontrolInstaller::writeLocation($location, ['home' => $home, 'roots' => $roots, 'signing_public_key' => $signer->identity()['public_key'], 'pin_required' => true]);
             }
             $correlationId = bin2hex(random_bytes(16));
             AIcontrolInstaller::$operation = ['correlation_id' => $correlationId, 'repository' => AICONTROL_REPOSITORY, 'source_commit' => null];
@@ -816,9 +1011,7 @@ if (isset($_SESSION['csrf'])) {
     $csrf = '<input type="hidden" name="csrf" value="' . $escape($_SESSION['csrf']) . '">';
     $actionUrl = $escape($entry . '?installer=1');
     {
-        echo AICONTROL_TESTING_MODE
-            ? '<p>Public testing mode. No password or Directory Privacy setup is required. Use test data.</p>'
-            : '<p>Access is controlled by your hosting server. No app password is needed.</p>';
+        echo '<p>Signed in with your PIN.</p>';
         echo '<p>Repository: ' . AICONTROL_REPOSITORY . '. Required check: ' . AICONTROL_REQUIRED_CHECK . '.</p><form method="post" action="' . $actionUrl . '">' . $csrf . '<input type="hidden" name="action" value="check"><p><label>GitHub ref <input name="ref" value="' . AICONTROL_RELEASE_REF . '" required></label></p>';
         if ($home === null) {
             echo '<p><label>Private directory (outside every public document root) <input name="home" required size="60"></label></p><p><label>All additional public document roots, one per line <textarea name="roots" rows="4" cols="60"></textarea></label></p>';
@@ -840,3 +1033,7 @@ if ($home !== null) {
     }
 }
 echo '<p>Installation needs no provider key. AI task responses need a provider connection on the server. Autonomous code execution and production deployment are not connected.</p></main></html>';
+
+if (isset($pinAccess)) {
+    echo '<form method="post" action="' . $escape($entry) . '"><input type="hidden" name="pin_action" value="logout"><input type="hidden" name="pin_csrf" value="' . $escape($pinAccess['csrf']) . '"><button>Lock panel</button></form>';
+}

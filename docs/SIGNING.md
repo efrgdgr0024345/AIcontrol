@@ -45,7 +45,7 @@ credentials, so only their digest and destination host are recorded.
 
 ## Verify with an independently pinned public key
 
-In the current public testing release:
+After PIN login:
 
 - `loader.php?identity=1` returns the algorithm, public key and SHA-256 key ID.
 - `loader.php?receipt=<32-hex-id>` returns a verified signed envelope.
@@ -90,7 +90,6 @@ server/account attacker holding the key. Local deletion/truncation cannot be
 excluded without an independently retained checkpoint. An HTTP response receipt
 does not turn an uncertain request into a proven completed operation.
 
-Host access protection is deferred in the current public testing release.
-There is no app password. Signatures identify the server signing key, not a
-trusted human requester. Independent Android approvals and arbitrary agent
+The testing release uses first-visit PIN setup for panel and installer access.
+Signatures identify the server signing key, not independent trusted-device approval. Independent Android approvals and arbitrary agent
 execution remain later work.

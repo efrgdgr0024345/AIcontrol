@@ -3,12 +3,12 @@
     "files": {
         "app.php": "4369f1660eb5d75baeb8ec849ac8ee50b5a2e3302dba900f97f6569b8572f76c",
         "assets/panel.css": "ab845ce6da25abb17caa1481829e6074ece6d825de5429ca9571c7fd48238955",
-        "src/AccessPolicy.php": "1d4e7bcea4cfc44bb8d5b478d8e77188a39372615733313b2700f6b4de3bf047",
+        "src/AccessPolicy.php": "44469fc613bb1704d857e06e6d70d484d44083b33753e99feaec93baed561cd8",
         "src/AgentRunner.php": "5f0383b05ce78e7548ae776d60d431e669981f6b575fee0051e04b35c15f11fb",
         "src/Bootstrap.php": "68184329531c1526cb67b6e8068d98e238b3571feaccd4ff6c81d1f012245409",
         "src/HostingRequirements.php": "7d062f0a54c10dc206ce731d31ad7b7efb9993900d3f87c24a7bc5cb110e655b",
-        "src/Panel.php": "457a18882d5a7d1e75e5c140973f8ab48c9c95ec1a4d2ea028e6f0ad208c9064",
+        "src/Panel.php": "a82bcb2fba65b4a986c013490981449b3f9251e30f5cba72f7003d617672cf3a",
         "src/PanelStore.php": "3110e75250bb351d68f87d1accf86d0895aa593f4d446f4dce60e67c96f1a454",
-        "src/PrivateStorage.php": "437a3c09942cc86238b070f08c97e9c5fbb65c2c2ffeacdf705e9090b224df8e"
+        "src/PrivateStorage.php": "2b8dc6200eb49b248dfe2908de331a583d9ef0b3c324c8cfd2fc8159734c7836"
     }
 }

@@ -1,30 +1,45 @@
-# Testing installation — upload one file and open it
-
-The current testing release has **no password, Directory Privacy or REMOTE_USER
-requirement**. Security-device enrollment is deferred. Anyone who can reach this
-URL can use the testing panel and installer; use test data.
+# Single-file installation — PIN setup on first visit
 
 1. Upload the latest `loader.php` into a dedicated website folder.
-2. Open its HTTPS URL. If Directory Privacy was enabled earlier, disable it for
-   this test folder to remove the hosting password prompt.
-3. Enter a new empty private directory outside every web document root. Its
-   parent must already exist and be writable. List any addon-domain public roots.
-4. Click **Check GitHub**, review the exact commit, then **Install this checked
+2. Open its HTTPS URL. The **first visit** shows **Set your PIN**. Enter and
+   confirm 6–12 digits, then click **Set PIN**. The server stores only a salted
+   password hash. No GitHub download or application setup happens at this stage.
+3. Follow **Continue to sign in**, or open the loader again. This **next visit**
+   asks for the same PIN, then opens application setup.
+4. Choose a new empty private directory outside every web document root; its
+   parent must exist. List any additional addon-domain document roots.
+5. Click **Check GitHub**, review the exact commit and **Install this checked
    commit** within ten minutes. The testing branch is
    `feature/control-panel-foundation`.
-5. Open the panel, create a project, add a task and its acceptance criteria.
+6. Open the panel. Later visits use the same PIN for both panel and updater.
+   A PIN session lasts thirty minutes. Use **PIN session / Lock panel** to lock it.
 
-No password hash, copied signing key or extra application-file upload is needed.
+No Directory Privacy, hosting login, REMOTE_USER, manually generated hash or key
+copy is needed. If you previously enabled Directory Privacy for this test folder,
+disable it to remove the separate browser hosting-login prompt. Existing private
+keys and project data are preserved when replacing the loader file.
+
 PHP 8.2–8.5 with curl, zip, tokenizer, mbstring, PDO SQLite, sessions and sodium
-is required. GitHub downloads need verified outbound HTTPS to `api.github.com`
-and `codeload.github.com`. The required GitHub Actions check must pass. These
-requirements still apply even though the access gate is removed.
+is required. Normal installation uses verified outbound HTTPS, not shell commands
+or Composer. The selected commit must have a passing required GitHub Actions check.
 
-The loader generates its own signing identity in private server storage before
-checking GitHub. It signs requests, selections and update results, preserves
-keys/data on updates, and recovers interrupted code activation. Public testing
-signatures identify the server key; they do not identify an authenticated owner.
-See [signing details](SIGNING.md). There is no raw private-key download endpoint.
+## PIN storage and recovery
+
+Before application storage is selected, the hash is in a private 0700 bootstrap
+directory outside the website, with its file mode 0600. A small generated
+`.aicontrol-pin.php` file contains only its location and exits without displaying
+it. Once private application storage is selected, the PIN state moves into
+`private-home/pin/auth.json`. The marker remains; do not delete it during updates.
+
+Only the first successful setup can enroll a PIN. Setup does not sign the user
+in automatically: the next visit performs login. The login rotates its session,
+uses CSRF protection and blocks further attempts for up to ten minutes after five
+incorrect PINs. Throttling is stored on the server and survives new browser cookies.
+
+A missing, damaged or unsafe PIN record is a recovery error, not permission to
+set another PIN. There is no public PIN-reset endpoint. Preserve the private
+state and recover through the server operator. A PIN is a testing-stage login;
+it does not implement independent trusted-device approval.
 
 ## First AI task connection
 
@@ -54,20 +69,13 @@ Repository checkout, autonomous code execution, isolated tests, PR publishing
 and production deployment are still unconnected. This is a first bounded task
 response, not a completed autonomous coding-to-PR workflow.
 
-## Later access protection
-
-`AICONTROL_TESTING_MODE` near the top of the loader defaults to true in this test
-release. Setting it false restores server-authenticated `REMOTE_USER` access
-(or explicit loopback development). Changing the PHP constant requires a reviewed
-loader upload. Android/phone approval and production authorization remain later
-work, not prerequisites for this testing panel.
-
 ## Private storage
 
 Only `loader.php` and its generated `.aicontrol-location.php` live publicly.
 The location file contains a private path/root inventory and public signing pin.
+The separate PIN marker stores a private PIN-directory pointer, never the PIN.
 Private storage contains releases, runtime configuration, SQLite records,
-sessions, signing identity, receipts and activation/recovery state. Keep it
+sessions, PIN state, signing identity, receipts and activation/recovery state. Keep it
 outside every public document root, with directories 0700 and sensitive files
 0600. Updates do not overwrite private state or silently recreate a missing key.
 A shared hosting Unix user is not filesystem isolation from other sites.
@@ -80,7 +88,7 @@ php tests/run.php
 php tests/loader.php
 php tests/signing.php
 php tests/agent.php
-python3 -B -m unittest -v tests/http_smoke.py tests/standalone_smoke.py tests/passwordless_smoke.py
+python3 -B -m unittest -v tests/http_smoke.py tests/standalone_smoke.py tests/passwordless_smoke.py tests/pin_smoke.py
 ```
 
 Tests include the public installer without REMOTE_USER, retained host/legacy

@@ -1,3 +1,10 @@
+# Current loader flow
+
+The latest loader asks you to set a PIN on the first visit. The next visit signs
+in with that PIN and opens setup. No hosting access protection or REMOTE_USER is
+required. See [the current standalone guide](STANDALONE_LOADER.md). This supersedes
+the earlier public/host-protected testing notes below.
+
 # Current testing workflow
 
 Use [the current standalone guide](STANDALONE_LOADER.md). The latest loader opens

@@ -4,4 +4,5 @@
 /var/
 *.log
 /.aicontrol-location.php
+/.aicontrol-pin.php
 __pycache__/

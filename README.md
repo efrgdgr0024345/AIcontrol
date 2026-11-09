@@ -1,15 +1,14 @@
 # AIcontrol
 
-A cPanel project control panel, starting with a public testing release.
+A cPanel project control panel, starting with a PIN-protected testing release.
 
 Available now: project briefs, task proposals with acceptance criteria,
 system availability, and durable activity history. A bounded OpenAI task-response adapter is available once its API connection is
 configured directly on the server. Autonomous code execution, publishing and
 production deployment remain unconnected.
 
-Trusted-device approval and access protection are deferred at the owner's
-request. Public testing permits proposals, checked AIcontrol installation and
-bounded AI responses when configured. Use test data.
+Trusted-device approval is deferred. The loader uses a PIN set on its first
+visit to protect the panel and updater. Use test data.
 
 - [Specification](docs/TEAM_HANDOVER.md)
 - [Baseline review and architecture](docs/BASELINE_REVIEW.md)
@@ -18,9 +17,9 @@ bounded AI responses when configured. Use test data.
 - [Upload only loader.php: standalone installation](docs/STANDALONE_LOADER.md)
 - [Server-generated signing keys and update receipts](docs/SIGNING.md)
 
-`loader.php` opens directly in public testing mode. Upload that one file, then
-check and install an exact GitHub commit. No app password, Directory Privacy or
-hash configuration is needed. The application and data are downloaded/created in private server
+`loader.php` asks you to set and confirm a 6–12 digit PIN on the first visit.
+On the next visit, sign in with that PIN and install a checked GitHub commit.
+There is no Directory Privacy, REMOTE_USER or manual hash setup. The application and data are downloaded/created in private server
 storage. See the standalone guide for prerequisites and the testing channel.
 
 ## Development

@@ -31,7 +31,9 @@ final class Panel
     {
         umask(0077);
         $config = PrivateStorage::config($directory);
-        if (getenv('AICONTROL_PUBLIC_TESTING') === '1') {
+        if (getenv('AICONTROL_PIN_VERIFIED') === '1') {
+            $config['access_mode'] = 'pin';
+        } elseif (getenv('AICONTROL_PUBLIC_TESTING') === '1') {
             $config['access_mode'] = 'testing';
         }
         $passwordMode = $config['access_mode'] === 'password';
@@ -184,7 +186,7 @@ final class Panel
             if ($passwordMode) {
                 echo '<form method="post" action="/loader.php">' . $csrf . '<input type="hidden" name="action" value="logout"><button class="secondary">Sign out</button></form>';
             } else {
-                echo $config['access_mode'] === 'testing' ? '<p>Public testing mode</p>' : '<p>Access managed by hosting</p>';
+                echo $config['access_mode'] === 'pin' ? '<p><a href="/loader.php?pin=manage">PIN session / Lock panel</a></p>' : ($config['access_mode'] === 'testing' ? '<p>Public testing mode</p>' : '<p>Access managed by hosting</p>');
             }
         }
         echo '</aside><main><div class="notice">Testing workspace · Projects, tasks and bounded AI responses. Code execution and deployment are not connected.</div>';

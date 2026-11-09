@@ -7,6 +7,9 @@ final class AccessPolicy
 {
     public static function permits(string $mode, array $server, bool $localDevelopment): bool
     {
+        if ($mode === 'pin') {
+            return getenv('AICONTROL_PIN_VERIFIED') === '1';
+        }
         if ($mode === 'testing') {
             return true;
         }
