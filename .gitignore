@@ -1,0 +1,14 @@
+# Runtime state belongs outside the checkout and every web root.
+*.key
+*.pem
+*.sqlite*
+.env*
+private/
+runtime/
+backups/
+audit.jsonl
+vault.json
+config.json
+requests.json
+__pycache__/
+*.pyc
