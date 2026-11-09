@@ -168,7 +168,7 @@ final class Investigation
         $string = ['type'=>'string'];
         if ($phase === 'dream') {
             $base['instructions'] .= ' Dream phase: unchecked prior knowledge only, no tools. Return up to four concise claims with uncertainty, confidence (low/medium/high) and an angle to verify. These are hypotheses, not established findings.';
-            $claim = self::objectSchema(['claim'=>$string,'uncertainty'=>$string,'confidence'=>$string,'verify'=>$string]);
+            $claim = self::objectSchema(['claim'=>$string,'uncertainty'=>$string,'confidence'=>['type'=>'string','enum'=>['low','medium','high']],'verify'=>$string]);
             $base['text'] = self::jsonText(self::objectSchema(['claims'=>['type'=>'array','items'=>$claim,'minItems'=>1,'maxItems'=>4]]));
         } elseif ($phase === 'plan') {
             $base['instructions'] .= ' Plan phase: derive one or two concrete verification searches from these unchecked claims. Return steps; each claim_id must reference a supplied dream node ID. No tools.';
@@ -254,7 +254,8 @@ final class Investigation
             if (!is_array($data['claims']??null) || count($data['claims'])<1 || count($data['claims'])>4) { throw new RuntimeException('Invalid dream.'); }
             foreach($data['claims'] as $c) {
                 foreach(['claim','uncertainty','confidence','verify'] as $key) if(!is_string($c[$key]??null)||strlen($c[$key])>3000)throw new RuntimeException('Invalid claim.');
-                $this->appendNode($id,$parent,'dream_claim','complete',$c['claim'],"Unchecked prior. Confidence: ".$c['confidence']."\nUncertainty: ".$c['uncertainty']."\nVerify: ".$c['verify']);
+                if (trim($c['claim'])==='' || trim($c['verify'])==='' || !in_array($c['confidence'],['low','medium','high'],true)) { throw new RuntimeException('Invalid claim.'); }
+                $this->appendNode($id,$parent,'dream_claim','complete',$c['claim'],"Unchecked prior. Claim: ".$c['claim']."\nConfidence: ".$c['confidence']."\nUncertainty: ".$c['uncertainty']."\nVerify: ".$c['verify']);
             }
             $next='plan';
         } elseif ($phase==='plan') {
