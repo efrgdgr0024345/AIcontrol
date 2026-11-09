@@ -153,6 +153,153 @@ document.addEventListener('submit', event => {
   form.querySelector('[data-research-status]').textContent = 'Researching… This may take up to a minute.';
 });
 
+// Investigation requests advance one persisted phase at a time. Stop/poll use
+// separate requests; the server releases its session lock before provider I/O.
+(() => {
+  'use strict';
+  const root = document.querySelector('[data-investigation]');
+  const csrf = () => document.querySelector('input[name=csrf]')?.value || '';
+  let stepping = false, halted = false, polling = false, lastSnapshot = '';
+  const element = (tag, text, className) => {
+    const node = document.createElement(tag);
+    if (text !== undefined) node.textContent = text;
+    if (className) node.className = className;
+    return node;
+  };
+  function error(message) {
+    const node = root?.querySelector('[data-research-error]');
+    if (node) node.textContent = message;
+  }
+  function safeUrl(value) {
+    try { const url = new URL(value); return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password; } catch (_) { return false; }
+  }
+  function render(snapshot) {
+    if (!root || !snapshot.run) return;
+    const serial = JSON.stringify(snapshot);
+    if (serial === lastSnapshot) return;
+    lastSnapshot = serial;
+    const run = snapshot.run;
+    const active = ['pending', 'running'].includes(run.status);
+    const pending = snapshot.requests.some(request => request.status === 'pending');
+    root.dataset.status = run.status;
+    root.dataset.busy = run.busy_since ? '1' : '0';
+    root.querySelector('[data-research-summary]').textContent = `${run.status} · ${run.phase} · ${snapshot.nodes.length} nodes · ${run.token_input} input / ${run.token_output} output tokens confirmed${run.usage_unknown ? ' · some usage unknown' : ''}`;
+    root.querySelector('[data-research-reason]').textContent = run.stop_reason;
+    root.querySelector('[data-stop-control]').hidden = !(active || pending);
+    root.querySelector('[data-step-control]').hidden = !active || !!run.busy_since;
+    const tree = root.querySelector('[data-research-tree]');
+    const existing = new Map([...tree.querySelectorAll('[data-node-id]')].map(node => [Number(node.dataset.nodeId), node]));
+    const parents = new Map();
+    for (const item of snapshot.nodes.filter(item => item.type !== 'learn')) {
+      let node = existing.get(Number(item.id));
+      if (!node) {
+        node = element('details', undefined, 'investigation-node'); node.open = true; node.dataset.nodeId = item.id;
+        const summary = element('summary'); summary.append(element('span'), document.createTextNode(' '), element('small'));
+        node.append(summary, element('div', '', 'node-content'), element('div', undefined, 'node-children'));
+      }
+      node.dataset.status = item.status;
+      node.querySelector('summary > span').textContent = item.title;
+      node.querySelector('summary > small').textContent = `${item.type} · ${item.status}`;
+      node.querySelector('.node-content').textContent = item.content;
+      parents.set(Number(item.id), node);
+    }
+    // Moving existing nodes preserves their expanded state and keyboard focus.
+    for (const item of snapshot.nodes.filter(item => item.type !== 'learn')) {
+      const node = parents.get(Number(item.id));
+      const parent = item.parent_id ? parents.get(Number(item.parent_id))?.querySelector('.node-children') : tree;
+      if (parent && node.parentNode !== parent) parent.append(node);
+    }
+    const cards = root.querySelector('[data-research-sources]');
+    const saved = new Set([...cards.querySelectorAll('[data-source-id]')].map(card => Number(card.dataset.sourceId)));
+    for (const source of snapshot.sources) {
+      if (saved.has(Number(source.id)) || !safeUrl(source.url)) continue;
+      const card = element('article', undefined, 'research-source'); card.dataset.sourceId = source.id;
+      const link = element('a', source.url); link.href = source.url; link.target = '_blank'; link.rel = 'noopener noreferrer';
+      const captured = new Intl.DateTimeFormat('en-AU', {timeZone: 'Australia/Perth', dateStyle: 'medium', timeStyle: 'short'}).format(new Date(source.retrieved_at * 1000));
+      card.append(element('h4', `Source #${source.id} · ${source.title}`), link, element('p', source.extract), element('small', `${source.domain} · Citation captured ${captured} AWST`)); cards.append(card);
+    }
+    const learning = root.querySelector('[data-learn-results]');
+    for (const item of snapshot.nodes.filter(item => item.type === 'learn')) {
+      let article = learning.querySelector(`[data-learning-id="${Number(item.id)}"]`);
+      if (!article) { article = element('article', undefined, 'research-message'); article.dataset.learningId = item.id; article.append(element('h4'), element('p')); learning.append(article); }
+      article.querySelector('h4').textContent = `${item.title} · ${item.status}`;
+      article.querySelector('p').textContent = item.content || 'Waiting for the explanation outcome.';
+    }
+    const hasSources = snapshot.sources.length > 0;
+    root.querySelector('[data-learn-link]').hidden = !hasSources;
+    root.querySelector('[data-learn-panel]').hidden = !hasSources || root.dataset.selectedTab !== 'learn';
+    root.querySelector('[data-source-empty]').hidden = hasSources;
+    root.querySelector('[data-learn-submit]').disabled = active || pending;
+    document.querySelector('[data-research-action=research_start] button').disabled = active || pending;
+    if (!active && !pending) { stepping = false; }
+  }
+  async function send(form) {
+    const destination = new URL(form.getAttribute('action') || location.href, location.href);
+    destination.searchParams.set('research_api', '1');
+    const response = await fetch(destination, {method: 'POST', body: new FormData(form), credentials: 'same-origin', headers: {'Accept': 'application/json'}});
+    if (!(response.headers.get('content-type') || '').includes('application/json')) throw new Error('Research session expired. Sign in again and inspect the saved run before continuing.');
+    const data = await response.json();
+    if (!response.ok || data.error) throw new Error(data.error || 'Research request failed. Inspect the saved state before continuing.');
+    return data;
+  }
+  async function advance() {
+    if (!root || stepping || halted || root.dataset.status !== 'running' || root.dataset.busy === '1') return;
+    const form = root.querySelector('[data-research-action=research_step]');
+    stepping = true;
+    try { render(await send(form)); }
+    catch (failure) { halted = true; error(failure.message); }
+    finally { stepping = false; }
+    if (!halted && root.dataset.status === 'running') setTimeout(advance, 200);
+  }
+  async function poll() {
+    if (!root || polling) return;
+    const pending = !root.querySelector('[data-stop-control]').hidden;
+    if (!['pending', 'running'].includes(root.dataset.status) && !pending) return;
+    polling = true;
+    try {
+      const url = new URL(root.dataset.entry, location.href); url.searchParams.set('research_api', 'status'); url.searchParams.set('run_id', root.dataset.runId);
+      const response = await fetch(url, {credentials: 'same-origin', headers: {'X-CSRF-Token': csrf(), 'Accept': 'application/json'}});
+      if (!response.ok || !(response.headers.get('content-type') || '').includes('application/json')) throw new Error('Progress could not be verified. Sign in again if needed; no phase will be retried automatically.');
+      const data = await response.json(); if (data.error) throw new Error(data.error);
+      render(data);
+      if (!halted) advance();
+    } catch (failure) { halted = true; error(failure.message); }
+    finally { polling = false; }
+  }
+  document.addEventListener('submit', async event => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement) || !form.dataset.researchAction || form.dataset.researchAction === 'research_export') return;
+    event.preventDefault();
+    const action = form.dataset.researchAction;
+    const button = form.querySelector('button'); button.disabled = true;
+    if (action === 'research_stop') halted = true;
+    if (action === 'research_step') { halted = false; advance(); button.disabled = false; return; }
+    if (action === 'research_learn') { error('Explaining collected evidence… No web search.'); root.querySelector('[data-stop-control]').hidden = false; }
+    try {
+      const snapshot = await send(form);
+      if (action === 'research_start') {
+        const url = new URL(form.getAttribute('action'), location.href); url.searchParams.set('project', snapshot.run.project_id); url.searchParams.set('run', snapshot.run.id); location.assign(url); return;
+      }
+      render(snapshot); error('');
+    } catch (failure) { error(failure.message); if (!root) alert(failure.message); }
+    finally { button.disabled = false; }
+  });
+  if (root) {
+    root.dataset.selectedTab = 'investigate';
+    root.querySelector('[data-learn-panel]').hidden = true;
+    root.querySelectorAll('.research-subtabs a').forEach(link => link.addEventListener('click', event => {
+      event.preventDefault();
+      const learn = link.hasAttribute('data-learn-link'); root.dataset.selectedTab = learn ? 'learn' : 'investigate';
+      root.querySelector('section[id^=investigate-]').hidden = learn;
+      root.querySelector('[data-learn-panel]').hidden = !learn;
+      root.querySelectorAll('.research-subtabs a').forEach(item => item.removeAttribute('aria-current'));
+      link.setAttribute('aria-current', 'page');
+    }));
+    setInterval(poll, 1500);
+    poll();
+  }
+})();
+
 AICONTROL_UI_JS;
     }
     public static function css(): string
@@ -475,6 +622,24 @@ details[open] summary { margin-bottom: 14px; }
 .research-message h3 { font-size: 1rem; }
 .research-message p { white-space: pre-wrap; overflow-wrap: anywhere; }
 .alert a { text-decoration: underline; }
+
+.research-project-list, .research-controls, .research-subtabs { display: flex; flex-wrap: wrap; gap: .75rem; }
+.investigation-heading { display: flex; justify-content: space-between; align-items: start; gap: 1rem; flex-wrap: wrap; }
+.research-subtabs { margin: 1.5rem 0; border-bottom: 1px solid var(--ac-border); padding-bottom: 1rem; }
+.research-subtabs a { padding: .5rem 1rem; background: #f0edf9; border-radius: .5rem; font-weight: 600; }
+.investigation-node { margin: .75rem 0; padding: .8rem; border: 1px solid #d5d9e4; border-left: 4px solid #7160c5; border-radius: .5rem; }
+.investigation-node summary { cursor: pointer; overflow-wrap: anywhere; }
+.investigation-node small { color: #596375; }
+.node-content { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: .6rem; }
+.node-children { padding-left: .6rem; }
+.investigation-node[data-status=dead_end], .investigation-node[data-status=interrupted], .investigation-node[data-status=uncertain] { border-left-color: #a56516; background: #fffaf1; }
+.research-source { border: 1px solid var(--ac-border); border-radius: .75rem; padding: 1rem; margin: .75rem 0; overflow-wrap: anywhere; }
+.research-source h4 { font-size: 1rem; }
+.research-source a { text-decoration: underline; }
+.research-source p { margin-top: .75rem; white-space: pre-wrap; }
+.research-error { color: #a12b2b; font-weight: 600; }
+@media (max-width: 600px) { .node-children { padding-left: 0; } .investigation-node { padding: .6rem; } }
+.investigation-node > summary { color: #403557; font-size: .9rem; font-weight: 600; }
 
 AICONTROL_UI_CSS;
     }

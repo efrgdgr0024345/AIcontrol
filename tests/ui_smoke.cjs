@@ -62,7 +62,8 @@ const {spawn,spawnSync}=require('child_process');
   await page.getByLabel('Research brief',{exact:true}).fill('Explore a test idea without a provider call.');
   await page.getByRole('button',{name:'Create research project',exact:true}).click();
   await page.getByRole('heading',{name:'Research fixture project',exact:true}).waitFor();
-  if(!await page.getByRole('button',{name:'Send research message',exact:true}).isDisabled())throw new Error('Disconnected research enabled');
+  await page.getByRole('button',{name:'Start research',exact:true}).waitFor();
+  if(!await page.getByRole('button',{name:'Start research',exact:true}).isDisabled())throw new Error('Disconnected research enabled');
   for(const [name,file] of [['Overview','overview'],['Projects & tasks','projects'],['Agent runs','runs'],['Systems','systems'],['Activity','activity'],['Admin','admin'],['Research projects','research']]){
    await page.getByRole('link',{name,exact:true}).click();
    await page.screenshot({path:path.join(artifacts,`ui-${file}-desktop.png`),fullPage:true});await audit(name);
@@ -102,6 +103,54 @@ const {spawn,spawnSync}=require('child_process');
    }
    await page.screenshot({path:path.join(artifacts,`ui-${file}-mobile.png`),fullPage:true});
   }
+  await page.setViewportSize({width:1440,height:1000});
+  const researchSeed=spawnSync(php,['-r',`require 'src/Vault.php'; (new \\AIcontrol\\Vault(getenv('TEST_RESEARCH_HOME')))->change('openai_api_key','key','synthetic-browser-fixture',false);`],{env:{...process.env,TEST_RESEARCH_HOME:privateDir},encoding:'utf8'});
+  if(researchSeed.status!==0)throw new Error(researchSeed.stderr||researchSeed.stdout);
+  let investigation={run:{id:1,project_id:1,status:'running',phase:'dream',busy_since:null,token_input:0,token_output:0,usage_unknown:0,stop_reason:''},nodes:[],sources:[],requests:[]};
+  let stepCalls=0,stopped=false,pollCalls=0;
+  const clone=()=>JSON.parse(JSON.stringify(investigation));
+  await page.route('**/loader.php?research_api=status*',route=>{pollCalls++;return route.fulfill({contentType:'application/json',body:JSON.stringify(clone())});});
+  await page.route('**/loader.php?view=research&research_api=1',async route=>{
+    const body=route.request().postData()||'';
+    if(body.includes('research_start'))return route.continue();
+    if(body.includes('research_stop')){stopped=true;investigation.run.status='interrupted';investigation.run.busy_since=null;investigation.run.usage_unknown=1;investigation.run.stop_reason='Stopped fixture; provider outcome unknown.';investigation.requests.forEach(request=>request.status='uncertain');investigation.nodes.forEach(node=>{if(node.status==='running')node.status='interrupted';});}
+    else if(body.includes('research_step')){
+      stepCalls++;investigation.run.busy_since=Math.floor(Date.now()/1000);investigation.requests=[{id:1,kind:'dream',status:'pending'}];
+      investigation.nodes=[{id:1,parent_id:null,type:'phase',status:'running',title:'Dream',content:'Model’s prior thoughts — not yet checked.'}];
+      setTimeout(()=>{if(!stopped)investigation.nodes.push({id:2,parent_id:1,type:'dream_claim',status:'complete',title:'Fixture unchecked claim',content:'Uncertainty: needs evidence.'});},600);
+      await new Promise(resolve=>setTimeout(resolve,4000));
+    } else if(body.includes('research_learn')){
+      investigation.nodes.push({id:8,parent_id:null,type:'learn',status:'complete',title:'Learn: compare',content:'Fixture explanation uses collected evidence only.'});
+    } else return route.abort();
+    await route.fulfill({contentType:'application/json',body:JSON.stringify(clone())});
+  });
+  await page.goto(appUrl+'/loader.php?view=research');
+  await page.getByRole('button',{name:'Start research',exact:true}).click();
+  await page.getByText('Fixture unchecked claim',{exact:true}).waitFor();
+  if(pollCalls<2)throw new Error('Tree did not grow through status polling');
+  await audit('Investigation growing');
+  await page.getByRole('button',{name:'Stop research',exact:true}).click();
+  await page.locator('[data-investigation][data-status=interrupted]').waitFor();
+  await new Promise(resolve=>setTimeout(resolve,4200));
+  if(stepCalls!==1||!stopped)throw new Error('Stop did not prevent phase continuation');
+  await audit('Investigation interrupted');
+  investigation.run={...investigation.run,status:'complete',phase:'reconciliation',token_input:55,token_output:120,usage_unknown:0,busy_since:null};
+  investigation.nodes.push({id:3,parent_id:2,type:'plan_step',status:'dead_end',title:'Verify fixture claim',content:'No useful second source.'},{id:4,parent_id:3,type:'dead_end',status:'dead_end',title:'No usable cited source',content:'The branch remains open.'});
+  investigation.sources=[{id:1,node_id:5,url:'https://example.com/research-fixture',title:'Collected source fixture',extract:'Provider summary, not a quotation.',domain:'example.com',retrieved_at:Math.floor(Date.now()/1000)}];
+  investigation.requests=[{id:1,status:'complete',kind:'dream'}];
+  await page.reload();await page.getByRole('link',{name:'Learn',exact:true}).waitFor();
+  await page.getByRole('link',{name:'https://example.com/research-fixture',exact:true}).waitFor();
+  await page.getByText('No usable cited source',{exact:true}).waitFor();
+  await audit('Investigation evidence');await page.screenshot({path:path.join(artifacts,'ui-investigate-desktop.png'),fullPage:true});
+  await page.getByRole('link',{name:'Learn',exact:true}).click();
+  await page.getByLabel('Learning action',{exact:true}).selectOption('compare');
+  await page.getByRole('button',{name:'Learn from collected evidence',exact:true}).click();
+  await page.getByRole('region',{name:'Saved learning responses',exact:true}).getByText('Fixture explanation uses collected evidence only.',{exact:true}).waitFor();
+  await audit('Research Learn result');
+  await page.getByRole('link',{name:'Investigate',exact:true}).click();
+  await page.setViewportSize({width:390,height:844});
+  if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw new Error('Investigation tree overflows mobile viewport');
+  await page.screenshot({path:path.join(artifacts,'ui-investigate-mobile.png'),fullPage:true});
   fs.writeFileSync(path.join(artifacts,'ui-accessibility.json'),JSON.stringify({tool:'axe-core',version:require('axe-core/package.json').version,views:auditedViews,violations:accessibility},null,2));if(accessibility.length)throw new Error('Accessibility checks failed; inspect test-artifacts/ui-accessibility.json.');
   if(errors.length)throw new Error(errors.join('\n'));
   console.log('PASS: PIN/setup, all workspace views, project/task forms, search, agent-result fixture, mobile overflow and browser errors.');

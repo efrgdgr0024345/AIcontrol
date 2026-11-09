@@ -103,6 +103,14 @@ final class Panel
             $_SESSION['expires'] = time() + 1800;
         }
         $error = '';
+        if (($_GET['research_api'] ?? '') === 'status' && $method === 'GET') {
+            if (!($_SESSION['authenticated'] ?? false) || !hash_equals($_SESSION['csrf'], $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '')) {
+                http_response_code(403); header('Content-Type: application/json'); echo '{"error":"Research session verification failed."}'; return;
+            }
+            session_write_close();
+            ResearchApi::status($directory, (int)($_GET['run_id'] ?? 0));
+            return;
+        }
         if ($method === 'POST') {
             if ((int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 16384) {
                 http_response_code(413);
@@ -138,6 +146,11 @@ final class Panel
                 session_destroy();
                 setcookie(session_name(), '', ['expires' => time() - 3600, 'path' => '/', 'secure' => $secure, 'httponly' => true, 'samesite' => 'Strict']);
                 header('Location: ' . self::entry(), true, 303);
+                return;
+            } elseif (in_array($action, ['research_start','research_step','research_stop','research_learn','research_export'], true)) {
+                // Release this session before provider I/O so polling and Stop can proceed.
+                session_write_close();
+                ResearchApi::action($directory, $action, self::entry(), ($_GET['research_api'] ?? '') === '1');
                 return;
             } else {
                 try {
@@ -200,7 +213,7 @@ final class Panel
         $authenticated = (bool) ($_SESSION['authenticated'] ?? false);
         $data = $authenticated ? $store->snapshot() : ['projects' => [], 'tasks' => [], 'events' => [], 'runs' => []];
         if ($authenticated && $view === 'admin') { $data['vault'] = (new Vault($directory))->entries(); }
-        if ($authenticated && $view === 'research') { $data['research'] = (new Research($directory))->snapshot(); }
+        if ($authenticated && $view === 'research') { $data['research'] = (new Research($directory))->snapshot(); $data['research']['workspace'] = (new Investigation($directory))->workspace((int)($_GET['project'] ?? 0), (int)($_GET['run'] ?? 0)); }
         $data['asset_nonce'] = $assetNonce;
         PanelView::render($data, $view, $csrf, $error, $passwordMode, $config, $authenticated);
     }

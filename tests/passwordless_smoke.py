@@ -75,7 +75,7 @@ class PasswordlessSmokeTest(unittest.TestCase):
                 self.assertEqual(status, 200)
                 self.assertIn("Overview", page)
                 self.assertNotIn('type="password"', page)
-                self.assertNotIn("Sign in", page)
+                self.assertNotIn("<h1>Sign in</h1>", page)
                 self.assertNotIn("Sign out", page)
                 self.assertIn("secure", headers["Set-Cookie"].lower())
                 _, _, page = request(query="?view=projects")

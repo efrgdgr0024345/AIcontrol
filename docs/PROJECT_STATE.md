@@ -125,3 +125,16 @@ verified release CSS and JS with per-response CSP nonces, like the standalone
 sign-in/installer. They no longer depend on additional authenticated asset loads.
 Browser tests deliberately block separate asset requests and verify layout,
 forms and accessibility. Existing asset endpoints remain compatible.
+
+## Investigation plan implementation
+
+The supplied plan is saved as docs/RESEARCH_IMPLEMENTATION_PLAN.md. Research now
+adds a persisted Dream/Plan/Evidence/Reconciliation phase machine, progressive
+polling tree, Stop, first-class provider-cited source cards and dead ends,
+evidence-only Learn, history and Markdown export. Legacy project chat/data stays.
+Investigation.php handles schema/state/provider bounds; ResearchApi.php releases
+session locks before I/O; ResearchView.php renders the progressively enhanced UI.
+Limits and uncertainty semantics are documented in ADMIN_RESEARCH.md. Add
+`php tests/investigation.php` and `python3 -B -m unittest -v tests/investigation_http.py`
+to the reproducible checks. Provider tests use synthetic transport; live billed
+provider/shared-host validation remains separate.

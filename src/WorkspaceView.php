@@ -12,18 +12,5 @@ final class WorkspaceView
         }
         echo '</div></section>';
     }
-    public static function research(array $data,string $csrf):void {
-        echo '<section class="card mb-3"><div class="card-body"><h2>New research project</h2><form method="post" action="/loader.php?view=research">'.$csrf.'<input type="hidden" name="action" value="research_project"><label class="form-label" for="research-name">Research name</label><input id="research-name" name="name" class="form-control mb-3" maxlength="160" required><label class="form-label" for="research-brief">Research brief</label><textarea id="research-brief" name="brief" class="form-control mb-3" rows="3" maxlength="4000"></textarea><button class="btn btn-primary">Create research project</button></form></div></section>';
-        if (!AgentRunner::configured()) echo '<div class="alert alert-info">Connect OpenAI in <a href="/loader.php?view=admin">Admin</a> to use research chat. You can create projects now.</div>';
-        foreach($data['projects'] as $project){
-            echo '<section class="card mb-3"><div class="card-body"><h2>'.Ui::e($project['name']).'</h2><p class="text-break">'.nl2br(Ui::e($project['brief'])).'</p><div class="research-conversation" role="region" aria-label="Conversation for '.Ui::e($project['name']).'">';
-            foreach($data['messages'] as $message)if((int)$message['project_id']===(int)$project['id']){
-                echo '<article class="research-message"><h3>'.($message['role']==='user'?'You':'Research assistant').' <small>· '.Ui::e($message['status']).'</small></h3><p class="text-break">'.nl2br(Ui::e($message['text'] ?: 'Waiting for the provider outcome.')).'</p>';
-                if($message['status']==='pending' && (int)$message['created_at']<time()-120)echo '<form method="post" action="/loader.php?view=research">'.$csrf.'<input type="hidden" name="action" value="research_resolve"><input type="hidden" name="message_id" value="'.(int)$message['id'].'"><button class="btn btn-outline-secondary">Mark interrupted request as uncertain</button></form>';
-                echo '</article>';
-            }
-            $id=(int)$project['id'];
-            echo '</div><form method="post" action="/loader.php?view=research" data-research-chat>'.$csrf.'<input type="hidden" name="action" value="research_chat"><input type="hidden" name="project_id" value="'.$id.'"><label class="form-label" for="research-message-'.$id.'">Message</label><textarea id="research-message-'.$id.'" name="message" class="form-control mb-3" rows="3" maxlength="4000" required></textarea><label class="form-check mb-3"><input class="form-check-input" type="checkbox" name="web" value="1" checked><span class="form-check-label">Search the web for current sources (provider charges apply)</span></label><p>Up to ten requests per hour. Shared notes are included. Keep credentials out of messages.</p><button class="btn btn-primary"'.(AgentRunner::configured()?'':' disabled').'>Send research message</button><span class="ms-2" data-research-status role="status"></span></form></div></section>';
-        }
-    }
+    public static function research(array $data,string $csrf):void { ResearchView::render($data,$csrf); }
 }

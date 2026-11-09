@@ -54,3 +54,91 @@ and deletion. Browser tests save private guidance and a research project, assert
 no saved plaintext is returned, check disconnected chat, both tabs/accessibility
 and mobile layout. No live provider key or billed research request was supplied
 in this cloud session; actual provider/host validation follows on the user's host.
+
+## Investigation workspace (plan implementation)
+
+The original supplied specification is retained in RESEARCH_IMPLEMENTATION_PLAN.md.
+The Research view now selects a project and offers **Start research**, an
+expandable Investigate tree, **Learn**, history and **Export Markdown**. Earlier
+project-scoped chats remain under Simple chat. Existing tables and conversations
+are preserved. New runs/nodes/sources/requests tables are added without resets.
+
+The phase machine runs Dream → Plan → Evidence → Reconciliation. Dream returns
+up to four concise unchecked hypotheses, uncertainty/confidence and verification
+angles (not private internal reasoning). Plan derives up to two verification
+steps linked to saved claim IDs. Each Evidence step allows one web-search tool
+call, one branch at a time. Reconciliation must cover every saved claim with
+supported/weakened/contradicted/open and valid collected source IDs. Non-open
+verdicts require source references; they remain model assessments, not proof.
+
+Only HTTP(S) citation URLs from a **completed web-search tool event** create
+source cards. URLs merely written in generated prose cannot become cards.
+Cards preserve provider title, URL/domain, capture time, model summary and linked
+claim/search metadata. They are provider citations, not independent server-side
+page verification. Summaries are labelled as paraphrases, never verified extracts.
+Missing tools, absent/invalid citations and empty searches leave visible dead-end
+branches. Later synthesis does not remove them. Source URLs open safely as links;
+node text/model HTML remains escaped. Markdown export includes actual card URLs,
+statuses, questions, dead ends and confirmed token counts.
+
+### Shared-host execution and Stop
+
+No shell worker, daemon, cron or queue service is required. Start only creates a
+persisted run. JavaScript then POSTs one phase at a time while polling an
+authenticated status endpoint every 1.5 seconds. Nodes appear progressively at
+phase boundaries; output is not a private reasoning trace or token-by-token
+stream. Token counts are provider-reported totals updated after each response,
+not a simulated live estimate. Unknown usage stays explicitly marked.
+
+Start/step/stop/learn/export POSTs require the existing session and CSRF token.
+Status GET requires the same session and an X-CSRF-Token header. Session locks
+are released before phase/provider work, so Stop and polling can proceed on
+another PHP worker. A single-worker local PHP server cannot demonstrate that
+concurrency; the HTTP test runs four workers. Actual cPanel worker availability,
+request buffering and timeouts still require host-side validation.
+
+The database atomically claims each phase with a private token. **Stop** marks
+the run/open nodes interrupted and in-flight requests uncertain. A late provider
+reply may contribute confirmed usage, but cannot add claims/sources or revive
+the run. It cannot guarantee cancellation of a request already accepted by the
+provider or reverse billing. Transport errors and stale workers (after 120s)
+become uncertain; malformed or truncated structured output becomes incomplete.
+No stopped/uncertain phase is retried automatically. New investigations are an
+explicit user action. Leaving/reloading a running investigation can resume its
+next unclaimed phase, but never retries a claimed or uncertain request.
+
+Without JavaScript, forms remain usable: Start creates the run, **Continue next
+phase** advances it once, Stop works from another page/tab, and reload shows
+saved progress. Automatic advancement requires the page to remain open.
+
+### Limits and Learn
+
+The existing ten-provider-requests/hour research limit now covers legacy chat,
+all investigation phases and Learn together. Start validates capacity but does
+not consume a provider request. A normal two-search investigation consumes five
+requests (Dream, Plan, two Evidence, Reconciliation); every request permits at
+most 1600 output tokens and has a sixty-second transport timeout. One running
+investigation or pending research/Learn request is allowed per workspace. Budget
+exhaustion mid-run leaves an incomplete saved tree rather than silently retrying.
+Key/model presence and input/source/output size caps are checked server-side.
+
+Learn appears only once source cards exist and is available after active work
+stops. Explain, caveats, compare, go deeper and check-understanding actions send
+only the selected run's collected cards, its project brief and the optional
+user question. No web tool, other project's chat, unchecked Dream content or
+shared Admin notes is sent. Learn replies are saved separately in the Learn
+section. Opted-in Admin notes remain available to Dream/Plan/Evidence and legacy
+chat, while credential keys never enter prompts.
+
+### Validation
+
+Run `php tests/investigation.php` for migration preservation, phase lifecycle,
+claim/source binding, citations, dead ends, combined budgets, key checks, Stop
+races, stale workers and uncertain outcomes. Provider traffic is synthetic.
+`tests/investigation_http.py` exercises real concurrent PHP HTTP requests and
+session/CSRF checks, confirms responsive poll/Stop during provider I/O, rejects
+a late answer and tests Markdown export. Browser fixtures exercise Start,
+progress through polling, Stop, source links, Learn, accessibility and mobile
+layout. Existing vault, tasks, PIN and updater suites remain required.
+No live billed OpenAI investigation was performed in cloud; the real model,
+web-search entitlement and shared-host behavior remain host-side validation.

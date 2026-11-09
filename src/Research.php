@@ -4,6 +4,7 @@ namespace AIcontrol;
 use PDO;
 use RuntimeException;
 use Throwable;
+require_once __DIR__ . "/Investigation.php";
 final class Research
 {
     private PDO $db;
@@ -12,6 +13,7 @@ final class Research
         $this->db->exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
             CREATE TABLE IF NOT EXISTS research_projects(id INTEGER PRIMARY KEY, name TEXT NOT NULL, brief TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS research_messages(id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL REFERENCES research_projects(id), role TEXT NOT NULL, text TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL);');
+        Investigation::migrate($this->db);
     }
     public function create(string $name, string $brief): void {
         if (trim($name) === '' || strlen($name) > 160 || strlen($brief) > 4000 || !mb_check_encoding($name . $brief, 'UTF-8')) { throw new RuntimeException('Enter a project name and a brief up to 4000 bytes.'); }
@@ -30,8 +32,9 @@ final class Research
         try {
             $q = $this->db->prepare('SELECT * FROM research_projects WHERE id=?'); $q->execute([$id]); $project = $q->fetch(PDO::FETCH_ASSOC);
             if (!$project) { throw new RuntimeException('Research project not found.'); }
+            if ($this->db->query("SELECT id FROM research_runs WHERE status IN ('pending','running') UNION ALL SELECT id FROM research_requests WHERE status='pending' LIMIT 1")->fetchColumn() !== false) { throw new RuntimeException('An investigation or Learn request is active.'); }
             if ((int)$this->db->query("SELECT COUNT(*) FROM research_messages WHERE role='assistant' AND status='pending'")->fetchColumn()) { throw new RuntimeException('A research request is already pending. Check its outcome before retrying.'); }
-            $q = $this->db->prepare("SELECT COUNT(*) FROM research_messages WHERE role='assistant' AND created_at>?"); $q->execute([time()-3600]);
+            $q = $this->db->prepare("SELECT (SELECT COUNT(*) FROM research_messages WHERE role='assistant' AND created_at>?) + (SELECT COUNT(*) FROM research_requests WHERE created_at>?)"); $q->execute([time()-3600,time()-3600]);
             if ((int)$q->fetchColumn() >= 10) { throw new RuntimeException('Research testing limit: ten requests per hour.'); }
             $q = $this->db->prepare('INSERT INTO research_messages(project_id,role,text,status,created_at) VALUES(?,?,?,?,?)');
             $q->execute([$id, 'user', trim($message), 'saved', time()]);
