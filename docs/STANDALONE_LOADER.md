@@ -6,8 +6,8 @@
    password hash. No GitHub download or application setup happens at this stage.
 3. Follow **Continue to sign in**, or open the loader again. This **next visit**
    asks for the same PIN, then opens application setup.
-4. Choose a new empty private directory outside every web document root; its
-   parent must exist. List any additional addon-domain document roots.
+4. The loader selects and records its private server storage automatically. No
+   directory paths, web-root lists or release references need to be entered.
 5. Click **Check GitHub**, review the exact commit and **Install this checked
    commit** within ten minutes. The testing branch is
    `feature/control-panel-foundation`.

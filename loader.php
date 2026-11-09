@@ -421,6 +421,66 @@ final class AIcontrolInstaller
         return $path;
     }
 
+    /** Hosting-derived defaults, never a browser-supplied filesystem destination. */
+    public static function autoStorage(array $server, string $loader, ?string $accountHome = null): array
+    {
+        $roots = [dirname($loader)];
+        foreach (['DOCUMENT_ROOT', 'CONTEXT_DOCUMENT_ROOT'] as $name) {
+            if (is_string($server[$name] ?? null) && realpath($server[$name]) !== false) {
+                $roots[] = realpath($server[$name]);
+            }
+        }
+        if ($accountHome === null && function_exists('posix_getpwuid') && function_exists('posix_geteuid')) {
+            $account = posix_getpwuid(posix_geteuid());
+            $accountHome = is_array($account) ? ($account['dir'] ?? null) : null;
+        }
+        $candidates = [];
+        if (is_string($accountHome) && realpath($accountHome) !== false) {
+            $accountHome = realpath($accountHome);
+            foreach (['public_html', 'www', 'htdocs', 'httpdocs'] as $name) {
+                if (is_dir($accountHome . '/' . $name)) {
+                    $roots[] = realpath($accountHome . '/' . $name);
+                }
+            }
+            $candidates[$accountHome] = 'account-home';
+        }
+        foreach ($roots as $root) {
+            // cPanel primary/addon subdirectories commonly share public_html.
+            if (preg_match('~^(.*)/(?:public_html|htdocs|httpdocs)(?:/|$)~', $root, $match)) {
+                $candidates[$match[1]] ??= 'hosting-home';
+            }
+        }
+        $documentRoot = realpath($server['DOCUMENT_ROOT'] ?? dirname($loader));
+        if ($documentRoot !== false) {
+            $candidates[dirname($documentRoot)] ??= 'document-root-parent';
+        }
+        $roots = array_values(array_unique($roots));
+        $suffix = substr(hash('sha256', $loader), 0, 16);
+        foreach ($candidates as $base => $rule) {
+            if ($base === '/' || realpath($base) !== $base || !is_writable($base)) {
+                continue;
+            }
+            $path = $base . '/.aicontrol-' . $suffix;
+            try {
+                self::home($path, $roots);
+            } catch (RuntimeException $error) {
+                if (file_exists($path) || is_link($path)) {
+                    throw new RuntimeException('Existing automatic storage needs server recovery; no replacement was created.', 0, $error);
+                }
+                continue;
+            }
+            if (file_exists($path)) {
+                throw new RuntimeException('Automatic private storage already exists without a loader record. Server recovery is required; existing data was preserved.');
+            }
+            if (!@mkdir($path, 0700)) {
+                continue;
+            }
+            self::home($path, $roots);
+            return ['home' => $path, 'roots' => $roots, 'rule' => $rule, 'policy_version' => 1];
+        }
+        throw new RuntimeException('The host has no writable private location outside its detected web roots. Hosting support must provide private storage; no existing files were changed.');
+    }
+
     public static function request(string $url): string
     {
         for ($redirect = 0; $redirect < 4; $redirect++) {
@@ -877,16 +937,10 @@ try {
         $action = $input('action');
         if ($action === 'check') {
             unset($_SESSION['selection']);
-            $roots = array_values(array_unique(array_merge([__DIR__, $_SERVER['DOCUMENT_ROOT'] ?: __DIR__], array_filter(array_map('trim', explode("\n", $input('roots')))))));
-            if ($home !== null) {
-                $roots = $config['roots'];
-            }
-            $directory = $home ?? AIcontrolInstaller::home(trim($input('home')), $roots);
-            if ($home === null && file_exists($directory) && count(scandir($directory)) > 2) {
-                throw new RuntimeException('Choose a new, empty private directory; existing files will not be overwritten.');
-            }
             if ($home === null) {
-                $home = AIcontrolInstaller::home($directory, $roots, true);
+                $automatic = AIcontrolInstaller::autoStorage($_SERVER, __FILE__);
+                $home = $automatic['home'];
+                $roots = $automatic['roots'];
                 if (count(scandir($home)) > 2) {
                     throw new RuntimeException('Private directory changed before initialization.');
                 }
@@ -898,11 +952,15 @@ try {
                 if (file_exists($location)) {
                     throw new RuntimeException('A loader location already exists.');
                 }
-                AIcontrolInstaller::writeLocation($location, ['home' => $home, 'roots' => $roots, 'signing_public_key' => $signer->identity()['public_key'], 'pin_required' => true]);
+                AIcontrolInstaller::writeLocation($location, ['home' => $home, 'roots' => $roots, 'storage_policy' => $automatic['policy_version'], 'storage_rule' => $automatic['rule'], 'signing_public_key' => $signer->identity()['public_key'], 'pin_required' => true]);
+            }
+            $directory = $home;
+            if (isset($config)) {
+                $roots = $config['roots'];
             }
             $correlationId = bin2hex(random_bytes(16));
             AIcontrolInstaller::$operation = ['correlation_id' => $correlationId, 'repository' => AICONTROL_REPOSITORY, 'source_commit' => null];
-            $selection = AIcontrolInstaller::check($input('ref'));
+            $selection = AIcontrolInstaller::check(AICONTROL_RELEASE_REF);
             $selection['home'] = $directory;
             $selection['roots'] = $roots;
             $selection['access_mode'] = $accessMode;
@@ -1014,11 +1072,7 @@ if (isset($_SESSION['csrf'])) {
     $actionUrl = $escape($entry . '?installer=1');
     {
         echo '<p>Signed in with your PIN.</p>';
-        echo '<p>Repository: ' . AICONTROL_REPOSITORY . '. Required check: ' . AICONTROL_REQUIRED_CHECK . '.</p><form method="post" action="' . $actionUrl . '">' . $csrf . '<input type="hidden" name="action" value="check"><p><label>GitHub ref <input name="ref" value="' . AICONTROL_RELEASE_REF . '" required></label></p>';
-        if ($home === null) {
-            echo '<p><label>Private directory (outside every public document root) <input name="home" required size="60"></label></p><p><label>All additional public document roots, one per line <textarea name="roots" rows="4" cols="60"></textarea></label></p>';
-        }
-        echo '<button>Check GitHub</button></form>';
+        echo '<p>Repository: ' . AICONTROL_REPOSITORY . '. Required check: ' . AICONTROL_REQUIRED_CHECK . '.</p><p>Release channel: ' . AICONTROL_RELEASE_REF . '</p><p>Server storage and installation settings are configured automatically.</p><form method="post" action="' . $actionUrl . '">' . $csrf . '<input type="hidden" name="action" value="check"><button>Check GitHub</button></form>';
         if (isset($_SESSION['selection'])) {
             $selected = $_SESSION['selection'];
             echo '<h2>Checked selection</h2><dl><dt>Commit</dt><dd>' . $escape($selected['sha']) . '</dd><dt>Manifest SHA-256</dt><dd>' . $escape($selected['manifest_hash']) . '</dd><dt>Private storage</dt><dd>' . $escape($selected['home']) . '</dd><dt>Expires (UTC)</dt><dd>' . gmdate('c', $selected['checked_at'] + 600) . '</dd></dl><form method="post" action="' . $actionUrl . '">' . $csrf . '<input type="hidden" name="action" value="install"><input type="hidden" name="sha" value="' . $escape($selected['sha']) . '"><button>Install this checked commit</button></form>';

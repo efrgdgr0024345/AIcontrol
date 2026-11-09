@@ -10,6 +10,8 @@ production deployment remain unconnected.
 Trusted-device approval is deferred. The loader uses a PIN set on its first
 visit to protect the panel and updater. Use test data.
 
+- [Current state for the next chat](docs/PROJECT_STATE.md)
+- [Defined installation defaults](docs/DEPLOYMENT_DEFAULTS.md)
 - [Specification](docs/TEAM_HANDOVER.md)
 - [Baseline review and architecture](docs/BASELINE_REVIEW.md)
 - [Implementation tickets](docs/IMPLEMENTATION_TICKETS.md)
