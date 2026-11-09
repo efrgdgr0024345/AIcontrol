@@ -46,6 +46,7 @@ try {
         $prefix = $folder . '/';
         $zip->addEmptyDir($folder);
         $zip->addFromString($prefix . 'release-manifest.json', $raw);
+        $zip->addFile(dirname(__DIR__) . '/loader.php', $prefix . 'loader.php');
         foreach (AIcontrolInstaller::manifest($raw) as $path => $hash) {
             $data = file_get_contents(dirname(__DIR__) . '/' . $path);
             $zip->addFromString($prefix . $path, $scenario === 'checksum' && $path === 'app.php' ? $data . 'changed' : $data);

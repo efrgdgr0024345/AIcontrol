@@ -25,6 +25,7 @@ jobs:
           php tests/loader.php
           php tests/signing.php
           php tests/storage.php
+          php tests/updates.php
           php tests/agent.php
           php tests/agent_adapter.php
           python3 -B -m unittest -v tests/http_smoke.py

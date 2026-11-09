@@ -3,6 +3,150 @@
 if (!class_exists('AIcontrolWorkspaceUi', false)) {
 final class AIcontrolWorkspaceUi
 {
+    private static ?string $nonce = null;
+    public static function js(): string
+    {
+        return <<<'AICONTROL_UI_JS'
+(() => {
+  'use strict';
+  let installing = false;
+  const statusRoot = document.querySelector('[data-update-status-url]');
+  const formatTime = timestamp => new Intl.DateTimeFormat('en-AU', {timeZone: 'Australia/Perth', hour: 'numeric', minute: '2-digit'}).format(new Date(timestamp * 1000)) + ' AWST';
+
+  async function checkUpdates(refresh = false) {
+    if (!statusRoot || installing) return;
+    const url = new URL(statusRoot.dataset.updateStatusUrl, location.href);
+    if (refresh) url.searchParams.set('refresh', '1');
+    const notice = document.querySelector('[data-update-notice]');
+    const badge = document.querySelector('[data-update-badge]');
+    const label = document.querySelector('[data-update-label]');
+    const detail = document.querySelector('[data-update-detail]');
+    const review = document.querySelector('[data-update-review]');
+    const button = document.querySelector('[data-check-updates]');
+    if (button) { button.disabled = true; button.textContent = 'Checking…'; }
+    try {
+      const response = await fetch(url, {credentials: 'same-origin', headers: {'Accept': 'application/json'}});
+      if (!response.ok || !(response.headers.get('content-type') || '').includes('application/json')) throw new Error('status');
+      const result = await response.json();
+      if (notice) notice.hidden = false;
+      if (badge) badge.hidden = result.state !== 'update_available';
+      if (review) review.hidden = result.state !== 'update_available' && !result.integrity_changed;
+      if (label) label.textContent = result.integrity_changed ? 'Loader hash needs verification' : ({update_available: 'An update is available', up_to_date: 'You’re up to date', checking: 'Checking for updates…', checks_pending: 'Latest release is waiting for checks', check_failed: 'Update check could not be completed'}[result.state] || 'Update status unavailable');
+      if (notice) notice.dataset.state = result.integrity_changed ? 'warning' : result.state;
+      if (detail) {
+        const parts = [];
+        if (result.state === 'update_available') parts.push([result.loader_update ? 'Loader' : '', result.app_update ? 'workspace' : ''].filter(Boolean).join(' and ') + ' update ready for review.');
+        if (result.release_title && result.state === 'update_available') parts.push(result.release_title);
+        if (result.checked_at) parts.push('Checked ' + formatTime(result.checked_at));
+        if (result.message) parts.push(result.message);
+        detail.textContent = parts.join(' · ');
+      }
+    } catch (_) {
+      if (notice) { notice.hidden = false; notice.dataset.state = 'check_failed'; }
+      if (label) label.textContent = 'Update status unavailable';
+      if (detail) detail.textContent = 'Open application updates to check the connection or sign in again.';
+    } finally {
+      if (button) { button.disabled = false; button.textContent = 'Check again'; }
+    }
+  }
+
+  document.querySelector('[data-check-updates]')?.addEventListener('click', () => checkUpdates(true));
+  if (statusRoot) { checkUpdates(); setInterval(() => checkUpdates(), 300000); }
+
+  function progressDialog() {
+    let dialog = document.querySelector('#update-progress-dialog');
+    if (dialog) return dialog;
+    dialog = document.createElement('dialog');
+    dialog.id = 'update-progress-dialog';
+    dialog.className = 'update-dialog';
+    dialog.setAttribute('aria-labelledby', 'update-progress-title');
+    dialog.innerHTML = '<div class="update-dialog-body"><div class="eyebrow">VERIFIED SERVER UPDATE</div><h2 id="update-progress-title">Preparing your update</h2><p data-progress-detail aria-live="polite">Confirming the checked selection.</p><progress class="update-progress" max="9" value="0" aria-label="Completed update stages"></progress><p class="muted" data-progress-count>0 of 9 stages complete</p><ol class="update-stage-list" data-progress-stages></ol><div class="update-result" data-progress-result hidden></div><div class="update-dialog-actions" data-progress-actions hidden></div></div>';
+    dialog.addEventListener('cancel', event => { if (installing) event.preventDefault(); });
+    document.body.append(dialog);
+    return dialog;
+  }
+
+  document.addEventListener('submit', async event => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement) || !form.matches('[data-update-install]') || !window.fetch || !window.ReadableStream) return;
+    event.preventDefault();
+    if (installing) return;
+    installing = true;
+    const submit = form.querySelector('button[type=submit],button:not([type])');
+    if (submit) submit.disabled = true;
+    const dialog = progressDialog();
+    const title = dialog.querySelector('#update-progress-title');
+    const detail = dialog.querySelector('[data-progress-detail]');
+    const bar = dialog.querySelector('progress');
+    const count = dialog.querySelector('[data-progress-count]');
+    const list = dialog.querySelector('[data-progress-stages]');
+    const result = dialog.querySelector('[data-progress-result]');
+    const actions = dialog.querySelector('[data-progress-actions]');
+    list.replaceChildren(); result.replaceChildren(); actions.replaceChildren();
+    result.hidden = true; actions.hidden = true; bar.value = 0;
+    title.textContent = 'Preparing your update'; detail.textContent = 'Confirming the checked selection.'; count.textContent = '0 of 9 stages complete';
+    dialog.dataset.state = 'working';
+    if (!dialog.open) dialog.showModal();
+    const destination = new URL(form.action, location.href);
+    destination.searchParams.set('stream', '1');
+    let finished = false;
+    const render = update => {
+      if (update.event === 'progress') {
+        title.textContent = update.label;
+        detail.textContent = update.detail;
+        bar.value = Math.max(0, update.step - 1);
+        count.textContent = Math.max(0, update.step - 1) + ' of ' + update.total + ' stages complete';
+        for (const item of list.children) item.dataset.state = 'complete';
+        let item = list.querySelector('[data-step="' + Number(update.step) + '"]');
+        if (!item) { item = document.createElement('li'); item.dataset.step = String(update.step); list.append(item); }
+        item.textContent = update.label; item.dataset.state = 'working';
+      } else if (update.event === 'complete' || update.event === 'error') {
+        finished = true;
+        const success = update.event === 'complete';
+        dialog.dataset.state = success ? 'complete' : 'error';
+        title.textContent = success ? 'Update installed' : 'Update stopped';
+        detail.textContent = update.message;
+        if (success) { bar.value = 9; count.textContent = '9 of 9 stages complete'; for (const item of list.children) item.dataset.state = 'complete'; }
+        result.hidden = false;
+        if (update.summary) {
+          const summary = document.createElement('ul');
+          const changes = update.summary.changes || {};
+          for (const text of [update.summary.loader_updated ? 'Loader updated and its saved hash verified.' : 'Loader already matched the checked hash.',
+            (changes.added?.length || 0) + ' files added · ' + (changes.changed?.length || 0) + ' changed · ' + (changes.removed?.length || 0) + ' removed',
+            'PIN, signing keys and project data retained.']) { const line = document.createElement('li'); line.textContent = text; summary.append(line); }
+          result.append(summary);
+        }
+        actions.hidden = false;
+        const destinations = success ? [['Open panel', ''], ['Update details', '?installer=1']] : [['Return to updates', '?installer=1']];
+        for (const [text, query] of destinations) {
+          const link = document.createElement('a'); link.className = 'btn ' + (actions.childElementCount ? 'btn-outline-secondary' : 'btn-primary'); link.href = destination.pathname + query; link.textContent = text; actions.append(link);
+        }
+      }
+    };
+    try {
+      const response = await fetch(destination, {method: 'POST', body: new FormData(form), credentials: 'same-origin', headers: {'Accept': 'application/x-ndjson'}});
+      if (!(response.headers.get('content-type') || '').includes('application/x-ndjson') || !response.body) throw new Error('Session expired or progress is unavailable. Open updates to confirm the active version.');
+      const reader = response.body.getReader(), decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const chunk = await reader.read();
+        buffer += decoder.decode(chunk.value || new Uint8Array(), {stream: !chunk.done});
+        let end;
+        while ((end = buffer.indexOf('\n')) >= 0) { const line = buffer.slice(0, end).trim(); buffer = buffer.slice(end + 1); if (line) render(JSON.parse(line)); }
+        if (chunk.done) break;
+      }
+      if (buffer.trim()) render(JSON.parse(buffer));
+      if (!finished) throw new Error('The connection ended before the update result was received. Open updates to confirm its status; do not repeat it blindly.');
+    } catch (failure) {
+      render({event: 'error', message: failure instanceof Error ? failure.message : 'Update progress was interrupted. Verify the installed version before retrying.'});
+    } finally {
+      installing = false;
+    }
+  });
+})();
+
+AICONTROL_UI_JS;
+    }
     public static function css(): string
     {
         return <<<'AICONTROL_UI_CSS'
@@ -79,6 +223,33 @@ a { text-underline-offset: 3px; }
 .topbar-right { display: flex; align-items: center; gap: 13px; font-size: 12px; }
 .workspace-avatar { display: grid; place-items: center; width: 31px; height: 31px; border-radius: 50%; background: #f0edfc; color: #6e5acb; font-size: 11px; font-weight: 700; }
 .topbar-lock { display: none; color: #657086; }
+[hidden] { display: none !important; }
+.update-count { margin-left: auto; border-radius: 4px; padding: 1px 6px; background: #b7eedb; color: #163d30; font-size: 10px; }
+.update-notice { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; padding: 17px 20px; margin-bottom: 24px; background: #f0edfc; border: 1px solid #ded6f5; border-radius: 10px; }
+.update-notice[data-state=up_to_date] { background: #edf8f1; border-color: #d0e8d8; }
+.update-notice[data-state=warning],.update-notice[data-state=check_failed] { background: #fff6df; border-color: #ead8ad; }
+.update-notice strong { font-size: 13px; display: block; margin-bottom: 4px; }
+.update-notice p { margin: 0; font-size: 11px; color: #5c6578; }
+.update-notice-copy { flex: 1; min-width: 180px; }
+.update-dialog { padding: 0; width: min(620px,calc(100% - 32px)); max-height: calc(100vh - 40px); overflow: auto; border: 1px solid #e0e3eb; border-radius: 15px; color: #202631; box-shadow: 0 24px 80px #14162240; }
+.update-dialog::backdrop { background: #171b2b99; backdrop-filter: blur(4px); }
+.update-dialog-body { padding: 30px; }
+.update-dialog h2 { font-size: 23px; letter-spacing: -.6px; margin: 10px 0; }
+.update-dialog [data-progress-detail] { font-size: 12px; color: #626e81; line-height: 1.8; }
+.update-progress { display: block; width: 100%; height: 9px; margin: 23px 0 10px; border: 0; border-radius: 8px; appearance: none; background: #eeeaf8; overflow: hidden; }
+.update-progress::-webkit-progress-bar { background: #eeeaf8; border-radius: 8px; }
+.update-progress::-webkit-progress-value { background: #6954d9; border-radius: 8px; transition: width .2s; }
+.update-progress::-moz-progress-bar { background: #6954d9; border-radius: 8px; }
+.update-stage-list { list-style: none; padding: 0; margin: 23px 0; display: flex; flex-direction: column; gap: 13px; font-size: 12px; }
+.update-stage-list li { display: flex; gap: 10px; align-items: center; color: #626e81; }
+.update-stage-list li::before { content: ''; display: inline-block; width: 9px; height: 9px; border-radius: 50%; border: 1px solid #a49abf; }
+.update-stage-list li[data-state=working] { color: #6954d9; font-weight: 600; }
+.update-stage-list li[data-state=working]::before { background: #6954d9; border-color: #6954d9; }
+.update-stage-list li[data-state=complete]::before { background: #469879; border-color: #469879; }
+.update-dialog[data-state=error] h2 { color: #a52d38; }
+.update-result { background: #f5f6fa; border-radius: 8px; padding: 17px; font-size: 12px; line-height: 1.9; }
+.update-result ul { margin: 0; padding-left: 18px; }
+.update-dialog-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
 .app-content { max-width: 1600px; margin: 0 auto; padding: 31px 38px 20px; }
 .page-heading { display: flex; align-items: center; justify-content: space-between; gap: 22px; margin-bottom: 27px; }
 .page-heading h1 { font-size: 27px; font-weight: 650; letter-spacing: -.85px; margin: 0 0 5px; }
@@ -89,6 +260,7 @@ a { text-underline-offset: 3px; }
 .btn-primary:hover { background: #5945c5; border-color: #5945c5; }
 .btn .icon { width: 17px; height: 17px; margin-right: 6px; }
 .btn-outline-secondary { color: #586172; background: white; border-color: #e0e3eb; }
+.btn-outline-secondary:hover:not(:disabled),.btn-outline-secondary:focus-visible,.btn-outline-secondary:active:not(:disabled) { color: #514578; background: #f0ecfc; border-color: #cfc5ed; }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 .card { border: 1px solid var(--ac-border); border-radius: 11px; box-shadow: 0 2px 3px #20263102; overflow: hidden; }
 .card-header { min-height: 59px; padding: 17px 21px; border-bottom: 1px solid var(--ac-border); gap: 12px; }
@@ -345,13 +517,14 @@ AICONTROL_UI_CSS;
     public static function begin(string $title, string $entry): void
     {
         $nonce = base64_encode(random_bytes(18));
-        header("Content-Security-Policy: default-src 'none'; style-src 'nonce-" . $nonce . "'; img-src data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+        self::$nonce = $nonce;
+        header("Content-Security-Policy: default-src 'none'; style-src 'nonce-" . $nonce . "'; script-src 'nonce-" . $nonce . "'; connect-src 'self'; img-src data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
         echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' . self::e($title) . ' · AIcontrol</title>' . self::favicon() . '<style nonce="' . self::e($nonce) . '">' . self::css() . '</style></head><body><a class="skip-link" href="#main-content">Skip to content</a><div class="auth-layout"><aside class="auth-aside">' . self::brand($entry) . '<div class="auth-story"><h2>Your projects.<br>A clearer picture.</h2><p>A workspace for the brief, the work, and everything that happens along the way.</p><div class="auth-feature">' . self::icon('folder') . 'Projects &amp; tasks</div><div class="auth-feature">' . self::icon('robot') . 'Agent run history</div><div class="auth-feature">' . self::icon('upload') . 'Verified application updates</div></div><div class="auth-caption">YOUR WORKSPACE. YOUR CONTROL.</div></aside><main class="auth-main" id="main-content">';
     }
 
     public static function end(): void
     {
-        echo '</main></div></body></html>';
+        echo '</main></div><script nonce="' . self::e(self::$nonce ?? '') . '">' . self::js() . '</script></body></html>';
     }
 }
 }

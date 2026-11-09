@@ -12,9 +12,9 @@ if (parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) === '/assets/panel.css') {
     readfile(dirname(__DIR__) . '/assets/panel.css');
     return;
 }
-if (($_GET['asset'] ?? '') === 'panel.css') {
-    header('Content-Type: text/css; charset=utf-8');
-    readfile(dirname(__DIR__) . '/assets/panel.css');
+if (in_array($_GET['asset'] ?? '', ['panel.css', 'panel.js'], true)) {
+    header('Content-Type: ' . ($_GET['asset'] === 'panel.css' ? 'text/css' : 'application/javascript') . '; charset=utf-8');
+    readfile(dirname(__DIR__) . '/assets/' . $_GET['asset']);
     return;
 }
 $_SERVER['SCRIPT_NAME'] = '/loader.php';

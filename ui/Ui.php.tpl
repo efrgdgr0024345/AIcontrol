@@ -3,6 +3,13 @@
 if (!class_exists('AIcontrolUi', false)) {
 final class AIcontrolUi
 {
+    private static ?string $nonce = null;
+    public static function js(): string
+    {
+        return <<<'AICONTROL_UI_JS'
+@@JS@@
+AICONTROL_UI_JS;
+    }
     public static function css(): string
     {
         return <<<'AICONTROL_UI_CSS'
@@ -62,13 +69,14 @@ AICONTROL_UI_CSS;
     public static function begin(string $title, string $entry): void
     {
         $nonce = base64_encode(random_bytes(18));
-        header("Content-Security-Policy: default-src 'none'; style-src 'nonce-" . $nonce . "'; img-src data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+        self::$nonce = $nonce;
+        header("Content-Security-Policy: default-src 'none'; style-src 'nonce-" . $nonce . "'; script-src 'nonce-" . $nonce . "'; connect-src 'self'; img-src data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
         echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' . self::e($title) . ' · AIcontrol</title>' . self::favicon() . '<style nonce="' . self::e($nonce) . '">' . self::css() . '</style></head><body><a class="skip-link" href="#main-content">Skip to content</a><div class="auth-layout"><aside class="auth-aside">' . self::brand($entry) . '<div class="auth-story"><h2>Your projects.<br>A clearer picture.</h2><p>A workspace for the brief, the work, and everything that happens along the way.</p><div class="auth-feature">' . self::icon('folder') . 'Projects &amp; tasks</div><div class="auth-feature">' . self::icon('robot') . 'Agent run history</div><div class="auth-feature">' . self::icon('upload') . 'Verified application updates</div></div><div class="auth-caption">YOUR WORKSPACE. YOUR CONTROL.</div></aside><main class="auth-main" id="main-content">';
     }
 
     public static function end(): void
     {
-        echo '</main></div></body></html>';
+        echo '</main></div><script nonce="' . self::e(self::$nonce ?? '') . '">' . self::js() . '</script></body></html>';
     }
 }
 }

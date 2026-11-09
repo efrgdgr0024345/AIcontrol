@@ -71,12 +71,14 @@ final class PanelView
             'history' => 'The work, the decisions, and what actually happened.',
         ];
         $label = $views[$view][0];
-        echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' . Ui::e($label) . ' · AIcontrol</title>' . Ui::favicon() . '<link rel="stylesheet" href="/assets/panel.css"></head><body><a class="skip-link" href="#main-content">Skip to content</a><div class="app-layout"><aside class="app-sidebar">' . Ui::brand('/loader.php') . '<div class="sidebar-label">WORKSPACE</div><nav class="app-navigation" aria-label="Main navigation">';
+        $updateUrl = getenv('AICONTROL_UPDATE_STATUS_URL') ?: '';
+        $updateAttribute = $authenticated && $updateUrl !== '' ? ' data-update-status-url="' . Ui::e($updateUrl) . '"' : '';
+        echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' . Ui::e($label) . ' · AIcontrol</title>' . Ui::favicon() . '<link rel="stylesheet" href="/assets/panel.css"></head><body><a class="skip-link" href="#main-content">Skip to content</a><div class="app-layout' . '"' . $updateAttribute . '><aside class="app-sidebar">' . Ui::brand('/loader.php') . '<div class="sidebar-label">WORKSPACE</div><nav class="app-navigation" aria-label="Main navigation">';
         if ($authenticated) {
             foreach ($views as $key => [$name, $icon]) {
                 echo '<a href="/loader.php?view=' . $key . '"' . ($key === $view ? ' aria-current="page"' : '') . '>' . Ui::icon($icon) . '<span>' . $name . '</span></a>';
             }
-            echo '<a href="/loader.php?installer=1">' . Ui::icon('upload') . '<span>Application updates</span></a>';
+            echo '<a href="/loader.php?installer=1">' . Ui::icon('upload') . '<span>Application updates</span><span class="update-count" data-update-badge hidden>1</span></a>';
         }
         echo '</nav><div class="sidebar-foot"><div class="sidebar-note"><strong>One step at a time.</strong>Plan clearly. Run a bounded task. Review the result.</div>';
         if ($authenticated) {
@@ -91,6 +93,9 @@ final class PanelView
         echo '</div></aside><div class="app-main"><header class="app-topbar"><div class="breadcrumbs">Workspace <span aria-hidden="true">/</span><strong>' . Ui::e($label) . '</strong></div><div class="topbar-right">' . self::pill('Testing release', 'purple');
         if ($authenticated && $config['access_mode'] === 'pin') { echo '<a class="topbar-lock" href="/loader.php?pin=manage" aria-label="Lock panel" title="Lock panel">' . Ui::icon('lock') . '</a>'; }
         echo '<span class="workspace-avatar" aria-label="Workspace">AC</span></div></header><main class="app-content" id="main-content">';
+        if ($authenticated && $updateUrl !== '') {
+            echo '<section class="update-notice" data-update-notice hidden aria-live="polite"><div class="update-notice-copy"><strong data-update-label>Checking for updates…</strong><p data-update-detail></p></div><button class="btn btn-outline-secondary" type="button" data-check-updates>Check again</button><a class="btn btn-primary" data-update-review hidden href="/loader.php?installer=1">Review update</a></section>';
+        }
         if ($error !== '') {
             echo '<div class="alert alert-danger" role="alert">' . Ui::e($error) . '</div>';
         }
@@ -111,7 +116,7 @@ final class PanelView
                 'runs' => self::runs($data), 'systems' => self::systems($data), 'history' => self::history($data),
             };
         }
-        echo '<footer class="app-footer"><span>AIcontrol · A place for the work and its evidence.</span><span>Times in AWST · <a href="/loader.php?installer=1">Application updates</a></span></footer></main></div></div></body></html>';
+        echo '<footer class="app-footer"><span>AIcontrol · A place for the work and its evidence.</span><span>Times in AWST · <a href="/loader.php?installer=1">Application updates</a></span></footer></main></div></div><script src="/assets/panel.js" defer></script></body></html>';
     }
 
     private static function overview(array $data): void

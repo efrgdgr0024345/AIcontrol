@@ -52,7 +52,7 @@ final class Panel
             throw new RuntimeException('HTTPS required.');
         }
         header('Cache-Control: no-store');
-        header("Content-Security-Policy: default-src 'none'; style-src 'self'; img-src data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+        header("Content-Security-Policy: default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
         header('X-Content-Type-Options: nosniff');
         header('Referrer-Policy: no-referrer');
         if (!in_array($path, ['/', '/loader.php', '/health'], true)) {
@@ -178,8 +178,8 @@ final class Panel
         }
         $entry = self::entry();
         ob_start(static fn(string $html): string => str_replace(
-            ['href="/loader.php', 'action="/loader.php', 'href="/assets/panel.css"'],
-            ['href="' . $entry, 'action="' . $entry, 'href="' . $entry . '?asset=panel.css"'],
+            ['href="/loader.php', 'action="/loader.php', 'href="/assets/panel.css"', 'src="/assets/panel.js"'],
+            ['href="' . $entry, 'action="' . $entry, 'href="' . $entry . '?asset=panel.css"', 'src="' . $entry . '?asset=panel.js"'],
             $html
         ));
         $csrf = '<input type="hidden" name="csrf" value="' . self::escape($_SESSION['csrf']) . '">';

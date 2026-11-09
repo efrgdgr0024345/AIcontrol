@@ -11,7 +11,7 @@ $license = file_get_contents($root . '/assets/vendor/TABLER-LICENSE.txt');
 $vendor = file_get_contents($root . '/assets/vendor/tabler-1.7.4.min.css');
 $vendor = str_replace('@charset "UTF-8";', '', $vendor);
 $css = "/*\n" . $license . "\n*/\n" . $vendor . "\n" . file_get_contents($root . '/assets/app.css');
-$ui = str_replace('@@CSS@@', $css, file_get_contents($root . '/ui/Ui.php.tpl'));
+$ui = str_replace(['@@CSS@@', '@@JS@@'], [$css, file_get_contents($root . '/assets/panel.js')], file_get_contents($root . '/ui/Ui.php.tpl'));
 $loader = file_get_contents($root . '/loader.php');
 $start = '// BEGIN GENERATED UI';
 $end = '// END GENERATED UI';
@@ -22,6 +22,15 @@ if (str_contains($loader, $start)) {
     $loader = substr($loader, 0, $left) . $block . substr($loader, $right);
 } else {
     $loader = str_replace('final class AIcontrolPin', $block . "\n\nfinal class AIcontrolPin", $loader);
+}
+$updates = file_get_contents($root . '/ui/Updates.php.inc');
+$updateBlock = "// BEGIN GENERATED UPDATES\n" . substr($updates, strlen("<?php\n")) . "\n// END GENERATED UPDATES";
+if (str_contains($loader, '// BEGIN GENERATED UPDATES')) {
+    $left = strpos($loader, '// BEGIN GENERATED UPDATES');
+    $right = strpos($loader, '// END GENERATED UPDATES', $left) + strlen('// END GENERATED UPDATES');
+    $loader = substr($loader, 0, $left) . $updateBlock . substr($loader, $right);
+} else {
+    $loader = str_replace('final class AIcontrolPin', $updateBlock . "\n\nfinal class AIcontrolPin", $loader);
 }
 $workspaceUi = str_replace('AIcontrolUi', 'AIcontrolWorkspaceUi', $ui);
 $files = ['assets/panel.css' => $css, 'src/Ui.php' => $workspaceUi, 'loader.php' => $loader];

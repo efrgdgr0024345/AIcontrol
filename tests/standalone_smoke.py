@@ -50,6 +50,7 @@ class StandaloneSmokeTest(unittest.TestCase):
                 destination = release / name
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy(ROOT / name, destination)
+            shutil.copy(ROOT / "loader.php", release / ".bootstrap-loader.php")
             password = secrets.token_urlsafe(32)
             subprocess.run([PHP, "bin/setup.php", "--access-mode=testing", f"--private-dir={home / 'runtime'}", f"--public-root={public}"], cwd=ROOT, input=password, text=True, check=True, capture_output=True)
             def private_json(path, value, prefix=""):

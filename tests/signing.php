@@ -59,7 +59,7 @@ try {
     $selection['proof'] = $first->record(AIcontrolInstaller::selectionPayload($selection));
     AIcontrolInstaller::verifySelection($selection, $first);
     signingCheck(true, 'checked selection signature verifies');
-    foreach (['sha' => str_repeat('d', 40), 'manifest_hash' => str_repeat('d', 64), 'home' => '/different', 'roots' => ['/different'], 'access_mode' => 'local', 'host_identity' => 'other', 'checked_at' => time() + 1, 'correlation_id' => 'other', 'ref' => 'other'] as $field => $value) {
+    foreach (['sha' => str_repeat('d', 40), 'manifest_hash' => str_repeat('d', 64), 'home' => '/different', 'roots' => ['/different'], 'access_mode' => 'local', 'host_identity' => 'other', 'checked_at' => time() + 1, 'correlation_id' => 'other', 'ref' => 'other', 'bootstrap_hash' => str_repeat('d', 64), 'files' => ['changed.php' => str_repeat('e', 64)]] as $field => $value) {
         signingRefuses(fn() => AIcontrolInstaller::verifySelection(array_replace($selection, [$field => $value]), $first), 'changed selection field refused: ' . $field);
     }
     signingRefuses(fn() => new AIcontrolSigning($temporary . '/first', $second->identity()['public_key']), 'changed identity pin refused');

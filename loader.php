@@ -11,6 +11,150 @@ const AICONTROL_REQUIRED_CHECK = 'planning-panel';
 if (!class_exists('AIcontrolUi', false)) {
 final class AIcontrolUi
 {
+    private static ?string $nonce = null;
+    public static function js(): string
+    {
+        return <<<'AICONTROL_UI_JS'
+(() => {
+  'use strict';
+  let installing = false;
+  const statusRoot = document.querySelector('[data-update-status-url]');
+  const formatTime = timestamp => new Intl.DateTimeFormat('en-AU', {timeZone: 'Australia/Perth', hour: 'numeric', minute: '2-digit'}).format(new Date(timestamp * 1000)) + ' AWST';
+
+  async function checkUpdates(refresh = false) {
+    if (!statusRoot || installing) return;
+    const url = new URL(statusRoot.dataset.updateStatusUrl, location.href);
+    if (refresh) url.searchParams.set('refresh', '1');
+    const notice = document.querySelector('[data-update-notice]');
+    const badge = document.querySelector('[data-update-badge]');
+    const label = document.querySelector('[data-update-label]');
+    const detail = document.querySelector('[data-update-detail]');
+    const review = document.querySelector('[data-update-review]');
+    const button = document.querySelector('[data-check-updates]');
+    if (button) { button.disabled = true; button.textContent = 'Checking…'; }
+    try {
+      const response = await fetch(url, {credentials: 'same-origin', headers: {'Accept': 'application/json'}});
+      if (!response.ok || !(response.headers.get('content-type') || '').includes('application/json')) throw new Error('status');
+      const result = await response.json();
+      if (notice) notice.hidden = false;
+      if (badge) badge.hidden = result.state !== 'update_available';
+      if (review) review.hidden = result.state !== 'update_available' && !result.integrity_changed;
+      if (label) label.textContent = result.integrity_changed ? 'Loader hash needs verification' : ({update_available: 'An update is available', up_to_date: 'You’re up to date', checking: 'Checking for updates…', checks_pending: 'Latest release is waiting for checks', check_failed: 'Update check could not be completed'}[result.state] || 'Update status unavailable');
+      if (notice) notice.dataset.state = result.integrity_changed ? 'warning' : result.state;
+      if (detail) {
+        const parts = [];
+        if (result.state === 'update_available') parts.push([result.loader_update ? 'Loader' : '', result.app_update ? 'workspace' : ''].filter(Boolean).join(' and ') + ' update ready for review.');
+        if (result.release_title && result.state === 'update_available') parts.push(result.release_title);
+        if (result.checked_at) parts.push('Checked ' + formatTime(result.checked_at));
+        if (result.message) parts.push(result.message);
+        detail.textContent = parts.join(' · ');
+      }
+    } catch (_) {
+      if (notice) { notice.hidden = false; notice.dataset.state = 'check_failed'; }
+      if (label) label.textContent = 'Update status unavailable';
+      if (detail) detail.textContent = 'Open application updates to check the connection or sign in again.';
+    } finally {
+      if (button) { button.disabled = false; button.textContent = 'Check again'; }
+    }
+  }
+
+  document.querySelector('[data-check-updates]')?.addEventListener('click', () => checkUpdates(true));
+  if (statusRoot) { checkUpdates(); setInterval(() => checkUpdates(), 300000); }
+
+  function progressDialog() {
+    let dialog = document.querySelector('#update-progress-dialog');
+    if (dialog) return dialog;
+    dialog = document.createElement('dialog');
+    dialog.id = 'update-progress-dialog';
+    dialog.className = 'update-dialog';
+    dialog.setAttribute('aria-labelledby', 'update-progress-title');
+    dialog.innerHTML = '<div class="update-dialog-body"><div class="eyebrow">VERIFIED SERVER UPDATE</div><h2 id="update-progress-title">Preparing your update</h2><p data-progress-detail aria-live="polite">Confirming the checked selection.</p><progress class="update-progress" max="9" value="0" aria-label="Completed update stages"></progress><p class="muted" data-progress-count>0 of 9 stages complete</p><ol class="update-stage-list" data-progress-stages></ol><div class="update-result" data-progress-result hidden></div><div class="update-dialog-actions" data-progress-actions hidden></div></div>';
+    dialog.addEventListener('cancel', event => { if (installing) event.preventDefault(); });
+    document.body.append(dialog);
+    return dialog;
+  }
+
+  document.addEventListener('submit', async event => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement) || !form.matches('[data-update-install]') || !window.fetch || !window.ReadableStream) return;
+    event.preventDefault();
+    if (installing) return;
+    installing = true;
+    const submit = form.querySelector('button[type=submit],button:not([type])');
+    if (submit) submit.disabled = true;
+    const dialog = progressDialog();
+    const title = dialog.querySelector('#update-progress-title');
+    const detail = dialog.querySelector('[data-progress-detail]');
+    const bar = dialog.querySelector('progress');
+    const count = dialog.querySelector('[data-progress-count]');
+    const list = dialog.querySelector('[data-progress-stages]');
+    const result = dialog.querySelector('[data-progress-result]');
+    const actions = dialog.querySelector('[data-progress-actions]');
+    list.replaceChildren(); result.replaceChildren(); actions.replaceChildren();
+    result.hidden = true; actions.hidden = true; bar.value = 0;
+    title.textContent = 'Preparing your update'; detail.textContent = 'Confirming the checked selection.'; count.textContent = '0 of 9 stages complete';
+    dialog.dataset.state = 'working';
+    if (!dialog.open) dialog.showModal();
+    const destination = new URL(form.action, location.href);
+    destination.searchParams.set('stream', '1');
+    let finished = false;
+    const render = update => {
+      if (update.event === 'progress') {
+        title.textContent = update.label;
+        detail.textContent = update.detail;
+        bar.value = Math.max(0, update.step - 1);
+        count.textContent = Math.max(0, update.step - 1) + ' of ' + update.total + ' stages complete';
+        for (const item of list.children) item.dataset.state = 'complete';
+        let item = list.querySelector('[data-step="' + Number(update.step) + '"]');
+        if (!item) { item = document.createElement('li'); item.dataset.step = String(update.step); list.append(item); }
+        item.textContent = update.label; item.dataset.state = 'working';
+      } else if (update.event === 'complete' || update.event === 'error') {
+        finished = true;
+        const success = update.event === 'complete';
+        dialog.dataset.state = success ? 'complete' : 'error';
+        title.textContent = success ? 'Update installed' : 'Update stopped';
+        detail.textContent = update.message;
+        if (success) { bar.value = 9; count.textContent = '9 of 9 stages complete'; for (const item of list.children) item.dataset.state = 'complete'; }
+        result.hidden = false;
+        if (update.summary) {
+          const summary = document.createElement('ul');
+          const changes = update.summary.changes || {};
+          for (const text of [update.summary.loader_updated ? 'Loader updated and its saved hash verified.' : 'Loader already matched the checked hash.',
+            (changes.added?.length || 0) + ' files added · ' + (changes.changed?.length || 0) + ' changed · ' + (changes.removed?.length || 0) + ' removed',
+            'PIN, signing keys and project data retained.']) { const line = document.createElement('li'); line.textContent = text; summary.append(line); }
+          result.append(summary);
+        }
+        actions.hidden = false;
+        const destinations = success ? [['Open panel', ''], ['Update details', '?installer=1']] : [['Return to updates', '?installer=1']];
+        for (const [text, query] of destinations) {
+          const link = document.createElement('a'); link.className = 'btn ' + (actions.childElementCount ? 'btn-outline-secondary' : 'btn-primary'); link.href = destination.pathname + query; link.textContent = text; actions.append(link);
+        }
+      }
+    };
+    try {
+      const response = await fetch(destination, {method: 'POST', body: new FormData(form), credentials: 'same-origin', headers: {'Accept': 'application/x-ndjson'}});
+      if (!(response.headers.get('content-type') || '').includes('application/x-ndjson') || !response.body) throw new Error('Session expired or progress is unavailable. Open updates to confirm the active version.');
+      const reader = response.body.getReader(), decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const chunk = await reader.read();
+        buffer += decoder.decode(chunk.value || new Uint8Array(), {stream: !chunk.done});
+        let end;
+        while ((end = buffer.indexOf('\n')) >= 0) { const line = buffer.slice(0, end).trim(); buffer = buffer.slice(end + 1); if (line) render(JSON.parse(line)); }
+        if (chunk.done) break;
+      }
+      if (buffer.trim()) render(JSON.parse(buffer));
+      if (!finished) throw new Error('The connection ended before the update result was received. Open updates to confirm its status; do not repeat it blindly.');
+    } catch (failure) {
+      render({event: 'error', message: failure instanceof Error ? failure.message : 'Update progress was interrupted. Verify the installed version before retrying.'});
+    } finally {
+      installing = false;
+    }
+  });
+})();
+
+AICONTROL_UI_JS;
+    }
     public static function css(): string
     {
         return <<<'AICONTROL_UI_CSS'
@@ -87,6 +231,33 @@ a { text-underline-offset: 3px; }
 .topbar-right { display: flex; align-items: center; gap: 13px; font-size: 12px; }
 .workspace-avatar { display: grid; place-items: center; width: 31px; height: 31px; border-radius: 50%; background: #f0edfc; color: #6e5acb; font-size: 11px; font-weight: 700; }
 .topbar-lock { display: none; color: #657086; }
+[hidden] { display: none !important; }
+.update-count { margin-left: auto; border-radius: 4px; padding: 1px 6px; background: #b7eedb; color: #163d30; font-size: 10px; }
+.update-notice { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; padding: 17px 20px; margin-bottom: 24px; background: #f0edfc; border: 1px solid #ded6f5; border-radius: 10px; }
+.update-notice[data-state=up_to_date] { background: #edf8f1; border-color: #d0e8d8; }
+.update-notice[data-state=warning],.update-notice[data-state=check_failed] { background: #fff6df; border-color: #ead8ad; }
+.update-notice strong { font-size: 13px; display: block; margin-bottom: 4px; }
+.update-notice p { margin: 0; font-size: 11px; color: #5c6578; }
+.update-notice-copy { flex: 1; min-width: 180px; }
+.update-dialog { padding: 0; width: min(620px,calc(100% - 32px)); max-height: calc(100vh - 40px); overflow: auto; border: 1px solid #e0e3eb; border-radius: 15px; color: #202631; box-shadow: 0 24px 80px #14162240; }
+.update-dialog::backdrop { background: #171b2b99; backdrop-filter: blur(4px); }
+.update-dialog-body { padding: 30px; }
+.update-dialog h2 { font-size: 23px; letter-spacing: -.6px; margin: 10px 0; }
+.update-dialog [data-progress-detail] { font-size: 12px; color: #626e81; line-height: 1.8; }
+.update-progress { display: block; width: 100%; height: 9px; margin: 23px 0 10px; border: 0; border-radius: 8px; appearance: none; background: #eeeaf8; overflow: hidden; }
+.update-progress::-webkit-progress-bar { background: #eeeaf8; border-radius: 8px; }
+.update-progress::-webkit-progress-value { background: #6954d9; border-radius: 8px; transition: width .2s; }
+.update-progress::-moz-progress-bar { background: #6954d9; border-radius: 8px; }
+.update-stage-list { list-style: none; padding: 0; margin: 23px 0; display: flex; flex-direction: column; gap: 13px; font-size: 12px; }
+.update-stage-list li { display: flex; gap: 10px; align-items: center; color: #626e81; }
+.update-stage-list li::before { content: ''; display: inline-block; width: 9px; height: 9px; border-radius: 50%; border: 1px solid #a49abf; }
+.update-stage-list li[data-state=working] { color: #6954d9; font-weight: 600; }
+.update-stage-list li[data-state=working]::before { background: #6954d9; border-color: #6954d9; }
+.update-stage-list li[data-state=complete]::before { background: #469879; border-color: #469879; }
+.update-dialog[data-state=error] h2 { color: #a52d38; }
+.update-result { background: #f5f6fa; border-radius: 8px; padding: 17px; font-size: 12px; line-height: 1.9; }
+.update-result ul { margin: 0; padding-left: 18px; }
+.update-dialog-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
 .app-content { max-width: 1600px; margin: 0 auto; padding: 31px 38px 20px; }
 .page-heading { display: flex; align-items: center; justify-content: space-between; gap: 22px; margin-bottom: 27px; }
 .page-heading h1 { font-size: 27px; font-weight: 650; letter-spacing: -.85px; margin: 0 0 5px; }
@@ -97,6 +268,7 @@ a { text-underline-offset: 3px; }
 .btn-primary:hover { background: #5945c5; border-color: #5945c5; }
 .btn .icon { width: 17px; height: 17px; margin-right: 6px; }
 .btn-outline-secondary { color: #586172; background: white; border-color: #e0e3eb; }
+.btn-outline-secondary:hover:not(:disabled),.btn-outline-secondary:focus-visible,.btn-outline-secondary:active:not(:disabled) { color: #514578; background: #f0ecfc; border-color: #cfc5ed; }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 .card { border: 1px solid var(--ac-border); border-radius: 11px; box-shadow: 0 2px 3px #20263102; overflow: hidden; }
 .card-header { min-height: 59px; padding: 17px 21px; border-bottom: 1px solid var(--ac-border); gap: 12px; }
@@ -353,18 +525,214 @@ AICONTROL_UI_CSS;
     public static function begin(string $title, string $entry): void
     {
         $nonce = base64_encode(random_bytes(18));
-        header("Content-Security-Policy: default-src 'none'; style-src 'nonce-" . $nonce . "'; img-src data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+        self::$nonce = $nonce;
+        header("Content-Security-Policy: default-src 'none'; style-src 'nonce-" . $nonce . "'; script-src 'nonce-" . $nonce . "'; connect-src 'self'; img-src data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
         echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' . self::e($title) . ' · AIcontrol</title>' . self::favicon() . '<style nonce="' . self::e($nonce) . '">' . self::css() . '</style></head><body><a class="skip-link" href="#main-content">Skip to content</a><div class="auth-layout"><aside class="auth-aside">' . self::brand($entry) . '<div class="auth-story"><h2>Your projects.<br>A clearer picture.</h2><p>A workspace for the brief, the work, and everything that happens along the way.</p><div class="auth-feature">' . self::icon('folder') . 'Projects &amp; tasks</div><div class="auth-feature">' . self::icon('robot') . 'Agent run history</div><div class="auth-feature">' . self::icon('upload') . 'Verified application updates</div></div><div class="auth-caption">YOUR WORKSPACE. YOUR CONTROL.</div></aside><main class="auth-main" id="main-content">';
     }
 
     public static function end(): void
     {
-        echo '</main></div></body></html>';
+        echo '</main></div><script nonce="' . self::e(self::$nonce ?? '') . '">' . self::js() . '</script></body></html>';
     }
 }
 }
 
 // END GENERATED UI
+
+// BEGIN GENERATED UPDATES
+/** Embedded into the standalone loader by build-ui.php. */
+final class AIcontrolProgress
+{
+    public static bool $stream = false;
+    private static bool $started = false;
+
+    public static function emit(array $event): void
+    {
+        if (!self::$stream) { return; }
+        if (!self::$started) {
+            header('Content-Type: application/x-ndjson; charset=utf-8');
+            header('Cache-Control: no-store');
+            header('X-Accel-Buffering: no');
+            @ini_set('zlib.output_compression', '0');
+            ignore_user_abort(true);
+            self::$started = true;
+        }
+        echo json_encode($event + ['at' => gmdate('c')], JSON_THROW_ON_ERROR) . "\n";
+        if (ob_get_level() > 0) { @ob_flush(); }
+        flush();
+    }
+
+    public static function stage(int $step, string $label, string $detail): void
+    {
+        self::emit(['event' => 'progress', 'step' => $step, 'total' => 9, 'label' => $label, 'detail' => $detail]);
+    }
+}
+
+final class AIcontrolUpdates
+{
+    public static function signedState(string $home, string $name): ?array
+    {
+        if (!is_file($home . '/' . $name)) { return null; }
+        $signer = AIcontrolInstaller::$signer;
+        if ($signer === null) { throw new RuntimeException('Signing identity is required.'); }
+        $payload = AIcontrolSigning::verify(AIcontrolInstaller::readJson($home . '/' . $name), $signer->identity()['public_key']);
+        if ($payload === null) { throw new RuntimeException('Saved update state signature is invalid.'); }
+        return $payload;
+    }
+
+    public static function save(string $home, string $name, array $payload): array
+    {
+        $signer = AIcontrolInstaller::$signer;
+        if ($signer === null) { throw new RuntimeException('Signing identity is required.'); }
+        $receipt = $signer->record($payload);
+        AIcontrolInstaller::jsonFile($home . '/' . $name, $receipt);
+        return $receipt;
+    }
+
+    public static function baseline(string $home, string $loader): array
+    {
+        $state = self::signedState($home, 'bootstrap-state.json');
+        if ($state !== null) {
+            if (($state['loader_path_sha256'] ?? '') !== hash('sha256', $loader)
+                || !preg_match('/^[a-f0-9]{64}$/D', $state['loader_sha256'] ?? '')) {
+                throw new RuntimeException('Saved loader identity does not match this installation.');
+            }
+            return $state;
+        }
+        $state = ['event' => 'bootstrap.baseline', 'loader_sha256' => hash_file('sha256', $loader), 'loader_path_sha256' => hash('sha256', $loader), 'source_commit' => null];
+        self::save($home, 'bootstrap-state.json', $state);
+        return $state;
+    }
+
+    public static function changedFiles(array $before, array $after): array
+    {
+        $added = $changed = $removed = [];
+        foreach ($after as $path => $hash) {
+            if (!array_key_exists($path, $before)) { $added[] = $path; }
+            elseif (!hash_equals($before[$path], $hash)) { $changed[] = $path; }
+        }
+        foreach ($before as $path => $hash) { if (!array_key_exists($path, $after)) { $removed[] = $path; } }
+        return ['added' => $added, 'changed' => $changed, 'removed' => $removed];
+    }
+
+    public static function components(array $installedFiles, array $latestFiles, string $runningLoaderHash, ?string $latestLoaderHash): array
+    {
+        return ['app_update' => AIcontrolSigning::canonical($installedFiles) !== AIcontrolSigning::canonical($latestFiles),
+            'loader_update' => $latestLoaderHash !== null && !hash_equals($runningLoaderHash, $latestLoaderHash)];
+    }
+
+    public static function availability(string $home, string $loader, bool $refresh = false): array
+    {
+        $current = AIcontrolInstaller::readJson($home . '/current.json');
+        $baseline = self::baseline($home, $loader);
+        $actualHash = hash_file('sha256', $loader);
+        $cached = self::signedState($home, 'update-status.json');
+        if ($cached !== null && ($cached['installed_sha'] ?? '') === $current['sha']
+            && ($cached['running_loader_hash'] ?? '') === $actualHash && ($cached['expires_at'] ?? 0) > time()
+            && (!$refresh || ($cached['checked_at'] ?? 0) > time() - 60)) {
+            return $cached;
+        }
+        $lockPath = $home . '/update-check.lock';
+        if (is_link($lockPath)) { throw new RuntimeException('Unsafe update-check lock.'); }
+        $lock = fopen($lockPath, 'c');
+        if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) {
+            if (is_resource($lock)) { fclose($lock); }
+            return ['state' => 'checking', 'installed_sha' => $current['sha']];
+        }
+        try {
+            AIcontrolInstaller::$operation = ['repository' => AICONTROL_REPOSITORY, 'correlation_id' => bin2hex(random_bytes(16)), 'operation' => 'update.availability'];
+            try {
+                $release = AIcontrolInstaller::check(AICONTROL_RELEASE_REF);
+                $currentFiles = AIcontrolInstaller::manifest(file_get_contents($home . '/releases/' . AIcontrolInstaller::sha($current['sha']) . '/release-manifest.json'));
+                $components = self::components($currentFiles, $release['files'], $actualHash, $release['bootstrap_hash']);
+                $loaderUpdate = $components['loader_update']; $appUpdate = $components['app_update'];
+                $integrityChanged = !hash_equals($baseline['loader_sha256'], $actualHash);
+                $status = ['state' => $appUpdate || $loaderUpdate ? 'update_available' : 'up_to_date',
+                    'installed_sha' => $current['sha'], 'latest_sha' => $release['sha'], 'app_update' => $appUpdate,
+                    'loader_update' => $loaderUpdate, 'integrity_changed' => $integrityChanged,
+                    'running_loader_hash' => $actualHash, 'expected_loader_hash' => $release['bootstrap_hash'],
+                    'release_title' => $release['title'], 'correlation_id' => AIcontrolInstaller::$operation['correlation_id'], 'checked_at' => time(), 'expires_at' => time() + 900];
+            } catch (Throwable $failure) {
+                $waiting = str_contains($failure->getMessage(), 'required GitHub Actions check') || str_contains($failure->getMessage(), 'Required check planning-panel');
+                $status = ['state' => $waiting ? 'checks_pending' : 'check_failed', 'installed_sha' => $current['sha'], 'running_loader_hash' => $actualHash,
+                    'checked_at' => time(), 'expires_at' => time() + 60, 'message' => $waiting ? 'The latest release is waiting for required checks. Your current version remains active.' : 'A checked release could not be confirmed. Open updates to retry.'];
+            }
+            self::save($home, 'update-status.json', ['event' => 'update.availability'] + $status);
+            return $status;
+        } finally {
+            flock($lock, LOCK_UN); fclose($lock);
+        }
+    }
+
+    public static function atomicLoader(string $path, string $contents, string $expected): void
+    {
+        if (!hash_equals($expected, hash('sha256', $contents))) { throw new RuntimeException('Loader checksum mismatch.'); }
+        token_get_all($contents, TOKEN_PARSE);
+        $temporary = dirname($path) . '/.aicontrol-bootstrap-' . bin2hex(random_bytes(8)) . '.php';
+        try {
+            if (file_put_contents($temporary, $contents, LOCK_EX) !== strlen($contents) || !chmod($temporary, 0600)
+                || !rename($temporary, $path) || !hash_equals($expected, hash_file('sha256', $path))) {
+                throw new RuntimeException('Could not activate the checked loader.');
+            }
+            if (function_exists('opcache_invalidate')) {
+                $invalidated = @opcache_invalidate($path, true);
+                if (!$invalidated && filter_var(ini_get('opcache.enable'), FILTER_VALIDATE_BOOL)
+                    && !filter_var(ini_get('opcache.validate_timestamps'), FILTER_VALIDATE_BOOL) && PHP_SAPI !== 'cli') {
+                    throw new RuntimeException('Hosting opcode cache could not be refreshed.');
+                }
+            }
+        } finally {
+            if (is_file($temporary)) { unlink($temporary); }
+        }
+    }
+
+    public static function prepareBootstrap(string $home, string $loader, string $staged, string $expected, string $sourceSha): array
+    {
+        $baseline = self::baseline($home, $loader);
+        $actualHash = hash_file('sha256', $loader);
+        if (!hash_equals($baseline['loader_sha256'], $actualHash)) {
+            if (!hash_equals($expected, $actualHash)) {
+                throw new RuntimeException('The current loader differs from its saved hash. It was preserved; verify the uploaded file before updating.');
+            }
+            self::save($home, 'bootstrap-state.json', ['event' => 'bootstrap.manual_verified', 'loader_sha256' => $actualHash, 'loader_path_sha256' => hash('sha256', $loader), 'source_commit' => $sourceSha]);
+        }
+        if (is_link($staged) || !is_file($staged) || !hash_equals($expected, hash_file('sha256', $staged))) {
+            throw new RuntimeException('The staged loader does not match the checked release hash.');
+        }
+        $backups = $home . '/bootstrap-backups';
+        if (!is_dir($backups) && !mkdir($backups, 0700)) { throw new RuntimeException('Cannot create loader backup storage.'); }
+        if (is_link($backups) || realpath($backups) !== $backups || (fileperms($backups) & 0777) !== 0700) { throw new RuntimeException('Unsafe loader backup storage.'); }
+        $backup = $backups . '/' . $actualHash . '.php';
+        if (!file_exists($backup)) {
+            if (file_put_contents($backup, file_get_contents($loader), LOCK_EX) === false) { throw new RuntimeException('Cannot retain prior loader.'); }
+            chmod($backup, 0600);
+        }
+        if (is_link($backup) || !hash_equals($actualHash, hash_file('sha256', $backup))) { throw new RuntimeException('Prior loader backup failed verification.'); }
+        return ['old_hash' => $actualHash, 'new_hash' => $expected, 'path_hash' => hash('sha256', $loader),
+            'previous_state' => AIcontrolInstaller::readJson($home . '/bootstrap-state.json')];
+    }
+
+    public static function restoreBootstrap(string $home, string $loader, array $bootstrap): void
+    {
+        if (($bootstrap['path_hash'] ?? '') !== hash('sha256', $loader)) { throw new RuntimeException('Recovery loader path mismatch.'); }
+        $old = $bootstrap['old_hash'] ?? '';
+        if (!preg_match('/^[a-f0-9]{64}$/D', $old)) { throw new RuntimeException('Invalid loader recovery hash.'); }
+        $actual = hash_file('sha256', $loader);
+        if (!hash_equals($actual, $old) && !hash_equals($actual, $bootstrap['new_hash'])) {
+            throw new RuntimeException('Loader changed during recovery; existing code was preserved for operator review.');
+        }
+        $backup = $home . '/bootstrap-backups/' . $old . '.php';
+        if (is_link($backup) || !is_file($backup) || !hash_equals($old, hash_file('sha256', $backup))) { throw new RuntimeException('Loader recovery backup is missing or modified.'); }
+        if (!hash_equals($actual, $old)) { self::atomicLoader($loader, file_get_contents($backup), $old); }
+        $previous = $bootstrap['previous_state'] ?? [];
+        $signer = AIcontrolInstaller::$signer;
+        $payload = $signer === null ? null : AIcontrolSigning::verify($previous, $signer->identity()['public_key']);
+        if ($payload === null || ($payload['loader_sha256'] ?? '') !== $old || ($payload['loader_path_sha256'] ?? '') !== hash('sha256', $loader)) { throw new RuntimeException('Saved loader baseline is invalid.'); }
+        AIcontrolInstaller::jsonFile($home . '/bootstrap-state.json', $previous);
+    }
+}
+
+// END GENERATED UPDATES
 
 final class AIcontrolPin
 {
@@ -940,7 +1308,7 @@ final class AIcontrolInstaller
         if (json_decode($manifest, true, 32, JSON_THROW_ON_ERROR)['version'] !== 2) {
             throw new RuntimeException('Select a current password-free release (manifest version 2).');
         }
-        return ['sha' => $sha, 'manifest_hash' => hash('sha256', $manifest), 'checked_at' => time(), 'ref' => $ref];
+        return ['sha' => $sha, 'manifest_hash' => hash('sha256', $manifest), 'checked_at' => time(), 'ref' => $ref, 'files' => self::manifest($manifest), 'bootstrap_hash' => json_decode($manifest, true, 32, JSON_THROW_ON_ERROR)['bootstrap']['sha256'] ?? null, 'title' => mb_strcut(explode("\n", $commit['commit']['message'] ?? 'Checked release')[0], 0, 160, 'UTF-8')];
     }
 
     public static function checks(string $sha): void
@@ -970,7 +1338,7 @@ final class AIcontrolInstaller
             throw new RuntimeException('Invalid release manifest.');
         }
         foreach ($manifest['files'] as $path => $hash) {
-            if (!is_string($path) || !preg_match('~^(app\.php|src/[A-Za-z0-9_-]+\.php|assets/panel\.css)$~D', $path)
+            if (!is_string($path) || !preg_match('~^(app\.php|src/[A-Za-z0-9_-]+\.php|assets/panel\.(?:css|js))$~D', $path)
                 || !is_string($hash) || !preg_match('/^[a-f0-9]{64}$/D', $hash)) {
                 throw new RuntimeException('Unsafe release manifest entry.');
             }
@@ -983,6 +1351,10 @@ final class AIcontrolInstaller
             if (!isset($manifest['files'][$path])) {
                 throw new RuntimeException('Release manifest is incomplete.');
             }
+        }
+        if (isset($manifest['bootstrap']) && (($manifest['bootstrap']['path'] ?? '') !== 'loader.php'
+            || !is_string($manifest['bootstrap']['sha256'] ?? null) || !preg_match('/^[a-f0-9]{64}$/D', $manifest['bootstrap']['sha256']))) {
+            throw new RuntimeException('Invalid bootstrap manifest.');
         }
         return $manifest['files'];
     }
@@ -1006,6 +1378,7 @@ final class AIcontrolInstaller
             'access_mode' => $selection['access_mode'], 'host_identity' => $selection['host_identity'],
             'checked_at' => $selection['checked_at'], 'expires_at' => $selection['checked_at'] + 600,
             'correlation_id' => $selection['correlation_id'], 'ref' => $selection['ref'], 'uses' => 1,
+            'bootstrap_hash' => $selection['bootstrap_hash'] ?? null, 'files_hash' => hash('sha256', AIcontrolSigning::canonical($selection['files'] ?? [])),
         ];
     }
 
@@ -1082,6 +1455,15 @@ final class AIcontrolInstaller
                     throw new RuntimeException('Cannot write a staged release file.');
                 }
             }
+            $bootstrap = json_decode($raw, true, 32, JSON_THROW_ON_ERROR)['bootstrap'] ?? null;
+            if ($bootstrap !== null) {
+                $code = isset($names[$prefix . 'loader.php']) ? $zip->getFromIndex($names[$prefix . 'loader.php']) : false;
+                if ($code === false || !hash_equals($bootstrap['sha256'], hash('sha256', $code))) {
+                    throw new RuntimeException('Loader file failed its checked release hash.');
+                }
+                token_get_all($code, TOKEN_PARSE);
+                file_put_contents($stage . '/.bootstrap-loader.php', $code);
+            }
             file_put_contents($stage . '/release-manifest.json', $raw);
         } finally {
             $zip->close();
@@ -1098,6 +1480,8 @@ final class AIcontrolInstaller
             throw new RuntimeException('Installed manifest was modified.');
         }
         $files = self::manifest($raw);
+        $bootstrap = json_decode($raw, true, 32, JSON_THROW_ON_ERROR)['bootstrap'] ?? null;
+        if ($bootstrap !== null) { $files['.bootstrap-loader.php'] = $bootstrap['sha256']; }
         $seen = [];
         $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($release, FilesystemIterator::SKIP_DOTS));
         foreach ($iterator as $file) {
@@ -1130,13 +1514,14 @@ final class AIcontrolInstaller
         rmdir($stage);
     }
 
-    public static function recover(string $home): void
+    public static function recover(string $home, ?string $loader = null): void
     {
         if (!file_exists($home . '/journal.json')) {
             return;
         }
         $journal = self::readJson($home . '/journal.json');
         if (($journal['phase'] ?? '') === 'activating') {
+            if (isset($journal['bootstrap'])) { AIcontrolUpdates::restoreBootstrap($home, $loader ?? __FILE__, $journal['bootstrap']); }
             if (is_array($journal['previous'] ?? null)) {
                 self::jsonFile($home . '/current.json', $journal['previous']);
             } elseif (is_file($home . '/current.json')) {
@@ -1147,16 +1532,25 @@ final class AIcontrolInstaller
         }
     }
 
-    public static function activate(string $home, array $target, callable $health): void
+    public static function activate(string $home, array $target, callable $health, ?array $bootstrap = null): void
     {
         $previous = is_file($home . '/current.json') ? self::readJson($home . '/current.json') : null;
-        self::jsonFile($home . '/journal.json', ['phase' => 'activating', 'previous' => $previous, 'target' => $target]);
+        $journal = ['phase' => 'activating', 'previous' => $previous, 'target' => $target];
+        if ($bootstrap !== null) { $journal['bootstrap'] = $bootstrap['state']; }
+        self::jsonFile($home . '/journal.json', $journal);
         self::jsonFile($home . '/current.json', $target);
         try {
             $health();
-            self::jsonFile($home . '/journal.json', ['phase' => 'healthy', 'previous' => $previous, 'target' => $target]);
+            if ($bootstrap !== null) {
+                $replace = !hash_equals($bootstrap['state']['new_hash'], hash_file('sha256', $bootstrap['path']));
+                AIcontrolProgress::stage(8, $replace ? 'Update the loader' : 'Verify the loader', $replace ? 'Activate the checked bootstrap and preserve its signing identity.' : 'The loader already matches the checked release hash.');
+                if ($replace) { AIcontrolUpdates::atomicLoader($bootstrap['path'], file_get_contents($bootstrap['staged']), $bootstrap['state']['new_hash']); }
+                AIcontrolUpdates::save($home, 'bootstrap-state.json', ['event' => $replace ? 'bootstrap.updated' : 'bootstrap.verified', 'loader_sha256' => $bootstrap['state']['new_hash'], 'loader_path_sha256' => hash('sha256', $bootstrap['path']), 'source_commit' => $target['sha']]);
+            }
+            $journal['phase'] = 'healthy';
+            self::jsonFile($home . '/journal.json', $journal);
         } catch (Throwable $error) {
-            self::recover($home);
+            self::recover($home, $bootstrap['path'] ?? null);
             throw new RuntimeException('Health check failed; previous code restored. Private data was retained.', 0, $error);
         }
     }
@@ -1199,6 +1593,7 @@ try {
         return;
     }
     $accessMode = 'pin';
+    AIcontrolProgress::$stream = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_GET['stream'] ?? '') === '1';
     putenv('AICONTROL_PIN_VERIFIED=1');
     if (file_exists($location)) {
         if (is_link($location) || (fileperms($location) & 0777) !== 0600) {
@@ -1240,6 +1635,15 @@ try {
         if ($wasInterrupted) {
             $signer->record(['event' => 'update.recovered', 'repository' => AICONTROL_REPOSITORY, 'outcome' => 'prior_code_pointer_restored']);
         }
+        AIcontrolUpdates::baseline($home, __FILE__);
+        if (($_GET['update_api'] ?? '') === 'status' && is_file($home . '/current.json')) {
+            $apiCurrent = AIcontrolInstaller::readJson($home . '/current.json');
+            AIcontrolInstaller::verify($home . '/releases/' . AIcontrolInstaller::sha($apiCurrent['sha']), $apiCurrent['manifest_hash']);
+            flock($lock, LOCK_UN); fclose($lock);
+            header('Content-Type: application/json');
+            echo json_encode(AIcontrolUpdates::availability($home, __FILE__, ($_GET['refresh'] ?? '') === '1'), JSON_THROW_ON_ERROR);
+            return;
+        }
         if (isset($_GET['identity']) || isset($_GET['receipt'])) {
             $export = $signer->identity();
             if (isset($_GET['receipt'])) {
@@ -1263,13 +1667,14 @@ try {
             AIcontrolInstaller::verify($release, $current['manifest_hash']);
             flock($lock, LOCK_UN);
             fclose($lock);
-            if (($_GET['asset'] ?? '') === 'panel.css') {
-                header('Content-Type: text/css; charset=utf-8');
-                readfile($release . '/assets/panel.css');
+            if (in_array($_GET['asset'] ?? '', ['panel.css', 'panel.js'], true)) {
+                header('Content-Type: ' . ($_GET['asset'] === 'panel.css' ? 'text/css' : 'application/javascript') . '; charset=utf-8');
+                readfile($release . '/assets/' . $_GET['asset']);
                 return;
             }
             putenv('AICONTROL_PRIVATE_DIR=' . $home . '/runtime');
             putenv('AICONTROL_INSTALLED_SHA=' . $current['sha']);
+            putenv('AICONTROL_UPDATE_STATUS_URL=' . $entry . '?update_api=status');
             putenv('AICONTROL_PIN_VERIFIED=1');
             require $release . '/app.php';
             return;
@@ -1326,6 +1731,7 @@ try {
             if (isset($config)) {
                 $roots = $config['roots'];
             }
+            AIcontrolUpdates::baseline($home, __FILE__);
             $correlationId = bin2hex(random_bytes(16));
             AIcontrolInstaller::$operation = ['correlation_id' => $correlationId, 'repository' => AICONTROL_REPOSITORY, 'source_commit' => null];
             $selection = AIcontrolInstaller::check(AICONTROL_RELEASE_REF);
@@ -1339,12 +1745,14 @@ try {
             $message = 'GitHub checked. Review the exact commit below; the selection expires in ten minutes.';
         } elseif ($action === 'install') {
             $selected = $_SESSION['selection'] ?? [];
+            AIcontrolProgress::stage(1, 'Verify the selection', 'Confirm the exact commit, signed selection and expiry.');
             AIcontrolInstaller::selection($selected, $input('sha'));
             if ($home === null || !isset($signer) || ($selected['host_identity'] ?? '') !== $identity) {
                 throw new RuntimeException('The checked signing identity is unavailable. Check GitHub again.');
             }
             AIcontrolInstaller::verifySelection($selected, $signer);
             unset($_SESSION['selection']); // one checked selection permits one installation attempt
+            if (AIcontrolProgress::$stream) { session_write_close(); }
             $lock = fopen($home . '/deployment.lock', 'c');
             if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) {
                 throw new RuntimeException('Another installation is in progress.');
@@ -1353,17 +1761,26 @@ try {
             $activated = false;
             try {
                 AIcontrolInstaller::recover($home);
+                AIcontrolProgress::stage(2, 'Verify installed hashes', 'Compare saved file hashes and the pinned server signing identity.');
+                $baseline = AIcontrolUpdates::baseline($home, __FILE__);
+                $runningHash = hash_file('sha256', __FILE__);
+                if (!hash_equals($baseline['loader_sha256'], $runningHash) && (!is_string($selected['bootstrap_hash'] ?? null) || !hash_equals($selected['bootstrap_hash'], $runningHash))) {
+                    throw new RuntimeException('The current loader differs from its saved hash and the checked GitHub release. No code was replaced.');
+                }
                 if (is_file($home . '/current.json')) {
                     $current = AIcontrolInstaller::readJson($home . '/current.json');
                     AIcontrolInstaller::verify($home . '/releases/' . AIcontrolInstaller::sha($current['sha']), $current['manifest_hash']);
                 }
                 $signer->record(AIcontrolInstaller::$operation + ['event' => 'update.requested', 'prior_commit' => $current['sha'] ?? null]);
+                AIcontrolProgress::stage(3, 'Confirm GitHub checks', 'Require successful checks for this exact commit.');
                 AIcontrolInstaller::checks($selected['sha']);
+                AIcontrolProgress::stage(4, 'Download the release', 'Download directly from GitHub to this server.');
                 $archive = AIcontrolInstaller::request('https://api.github.com/repos/' . AICONTROL_REPOSITORY . '/zipball/' . $selected['sha']);
                 $zipPath = $home . '/download-' . bin2hex(random_bytes(8)) . '.zip';
                 file_put_contents($zipPath, $archive);
                 $stage = $home . '/releases/stage-' . bin2hex(random_bytes(8));
                 try {
+                    AIcontrolProgress::stage(5, 'Verify the download', 'Validate archive paths, syntax and every manifest checksum.');
                     AIcontrolInstaller::stage($zipPath, $stage, $selected);
                 } catch (Throwable $error) {
                     AIcontrolInstaller::removeStage($stage);
@@ -1378,7 +1795,25 @@ try {
                 } elseif (!rename($stage, $release)) {
                     throw new RuntimeException('Cannot retain the staged release.');
                 }
-                $target = ['sha' => $selected['sha'], 'manifest_hash' => $selected['manifest_hash']];
+                AIcontrolProgress::stage(6, 'Prepare recovery backups', 'Keep prior code and loader; leave PIN, keys and runtime data untouched.');
+                $previousFiles = [];
+                if (isset($current['sha'])) {
+                    $previousFiles = AIcontrolInstaller::manifest(file_get_contents($home . '/releases/' . $current['sha'] . '/release-manifest.json'));
+                }
+                $releaseManifest = json_decode(file_get_contents($release . '/release-manifest.json'), true, 32, JSON_THROW_ON_ERROR);
+                $bootstrapPlan = null;
+                $oldLoaderHash = hash_file('sha256', __FILE__);
+                if (isset($releaseManifest['bootstrap'])) {
+                    $bootstrapPlan = ['path' => __FILE__, 'staged' => $release . '/.bootstrap-loader.php',
+                        'state' => AIcontrolUpdates::prepareBootstrap($home, __FILE__, $release . '/.bootstrap-loader.php', $releaseManifest['bootstrap']['sha256'], $selected['sha'])];
+                }
+                $updateSummary = ['source_commit' => $selected['sha'], 'title' => $selected['title'] ?? 'Checked release',
+                    'changes' => AIcontrolUpdates::changedFiles($previousFiles, $releaseManifest['files']),
+                    'loader_updated' => isset($releaseManifest['bootstrap']) && !hash_equals($oldLoaderHash, $releaseManifest['bootstrap']['sha256']),
+                    'loader_hash' => $releaseManifest['bootstrap']['sha256'] ?? $oldLoaderHash,
+                    'manifest_hash' => $selected['manifest_hash']];
+                $target = ['sha' => $selected['sha'], 'manifest_hash' => $selected['manifest_hash'], 'bootstrap_hash' => $updateSummary['loader_hash']];
+                AIcontrolProgress::stage(7, 'Activate and check the workspace', 'Activate checked files and verify private configuration and database readability.');
                 AIcontrolInstaller::activate($home, $target, static function () use ($home, $release, $selected): void {
                     AIcontrolInstaller::verify($release, $selected['manifest_hash']);
                     require_once $release . '/src/PrivateStorage.php';
@@ -1403,14 +1838,18 @@ try {
                         AIcontrolInstaller::jsonFile($runtime . '/config.json', $runtimeConfig);
                     }
                     (new \AIcontrol\PanelStore($runtime . '/panel.sqlite'))->snapshot();
-                });
+                }, $bootstrapPlan);
+                if ($bootstrapPlan === null) { AIcontrolProgress::stage(8, 'Keep the current loader', 'This release does not include a bootstrap replacement.'); }
                 $activated = true;
+                AIcontrolProgress::stage(9, 'Save the update result', 'Retain signed evidence and the exact hashes now installed.');
                 $completed = $signer->record(AIcontrolInstaller::$operation + ['event' => 'update.completed', 'outcome' => 'local_readiness_passed']);
                 if (is_file($home . '/bootstrap.json')) {
                     unlink($home . '/bootstrap.json');
                 }
                 $message = 'Installed checked commit ' . $selected['sha'] . '. Open the panel below.';
                 $completedReceipt = AIcontrolSigning::verify($completed, $signer->identity()['public_key'])['receipt_id'];
+                AIcontrolUpdates::save($home, 'last-update.json', ['event' => 'update.summary', 'summary' => $updateSummary, 'completed_at' => time(), 'receipt_id' => $completedReceipt]);
+                AIcontrolUpdates::save($home, 'update-status.json', ['event' => 'update.availability', 'state' => 'up_to_date', 'installed_sha' => $selected['sha'], 'latest_sha' => $selected['sha'], 'loader_update' => false, 'app_update' => false, 'integrity_changed' => false, 'running_loader_hash' => hash_file('sha256', __FILE__), 'checked_at' => time(), 'expires_at' => time() + 900]);
             } catch (Throwable $error) {
                 $signer->record(AIcontrolInstaller::$operation + ['event' => 'update.stopped', 'outcome' => $activated ? 'code_activated_receipt_or_cleanup_failed' : 'installation_failed_or_recovered']);
                 throw $error;
@@ -1429,6 +1868,16 @@ try {
         ? $error->getMessage() : 'Installation failed safely. Inspect server configuration and retained private state.';
 }
 
+if (AIcontrolProgress::$stream) {
+    $success = isset($completedReceipt);
+    AIcontrolProgress::emit(['event' => $success ? 'complete' : 'error', 'message' => $message, 'summary' => $success ? ($updateSummary ?? []) : null]);
+    return;
+}
+if (isset($_GET['update_api'])) {
+    header('Content-Type: application/json');
+    echo json_encode(['state' => 'check_failed', 'message' => 'Update status is unavailable. Open application updates to inspect the connection.'], JSON_THROW_ON_ERROR);
+    return;
+}
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'HEAD') {
     return;
 }
@@ -1437,6 +1886,11 @@ AIcontrolUi::begin('Application setup', $entry);
 $installedState = null;
 if ($home !== null && is_file($home . '/current.json')) {
     try { $installedState = AIcontrolInstaller::readJson($home . '/current.json'); } catch (Throwable) {}
+}
+$lastUpdate = null;
+if ($home !== null && is_file($home . '/last-update.json')) {
+    try { $lastUpdate = AIcontrolUpdates::signedState($home, 'last-update.json'); }
+    catch (Throwable) { echo '<div class="alert alert-danger" role="alert">The saved update summary could not be verified.</div>'; }
 }
 $selected = is_array($_SESSION['selection'] ?? null) ? $_SESSION['selection'] : null;
 $hasInstalled = $installedState !== null;
@@ -1453,7 +1907,17 @@ if ($message !== '') {
     echo '<div class="alert ' . ((http_response_code() ?: 200) >= 400 ? 'alert-danger' : ($finished ? 'alert-success' : 'alert-info')) . '" role="' . ((http_response_code() ?: 200) >= 400 ? 'alert' : 'status') . '">' . $escape($message) . '</div>';
 }
 if ($selected !== null) {
-    echo '<section class="card setup-card"><div class="card-header"><h2 class="card-title">Review this release</h2><span class="status-pill ' . ($expired ? 'amber' : 'green') . ' ms-auto">' . ($expired ? 'Selection expired' : 'Required checks passed') . '</span></div><div class="card-body"><h2>Ready when you are.</h2><p class="setup-copy">This is the exact commit your server will install. The selection is signed and can be used once.</p><dl class="setup-facts"><dt>Repository</dt><dd>' . AICONTROL_REPOSITORY . '</dd><dt>Exact commit</dt><dd class="mono">' . $escape($selected['sha']) . '</dd><dt>Selection expires</dt><dd>' . AIcontrolUi::e(AIcontrolUi::time($selected['checked_at'] + 600)) . '</dd><dt>Server storage</dt><dd>Configured automatically</dd></dl><form method="post" action="' . $escape($entry . '?installer=1') . '"><input type="hidden" name="csrf" value="' . $escape($_SESSION['csrf']) . '"><input type="hidden" name="action" value="install"><input type="hidden" name="sha" value="' . $escape($selected['sha']) . '"><button class="btn btn-primary"' . ($expired ? ' disabled' : '') . '>' . AIcontrolUi::icon('upload') . 'Install this checked commit</button></form><details class="setup-details"><summary>Release details and verification</summary><dl class="setup-facts"><dt>Manifest SHA-256</dt><dd><code>' . $escape($selected['manifest_hash']) . '</code></dd><dt>Private storage</dt><dd><code>' . $escape($selected['home']) . '</code></dd><dt>Required check</dt><dd>' . AICONTROL_REQUIRED_CHECK . '</dd></dl></details></div></section>';
+    echo '<section class="card setup-card"><div class="card-header"><h2 class="card-title">Review this release</h2><span class="status-pill ' . ($expired ? 'amber' : 'green') . ' ms-auto">' . ($expired ? 'Selection expired' : 'Required checks passed') . '</span></div><div class="card-body"><h2>Ready when you are.</h2><p class="setup-copy">This is the exact commit your server will install. The selection is signed and can be used once.</p><dl class="setup-facts"><dt>Repository</dt><dd>' . AICONTROL_REPOSITORY . '</dd><dt>Exact commit</dt><dd class="mono">' . $escape($selected['sha']) . '</dd><dt>Selection expires</dt><dd>' . AIcontrolUi::e(AIcontrolUi::time($selected['checked_at'] + 600)) . '</dd><dt>Server storage</dt><dd>Configured automatically</dd></dl><form method="post" data-update-install action="' . $escape($entry . '?installer=1') . '"><input type="hidden" name="csrf" value="' . $escape($_SESSION['csrf']) . '"><input type="hidden" name="action" value="install"><input type="hidden" name="sha" value="' . $escape($selected['sha']) . '"><button class="btn btn-primary"' . ($expired ? ' disabled' : '') . '>' . AIcontrolUi::icon('upload') . 'Install this checked commit</button></form><details class="setup-details"><summary>Release details and verification</summary><dl class="setup-facts"><dt>Manifest SHA-256</dt><dd><code>' . $escape($selected['manifest_hash']) . '</code></dd><dt>Private storage</dt><dd><code>' . $escape($selected['home']) . '</code></dd><dt>Required check</dt><dd>' . AICONTROL_REQUIRED_CHECK . '</dd></dl></details></div></section>';
+}
+if ($lastUpdate !== null && isset($lastUpdate['summary'])) {
+    $summary = $lastUpdate['summary'];
+    echo '<section class="card setup-card mt-3"><div class="card-header"><h2 class="card-title">What was updated</h2><span class="status-pill green ms-auto">Verified result</span></div><div class="card-body"><p class="setup-copy">' . $escape($summary['title'] ?? 'Checked release') . '</p><dl class="setup-facts"><dt>Completed</dt><dd>' . AIcontrolUi::e(AIcontrolUi::time((int) $lastUpdate['completed_at'])) . '</dd><dt>Release commit</dt><dd class="mono">' . $escape($summary['source_commit']) . '</dd><dt>Loader</dt><dd>' . (!empty($summary['loader_updated']) ? 'Updated and verified' : 'Already matched the checked hash') . '</dd><dt>Retained</dt><dd>PIN, signing identity and project data</dd></dl><details><summary>Changed files and hashes</summary><dl class="setup-facts"><dt>Loader SHA-256</dt><dd><code>' . $escape($summary['loader_hash']) . '</code></dd><dt>Manifest SHA-256</dt><dd><code>' . $escape($summary['manifest_hash']) . '</code></dd></dl>';
+    foreach (['added' => 'Added', 'changed' => 'Changed', 'removed' => 'Removed'] as $kind => $label) {
+        echo '<h3 class="card-title mt-3">' . $label . ' (' . count($summary['changes'][$kind] ?? []) . ')</h3><ul class="muted">';
+        foreach ($summary['changes'][$kind] ?? [] as $path) { echo '<li class="mono">' . $escape($path) . '</li>'; }
+        echo '</ul>';
+    }
+    echo '</details></div></section>';
 }
 if (isset($_SESSION['csrf'])) {
     $csrf = '<input type="hidden" name="csrf" value="' . $escape($_SESSION['csrf']) . '">';
