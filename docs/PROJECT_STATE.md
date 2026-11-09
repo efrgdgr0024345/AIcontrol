@@ -115,3 +115,13 @@ AI context, while keys stay out of prompts. Research projects have persistent
 project-specific chats and optional provider web search. See ADMIN_RESEARCH.md
 for storage, bounds and exact validation scope. Run `php tests/workspace.php`
 alongside existing checks. Live provider operation still needs a host-side key.
+
+## Workspace asset delivery fix
+
+The owner reported unstyled overview/admin/runs at easyai.com.au under /aiadmin/.
+Unauthenticated live asset requests return PIN HTML, not CSS; the authenticated
+host response was not accessible in this session. Workspace pages now embed the
+verified release CSS and JS with per-response CSP nonces, like the standalone
+sign-in/installer. They no longer depend on additional authenticated asset loads.
+Browser tests deliberately block separate asset requests and verify layout,
+forms and accessibility. Existing asset endpoints remain compatible.

@@ -52,7 +52,8 @@ final class Panel
             throw new RuntimeException('HTTPS required.');
         }
         header('Cache-Control: no-store');
-        header("Content-Security-Policy: default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+        $assetNonce = base64_encode(random_bytes(18));
+        header("Content-Security-Policy: default-src 'none'; style-src 'self' 'nonce-{$assetNonce}'; script-src 'self' 'nonce-{$assetNonce}'; connect-src 'self'; img-src data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
         header('X-Content-Type-Options: nosniff');
         header('Referrer-Policy: no-referrer');
         if (!in_array($path, ['/', '/loader.php', '/health'], true)) {
@@ -200,6 +201,7 @@ final class Panel
         $data = $authenticated ? $store->snapshot() : ['projects' => [], 'tasks' => [], 'events' => [], 'runs' => []];
         if ($authenticated && $view === 'admin') { $data['vault'] = (new Vault($directory))->entries(); }
         if ($authenticated && $view === 'research') { $data['research'] = (new Research($directory))->snapshot(); }
+        $data['asset_nonce'] = $assetNonce;
         PanelView::render($data, $view, $csrf, $error, $passwordMode, $config, $authenticated);
     }
 }

@@ -75,7 +75,7 @@ final class PanelView
         $label = $views[$view][0];
         $updateUrl = getenv('AICONTROL_UPDATE_STATUS_URL') ?: '';
         $updateAttribute = $authenticated && $updateUrl !== '' ? ' data-update-status-url="' . Ui::e($updateUrl) . '"' : '';
-        echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' . Ui::e($label) . ' · AIcontrol</title>' . Ui::favicon() . '<link rel="stylesheet" href="/assets/panel.css"></head><body><a class="skip-link" href="#main-content">Skip to content</a><div class="app-layout' . '"' . $updateAttribute . '><aside class="app-sidebar">' . Ui::brand('/loader.php') . '<div class="sidebar-label">WORKSPACE</div><nav class="app-navigation" aria-label="Main navigation">';
+        echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' . Ui::e($label) . ' · AIcontrol</title>' . Ui::favicon() . '<style nonce="' . Ui::e($data['asset_nonce']) . '">' . Ui::css() . '</style></head><body><a class="skip-link" href="#main-content">Skip to content</a><div class="app-layout' . '"' . $updateAttribute . '><aside class="app-sidebar">' . Ui::brand('/loader.php') . '<div class="sidebar-label">WORKSPACE</div><nav class="app-navigation" aria-label="Main navigation">';
         if ($authenticated) {
             foreach ($views as $key => [$name, $icon]) {
                 echo '<a href="/loader.php?view=' . $key . '"' . ($key === $view ? ' aria-current="page"' : '') . '>' . Ui::icon($icon) . '<span>' . $name . '</span></a>';
@@ -119,7 +119,7 @@ final class PanelView
                 'runs' => self::runs($data), 'systems' => self::systems($data), 'history' => self::history($data),
             };
         }
-        echo '<footer class="app-footer"><span>AIcontrol · A place for the work and its evidence.</span><span>Times in AWST · <a href="/loader.php?installer=1">Application updates</a></span></footer></main></div></div><script src="/assets/panel.js" defer></script></body></html>';
+        echo '<footer class="app-footer"><span>AIcontrol · A place for the work and its evidence.</span><span>Times in AWST · <a href="/loader.php?installer=1">Application updates</a></span></footer></main></div></div><script nonce="' . Ui::e($data['asset_nonce']) . '">' . Ui::js() . '</script></body></html>';
     }
 
     private static function overview(array $data): void
