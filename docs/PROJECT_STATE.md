@@ -43,6 +43,8 @@ revisions; do not infer a live hosting revision from the latest source commit.
   up to 1,000 output tokens; results need review, costs remain unknown.
 - Explicit handling of missing connection, provider refusal and uncertain timeout;
   no automatic retry of an uncertain provider operation.
+- Locally bundled Tabler 1.7.4 workspace/installer/PIN UI, including project/task
+  search, agent-result views, connection states and activity search; see UI.md.
 
 ## Not established or not built
 
@@ -63,6 +65,7 @@ revisions; do not infer a live hosting revision from the latest source commit.
 Run from the repository root (set PHP_BINARY when PHP is not on PATH):
 
 ```sh
+php bin/build-ui.php --check
 php bin/build-manifest.php --check
 php tests/run.php
 php tests/loader.php
@@ -72,9 +75,12 @@ php tests/agent.php
 php tests/agent_adapter.php
 python3 -B -m unittest -v tests/http_smoke.py tests/standalone_smoke.py tests/passwordless_smoke.py tests/pin_smoke.py
 git diff --check
+npm ci --ignore-scripts
+PHP_BINARY=php npm run test:ui
 ```
 
-`php bin/build-manifest.php` refreshes the manifest after application changes.
+For UI source changes, run `php bin/build-ui.php` before `php bin/build-manifest.php`.
+The latter refreshes the manifest after application changes.
 The standalone loader is deliberately not part of the downloaded application
 manifest; bootstrap updates are separate uploads that preserve generated markers.
 

@@ -10,6 +10,9 @@ private records persist on the hosting server.
 | Release channel | `feature/control-panel-foundation` |
 | Required exact-SHA check | `planning-panel` / GitHub Actions |
 | Entry point | One uploaded `loader.php`, including subfolder support |
+| Interface | Tabler 1.7.4 (MIT), bundled locally; no CDN or browser JS required |
+| UI build | `php bin/build-ui.php`, then `php bin/build-manifest.php` |
+| Display timezone | Australia/Perth (AWST); stored timestamps stay UTC |
 | PHP | 8.2–8.5; curl, zip, tokenizer, mbstring, PDO SQLite, sessions, sodium |
 | Login | First visit sets 6–12 digit PIN; subsequent visits sign in |
 | PIN session | Up to 30 minutes; five incorrect attempts block for up to ten minutes |
