@@ -1,0 +1,205 @@
+<?php
+declare(strict_types=1);
+
+namespace AIcontrol;
+
+use RuntimeException;
+use Throwable;
+
+final class Panel
+{
+    private static function escape(string|int $value): string
+    {
+        return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    }
+
+    private static function input(string $name): string
+    {
+        $value = $_POST[$name] ?? '';
+        if (!is_string($value)) {
+            throw new RuntimeException('Invalid input.');
+        }
+        return $value;
+    }
+
+    public static function serve(string $directory, string $path, string $method): void
+    {
+        umask(0077);
+        $config = PrivateStorage::config($directory);
+        $store = new PanelStore($directory . '/panel.sqlite');
+        $secure = ($_SERVER['HTTPS'] ?? '') === 'on' || ($_SERVER['HTTPS'] ?? '') === '1';
+        $local = getenv('AICONTROL_LOCAL_DEV') === '1'
+            && in_array($_SERVER['REMOTE_ADDR'] ?? '', ['127.0.0.1', '::1'], true);
+        if (!$secure && !$local) {
+            throw new RuntimeException('HTTPS required.');
+        }
+        header('Cache-Control: no-store');
+        header("Content-Security-Policy: default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+        header('X-Content-Type-Options: nosniff');
+        header('Referrer-Policy: no-referrer');
+        if (!in_array($path, ['/', '/loader.php', '/health'], true)) {
+            http_response_code(404);
+            header('Content-Type: application/json');
+            echo '{"error":"not_found"}';
+            return;
+        }
+        if (!in_array($method, ['GET', 'HEAD', 'POST'], true) || ($path === '/health' && $method === 'POST')) {
+            http_response_code(405);
+            header('Allow: GET, HEAD' . ($path === '/health' ? '' : ', POST'));
+            return;
+        }
+        if ($path === '/health') {
+            header('Content-Type: application/json');
+            if ($method !== 'HEAD') {
+                echo '{"status":"ok","scope":"metadata_panel_only","broker_enabled":false,"deployment_enabled":false}';
+            }
+            return;
+        }
+        session_name('aicontrol_panel');
+        ini_set('session.use_strict_mode', '1');
+        ini_set('session.use_only_cookies', '1');
+        ini_set('session.use_trans_sid', '0');
+        session_save_path($directory . '/sessions');
+        session_set_cookie_params(['lifetime' => 0, 'path' => '/', 'secure' => $secure, 'httponly' => true, 'samesite' => 'Strict']);
+        if (!session_start()) {
+            throw new RuntimeException('Session storage unavailable.');
+        }
+        if (($_SESSION['authenticated'] ?? false) && (($_SESSION['expires'] ?? 0) < time())) {
+            $_SESSION = [];
+            session_regenerate_id(true);
+        }
+        $_SESSION['csrf'] ??= bin2hex(random_bytes(32));
+        $error = '';
+        if ($method === 'POST') {
+            if ((int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 16384) {
+                http_response_code(413);
+                return;
+            }
+            if (!hash_equals($_SESSION['csrf'], self::input('csrf'))) {
+                http_response_code(403);
+                echo 'Request verification failed.';
+                return;
+            }
+            $action = self::input('action');
+            if ($action === 'login') {
+                $client = hash('sha256', $_SERVER['REMOTE_ADDR'] ?? 'unknown');
+                if (!$store->loginAllowed($client)) {
+                    http_response_code(429);
+                    header('Retry-After: 600');
+                    $error = 'Too many attempts. Try again in ten minutes.';
+                } elseif (strlen(self::input('password')) <= 256 && password_verify(self::input('password'), $config['password_hash'])) {
+                    session_regenerate_id(true);
+                    $_SESSION = ['authenticated' => true, 'expires' => time() + 1800, 'csrf' => bin2hex(random_bytes(32))];
+                    header('Location: /loader.php', true, 303);
+                    return;
+                } else {
+                    $store->failedLogin($client);
+                    http_response_code(401);
+                    $error = 'Sign-in failed.';
+                }
+            } elseif (!($_SESSION['authenticated'] ?? false)) {
+                http_response_code(401);
+                $error = 'Sign in to record a proposal.';
+            } elseif ($action === 'logout') {
+                $_SESSION = [];
+                session_destroy();
+                setcookie(session_name(), '', ['expires' => time() - 3600, 'path' => '/', 'secure' => $secure, 'httponly' => true, 'samesite' => 'Strict']);
+                header('Location: /loader.php', true, 303);
+                return;
+            } else {
+                try {
+                    if ($action === 'project') {
+                        $store->createProject(self::input('name'), self::input('brief'));
+                    } elseif ($action === 'task') {
+                        $project = filter_var(self::input('project_id'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+                        if ($project === false) {
+                            throw new RuntimeException('Invalid project.');
+                        }
+                        $store->createTask($project, self::input('title'), self::input('criteria'));
+                    } else {
+                        throw new RuntimeException('Operation unavailable.');
+                    }
+                    header('Location: /loader.php?view=projects', true, 303);
+                    return;
+                } catch (Throwable) {
+                    http_response_code(422);
+                    $error = 'Proposal could not be saved. Check the selected project and field lengths.';
+                }
+            }
+        }
+        header('Content-Type: text/html; charset=utf-8');
+        if ($method === 'HEAD') {
+            return;
+        }
+        $e = self::escape(...);
+        $csrf = '<input type="hidden" name="csrf" value="' . $e($_SESSION['csrf']) . '">';
+        echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AIcontrol</title><link rel="stylesheet" href="/assets/panel.css"></head><body>';
+        echo '<aside><a class="brand" href="/loader.php">AIcontrol</a><p>Project control panel</p>';
+        $views = ['overview' => 'Overview', 'projects' => 'Projects & tasks', 'systems' => 'Systems', 'history' => 'Activity'];
+        $view = is_string($_GET['view'] ?? null) && isset($views[$_GET['view']]) ? $_GET['view'] : 'overview';
+        if ($_SESSION['authenticated'] ?? false) {
+            foreach ($views as $key => $label) {
+                echo '<a class="nav ' . ($view === $key ? 'selected' : '') . '" href="/loader.php?view=' . $key . '">' . $label . '</a>';
+            }
+            echo '<form method="post" action="/loader.php">' . $csrf . '<input type="hidden" name="action" value="logout"><button class="secondary">Sign out</button></form>';
+        }
+        echo '</aside><main><div class="notice">Planning mode · Proposals only. Agents, credential use and deployments are disabled.</div>';
+        if ($error !== '') {
+            echo '<p role="alert" class="error">' . $e($error) . '</p>';
+        }
+        if (!($_SESSION['authenticated'] ?? false)) {
+            echo '<h1>Your projects, in one place.</h1><p>Sign in to plan work and follow recorded proposals.</p><section class="login"><h2>Sign in</h2><form method="post" action="/loader.php">' . $csrf
+                . '<input type="hidden" name="action" value="login"><label>Panel password<input type="password" name="password" autocomplete="current-password" required maxlength="256"></label><button>Sign in</button></form></section>';
+        } else {
+            $data = $store->snapshot();
+            echo '<header><p class="eyebrow">WORKSPACE</p><h1>' . $views[$view] . '</h1></header>';
+            if ($view === 'overview') {
+                echo '<div class="stats"><section><span>Projects</span><strong>' . count($data['projects']) . '</strong></section><section><span>Task proposals</span><strong>' . count($data['tasks']) . '</strong></section><section><span>Connected agents</span><strong>0</strong></section><section><span>Provider cost</span><strong>Unknown</strong></section></div>';
+                echo '<section><h2>Start with a clear brief</h2><p>Create a project, then record a task and its acceptance criteria. Proposals do not dispatch work or grant permissions.</p><a class="button" href="/loader.php?view=projects">Manage projects</a></section><section><h2>What is available</h2><p>Project and task proposals, durable activity history and system availability. Independent approval is deferred. No service credentials are accepted in this release.</p></section>';
+            } elseif ($view === 'projects') {
+                echo '<div class="columns"><section><h2>New project</h2><form method="post" action="/loader.php">' . $csrf . '<input type="hidden" name="action" value="project"><label>Name<input name="name" required maxlength="160"></label><label>Brief and intended outcome<textarea name="brief" required maxlength="4000"></textarea></label><button>Create project</button></form></section>';
+                echo '<section><h2>Propose a task</h2>';
+                if ($data['projects'] === []) {
+                    echo '<p>Create a project first.</p>';
+                } else {
+                    echo '<form method="post" action="/loader.php">' . $csrf . '<input type="hidden" name="action" value="task"><label>Project<select name="project_id">';
+                    foreach ($data['projects'] as $project) {
+                        echo '<option value="' . $e($project['id']) . '">' . $e($project['name']) . '</option>';
+                    }
+                    echo '</select></label><label>Task<input name="title" required maxlength="160"></label><label>Acceptance criteria<textarea name="criteria" required maxlength="4000"></textarea></label><button>Save proposal</button></form>';
+                }
+                echo '</section></div><h2>Projects</h2>';
+                if ($data['projects'] === []) {
+                    echo '<section><p>No projects yet.</p></section>';
+                }
+                foreach ($data['projects'] as $project) {
+                    echo '<section id="project-' . $e($project['id']) . '"><h3>' . $e($project['name']) . '</h3><p class="preserve">' . $e($project['brief']) . '</p></section>';
+                }
+                echo '<h2>Task proposals</h2>';
+                if ($data['tasks'] === []) {
+                    echo '<section><p>No tasks yet. No agent is running.</p></section>';
+                }
+                foreach ($data['tasks'] as $task) {
+                    echo '<section id="task-' . $e($task['id']) . '"><span class="badge">Draft · not dispatched</span><h3>' . $e($task['title']) . '</h3><p>Project: ' . $e($task['project_name']) . '</p><p class="preserve">' . $e($task['criteria']) . '</p></section>';
+                }
+            } elseif ($view === 'systems') {
+                echo '<section><h2>Available integrations</h2><p>These are planned integrations. No connection has been configured or verified.</p><table><thead><tr><th>System</th><th>Status</th><th>Intended use</th></tr></thead><tbody>';
+                foreach (['OpenAI' => 'Bounded provider operations', 'GitHub' => 'Repository and pull request evidence', 'GitHub Actions' => 'Isolated test jobs', 'cPanel' => 'Hosting and reviewed deployments'] as $name => $purpose) {
+                    echo '<tr><td>' . $name . '</td><td>Not configured</td><td>' . $purpose . '</td></tr>';
+                }
+                echo '</tbody></table></section>';
+            } else {
+                echo '<section><h2>Recent activity</h2><p>Latest 100 proposal events, newest first. All timestamps are UTC. No external work is tracked yet.</p>';
+                if ($data['events'] === []) {
+                    echo '<p>No activity recorded.</p>';
+                }
+                foreach ($data['events'] as $event) {
+                    $target = $event['task_id'] === null ? 'project-' . $event['project_id'] : 'task-' . $event['task_id'];
+                    echo '<article><time>' . $e($event['created_at']) . '</time><h3><a href="/loader.php?view=projects#' . $e($target) . '">' . $e($event['kind']) . '</a></h3><p>' . $e($event['detail']) . '</p></article>';
+                }
+                echo '</section>';
+            }
+        }
+        echo '<footer>AIcontrol · Planning release · No provider or deployment authority</footer></main></body></html>';
+    }
+}
