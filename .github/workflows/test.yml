@@ -28,6 +28,7 @@ jobs:
           php tests/updates.php
           php tests/agent.php
           php tests/agent_adapter.php
+          php tests/workspace.php
           python3 -B -m unittest -v tests/http_smoke.py
           python3 -B -m unittest -v tests/standalone_smoke.py
           python3 -B -m unittest -v tests/passwordless_smoke.py

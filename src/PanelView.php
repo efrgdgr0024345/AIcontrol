@@ -62,8 +62,10 @@ final class PanelView
 
     public static function render(array $data, string $view, string $csrf, string $error, bool $passwordMode, array $config, bool $authenticated): void
     {
-        $views = ['overview' => ['Overview', 'grid'], 'projects' => ['Projects & tasks', 'folder'], 'runs' => ['Agent runs', 'robot'], 'systems' => ['Systems', 'plug'], 'history' => ['Activity', 'clock']];
+        $views = ['overview' => ['Overview', 'grid'], 'research' => ['Research projects', 'search'], 'admin' => ['Admin', 'lock'], 'projects' => ['Projects & tasks', 'folder'], 'runs' => ['Agent runs', 'robot'], 'systems' => ['Systems', 'plug'], 'history' => ['Activity', 'clock']];
         $subtitle = [
+            'admin' => 'Private keys and notes for your workspace.',
+            'research' => 'Explore ideas, check sources, and keep the conversation with the project.',
             'overview' => 'A clear view of your projects, tasks, and next steps.',
             'projects' => 'Keep the brief, the work, and its acceptance criteria together.',
             'runs' => 'Follow each request from task to a result ready for review.',
@@ -112,6 +114,7 @@ final class PanelView
             }
             echo '</div>';
             match ($view) {
+                'admin' => WorkspaceView::admin($data['vault'], $csrf), 'research' => WorkspaceView::research($data['research'], $csrf),
                 'overview' => self::overview($data), 'projects' => self::projects($data, $csrf),
                 'runs' => self::runs($data), 'systems' => self::systems($data), 'history' => self::history($data),
             };
@@ -225,7 +228,7 @@ final class PanelView
             foreach ($facts as $key => $value) { echo '<dt>' . Ui::e($key) . '</dt><dd>' . Ui::e($value) . '</dd>'; }
             echo '</dl>';
             if ($id === 'openai') {
-                echo '<details><summary>Connection setup</summary><p>Configure the provider key directly on the hosting server as <code>AICONTROL_OPENAI_API_KEY</code>. No credential value is displayed here.</p><a href="https://github.com/efrgdgr0024345/AIcontrol/blob/feature/control-panel-foundation/docs/STANDALONE_LOADER.md#first-ai-task-connection" target="_blank" rel="noopener noreferrer">Read connection instructions</a></details>';
+                echo '<details><summary>Connection setup</summary><p>Open <a href="/loader.php?view=admin">Admin</a> and save a key named <code>openai_api_key</code>. A server <code>AICONTROL_OPENAI_API_KEY</code> overrides the stored key. No saved credential value is displayed here.</p><a href="https://github.com/efrgdgr0024345/AIcontrol/blob/feature/control-panel-foundation/docs/STANDALONE_LOADER.md#first-ai-task-connection" target="_blank" rel="noopener noreferrer">Read connection instructions</a></details>';
             }
             if ($id === 'github') { echo '<a class="btn btn-outline-secondary" href="/loader.php?installer=1">' . Ui::icon('upload') . 'Open application updates</a>'; }
             echo '</div></section>';

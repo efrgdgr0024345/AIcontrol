@@ -11,7 +11,20 @@ final class AgentRunner
 {
     public static function configured(): bool
     {
-        return is_string(getenv('AICONTROL_OPENAI_API_KEY')) && getenv('AICONTROL_OPENAI_API_KEY') !== '';
+        return self::apiKey() !== '';
+    }
+
+    public static function apiKey(): string
+    {
+        $env = getenv('AICONTROL_OPENAI_API_KEY');
+        if (is_string($env) && $env !== '') { return $env; }
+        $directory = getenv('AICONTROL_PRIVATE_DIR');
+        return class_exists(Vault::class) && is_string($directory) && $directory !== '' ? (new Vault($directory))->value('openai_api_key') : '';
+    }
+    public static function sharedContext(): string
+    {
+        $directory = getenv('AICONTROL_PRIVATE_DIR');
+        return class_exists(Vault::class) && is_string($directory) && $directory !== '' ? (new Vault($directory))->context() : '';
     }
 
     public static function run(PanelStore $store, int $task): void
@@ -28,13 +41,13 @@ final class AgentRunner
             $body = json_encode([
                 'model' => $model, 'store' => false, 'max_output_tokens' => 1000,
                 'instructions' => 'You are a coding assistant. Work on the supplied task. Return a concise proposed solution or patch and validation steps. You have no tools or repository access. Clearly identify missing context. Do not claim code was executed, committed, or deployed.',
-                'input' => 'Project brief: ' . $run['task']['brief'] . "\nTask: " . $run['task']['title'] . "\nAcceptance criteria: " . $run['task']['criteria'],
+                'input' => 'Project brief: ' . $run['task']['brief'] . "\nTask: " . $run['task']['title'] . "\nAcceptance criteria: " . $run['task']['criteria'] . self::sharedContext(),
             ], JSON_THROW_ON_ERROR);
             $client = curl_init('https://api.openai.com/v1/responses');
             $response = '';
             curl_setopt_array($client, [
                 CURLOPT_POST => true, CURLOPT_POSTFIELDS => $body,
-                CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Authorization: Bearer ' . getenv('AICONTROL_OPENAI_API_KEY')],
+                CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Authorization: Bearer ' . self::apiKey()],
                 CURLOPT_CONNECTTIMEOUT => 10, CURLOPT_TIMEOUT => 30, CURLOPT_FOLLOWLOCATION => false,
                 CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
                 CURLOPT_WRITEFUNCTION => static function ($handle, string $chunk) use (&$response): int {

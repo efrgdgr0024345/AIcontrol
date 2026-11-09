@@ -153,6 +153,14 @@ final class AIcontrolUi
   });
 })();
 
+document.addEventListener('submit', event => {
+  const form = event.target;
+  if (!form.matches('[data-research-chat]')) return;
+  const button = form.querySelector('button');
+  button.disabled = true;
+  form.querySelector('[data-research-status]').textContent = 'Researching… This may take up to a minute.';
+});
+
 AICONTROL_UI_JS;
     }
     public static function css(): string
@@ -469,6 +477,12 @@ details[open] summary { margin-bottom: 14px; }
   .form-control,.form-select { font-size: 16px; }
   .pin-input { font-size: 22px; }
 }
+
+.research-conversation { max-height: 38rem; overflow: auto; margin-bottom: 1.5rem; }
+.research-message { padding: 1rem; margin-bottom: .75rem; border: 1px solid var(--ac-border, #dce1e9); border-radius: .75rem; background: #f7f8fc; }
+.research-message h3 { font-size: 1rem; }
+.research-message p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.alert a { text-decoration: underline; }
 
 AICONTROL_UI_CSS;
     }

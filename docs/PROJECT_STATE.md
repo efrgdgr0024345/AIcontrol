@@ -106,3 +106,12 @@ projects/tasks persist there. Connect the server-side provider and exercise one
 bounded real task response. Next add authenticated worker/tool execution and
 linked code/test/PR evidence. Keep access and custody limitations explicit while
 following the owner's current testing scope.
+
+## Admin and research workspace
+
+Admin stores encrypted private keys and notes outside the public directory.
+`openai_api_key` connects research and task agents; opted-in notes become shared
+AI context, while keys stay out of prompts. Research projects have persistent
+project-specific chats and optional provider web search. See ADMIN_RESEARCH.md
+for storage, bounds and exact validation scope. Run `php tests/workspace.php`
+alongside existing checks. Live provider operation still needs a host-side key.

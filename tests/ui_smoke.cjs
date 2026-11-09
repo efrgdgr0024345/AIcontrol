@@ -48,7 +48,21 @@ const {spawn,spawnSync}=require('child_process');
   }
   const seed=spawnSync(php,['-r',`require 'src/PanelStore.php'; $store=new \\AIcontrol\\PanelStore(getenv('TEST_UI_DB')); $run=$store->startAgent(1,'ui-test-fixture'); $store->finishAgent($run['id'],'in_review',"UI test fixture only. No provider request or code execution.\\nProposed next steps:\\n1. Verify the PIN flow.\\n2. Review the checked commit.\\n3. Confirm task results remain available.");`],{env:{...process.env,TEST_UI_DB:path.join(privateDir,'panel.sqlite')},encoding:'utf8'});
   if(seed.status!==0)throw new Error(seed.stderr||seed.stdout);
-  for(const [name,file] of [['Overview','overview'],['Projects & tasks','projects'],['Agent runs','runs'],['Systems','systems'],['Activity','activity']]){
+  await page.getByRole('link',{name:'Admin',exact:true}).click();
+  await page.getByLabel('Entry name',{exact:true}).fill('shared_guidance');
+  await page.getByLabel('Entry type',{exact:true}).selectOption('note');
+  await page.getByLabel('New value',{exact:true}).fill('Synthetic private guidance');
+  await page.getByLabel('Share this note with AI', {exact:false}).check();
+  await page.getByRole('button',{name:'Save private entry',exact:true}).click();
+  await page.getByRole('heading',{name:'shared_guidance',exact:true}).waitFor({timeout:5000}).catch(async()=>{throw new Error('Admin save result: '+await page.locator('main').innerText());});
+  if((await page.content()).includes('Synthetic private guidance'))throw new Error('Vault plaintext returned to browser');
+  await page.getByRole('link',{name:'Research projects',exact:true}).click();
+  await page.getByLabel('Research name',{exact:true}).fill('Research fixture project');
+  await page.getByLabel('Research brief',{exact:true}).fill('Explore a test idea without a provider call.');
+  await page.getByRole('button',{name:'Create research project',exact:true}).click();
+  await page.getByRole('heading',{name:'Research fixture project',exact:true}).waitFor();
+  if(!await page.getByRole('button',{name:'Send research message',exact:true}).isDisabled())throw new Error('Disconnected research enabled');
+  for(const [name,file] of [['Overview','overview'],['Projects & tasks','projects'],['Agent runs','runs'],['Systems','systems'],['Activity','activity'],['Admin','admin'],['Research projects','research']]){
    await page.getByRole('link',{name,exact:true}).click();
    await page.screenshot({path:path.join(artifacts,`ui-${file}-desktop.png`),fullPage:true});await audit(name);
   }
@@ -77,7 +91,7 @@ const {spawn,spawnSync}=require('child_process');
 
   await page.locator('summary').filter({hasText:'Agent run #1'}).click();
   await page.getByText('UI test fixture only.',{exact:false}).waitFor();
-  for(const [name,file] of [['Overview','overview'],['Projects & tasks','projects'],['Agent runs','runs'],['Systems','systems'],['Activity','activity']]){
+  for(const [name,file] of [['Overview','overview'],['Projects & tasks','projects'],['Agent runs','runs'],['Systems','systems'],['Activity','activity'],['Admin','admin'],['Research projects','research']]){
    await page.setViewportSize({width:390,height:844});await page.getByRole('link',{name,exact:true}).click();
    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
    if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth)){

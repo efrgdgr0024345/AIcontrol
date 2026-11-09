@@ -1,21 +1,24 @@
 {
     "version": 2,
     "files": {
-        "app.php": "4793888798ebaf12d005c185628a1b8925fc277c89e3af1421a2c5c6539397e3",
-        "assets/panel.css": "73635fc23c3a3975d5915c0637090dba2e8304711f02864a82633c6807983c96",
-        "assets/panel.js": "c75b0458947c448897e50e109e576a79390e48c9292188f8e9549ca498bcd0e6",
+        "app.php": "858739c4f0dd07b8428a26ee2cb0f08818dc2b192fda9f4317cee1fa0fa65e94",
+        "assets/panel.css": "94a1fa07627710e10fedcf27990f5739484ac1284b9f1855d4285cfe54b8228a",
+        "assets/panel.js": "a7736da08b5ceb635465f373b0193a1b1e00ed7f483af60a15d10f015f0afaaf",
         "src/AccessPolicy.php": "44469fc613bb1704d857e06e6d70d484d44083b33753e99feaec93baed561cd8",
-        "src/AgentRunner.php": "5f0383b05ce78e7548ae776d60d431e669981f6b575fee0051e04b35c15f11fb",
+        "src/AgentRunner.php": "b5e92ef438d7eaaaf9a86b85dbb17694e10959d297e57061e197a326fbf4e982",
         "src/Bootstrap.php": "68184329531c1526cb67b6e8068d98e238b3571feaccd4ff6c81d1f012245409",
         "src/HostingRequirements.php": "7d062f0a54c10dc206ce731d31ad7b7efb9993900d3f87c24a7bc5cb110e655b",
-        "src/Panel.php": "21bf4acf2c48f22012c9b4e6b275b2df181eddba79ebd08c70fe4f1de4f7a8f3",
+        "src/Panel.php": "7464d32437cf7694449c604322b0819d2eea64cfca8fffe02c360fbb617c606f",
         "src/PanelStore.php": "3110e75250bb351d68f87d1accf86d0895aa593f4d446f4dce60e67c96f1a454",
-        "src/PanelView.php": "74b04312d7e2b02d0ca66cf97ce7032335f174278e34b2f3cbd436542df481ec",
+        "src/PanelView.php": "99da8dda2db60e73ea0ab26e097ee9a812d08b4b542128a2eb132f2888d77aaf",
         "src/PrivateStorage.php": "2b8dc6200eb49b248dfe2908de331a583d9ef0b3c324c8cfd2fc8159734c7836",
-        "src/Ui.php": "067ab45dd5074f97a3adccd1c623698451e3b3d0637a9d4b3ae133d5afec09fb"
+        "src/Research.php": "95ae6b128e106735d94079ef08f434f8744b5b75fbf5c7533cefcca9c3203949",
+        "src/Ui.php": "8164590b75347d6a6737fef7a3abb4c2de5071b024a7ac1c6be4ac3a25ade9b2",
+        "src/Vault.php": "67293540cbcc1dcd8f97033789e9a9b1c9688f0462f2720cc6c1cd83ec3fbded",
+        "src/WorkspaceView.php": "1d6dbdfc8058cbbafc2383e4b10052c3a69f40113a9d8ea07c13c0d8546ed2d4"
     },
     "bootstrap": {
         "path": "loader.php",
-        "sha256": "a3fc5743b884e9812c8cc29e627ee2317c3ea6371d45fcf8c3e954f96326dd26"
+        "sha256": "f73511bf08f9086049d9a59bd9314ff933edfde4a87f0154829cc5123fc64c95"
     }
 }

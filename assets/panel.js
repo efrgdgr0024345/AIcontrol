@@ -135,3 +135,11 @@
     }
   });
 })();
+
+document.addEventListener('submit', event => {
+  const form = event.target;
+  if (!form.matches('[data-research-chat]')) return;
+  const button = form.querySelector('button');
+  button.disabled = true;
+  form.querySelector('[data-research-status]').textContent = 'Researching… This may take up to a minute.';
+});
