@@ -78,7 +78,7 @@
     title.textContent = 'Preparing your update'; detail.textContent = 'Confirming the checked selection.'; count.textContent = '0 of 9 stages complete';
     dialog.dataset.state = 'working';
     if (!dialog.open) dialog.showModal();
-    const destination = new URL(form.action, location.href);
+    const destination = new URL(form.getAttribute('action') || location.href, location.href);
     destination.searchParams.set('stream', '1');
     let finished = false;
     const render = update => {
