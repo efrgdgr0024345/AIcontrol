@@ -37,6 +37,8 @@ revisions; do not infer a live hosting revision from the latest source commit.
 - Automatic private storage selection, persisted bootstrap/runtime configuration.
 - Exact-commit GitHub archive staging, manifest/file hashes, PHP syntax checks,
   deployment lock, activation journal and recovery of the previous code pointer.
+- Automatic checked-release detection, panel update button, verified loader
+  self-replacement, streamed stages and signed changed-file summaries (UPDATES.md).
 - Server-generated signing identity, public-key pinning and signed receipts.
 - SQLite project/task proposals, acceptance criteria and attributable events.
 - Bounded OpenAI Responses API task adapter: one active request, three runs/hour,
@@ -71,6 +73,7 @@ php tests/run.php
 php tests/loader.php
 php tests/signing.php
 php tests/storage.php
+php tests/updates.php
 php tests/agent.php
 php tests/agent_adapter.php
 python3 -B -m unittest -v tests/http_smoke.py tests/standalone_smoke.py tests/passwordless_smoke.py tests/pin_smoke.py
@@ -81,11 +84,18 @@ PHP_BINARY=php npm run test:ui
 
 For UI source changes, run `php bin/build-ui.php` before `php bin/build-manifest.php`.
 The latter refreshes the manifest after application changes.
-The standalone loader is deliberately not part of the downloaded application
-manifest; bootstrap updates are separate uploads that preserve generated markers.
+The standalone loader has a separate bootstrap hash in the release manifest.
+After one upload of the updater-capable loader, checked releases can replace it
+alongside the workspace while preserving generated markers and private state.
 
-Prior cloud browser validation exercised actual GitHub download/install, a second
-update, retained project/key state and independently verified Ed25519 receipts.
+Current updater release validation: commit `ca114e2945c98480f655458495f23956dfcafca9`
+passed required Actions run `42704888597`. A fresh single-file browser install
+actually replaced a deliberately different initial loader with checked GitHub
+bytes. A second installation retained the matching loader. Both emitted all nine
+progress stages; PIN, signing key and project/task data persisted. Independent
+Node Ed25519 verification passed for 37 receipts; authenticated automatic status
+reported up_to_date. UI/accessibility fixtures passed across eleven states.
+This was cloud PHP/Chromium validation, not a test on the owner’s cPanel account.
 Check the current Actions result and test the current change before making new
 readiness claims. Actual hosting access and live provider use remain separate.
 
