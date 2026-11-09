@@ -105,3 +105,8 @@ baseline verification, mismatch refusal, rollback and interrupted recovery.
 Browser fixtures exercise available/up-to-date notices and successful/failed
 progress screens without contacting GitHub or a provider. A real GitHub
 installation/self-update remains a separate release validation.
+
+Release validation for `ca114e2945c98480f655458495f23956dfcafca9` passed a real
+GitHub single-file install and self-replacement, a repeated install, both nine-stage
+streams, saved hash status, retained PIN/key/project data and independent
+verification of 37 signed receipts. Required Actions run: `42704888597`.

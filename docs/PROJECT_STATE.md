@@ -88,8 +88,14 @@ The standalone loader has a separate bootstrap hash in the release manifest.
 After one upload of the updater-capable loader, checked releases can replace it
 alongside the workspace while preserving generated markers and private state.
 
-Prior cloud browser validation exercised actual GitHub download/install, a second
-update, retained project/key state and independently verified Ed25519 receipts.
+Current updater release validation: commit `ca114e2945c98480f655458495f23956dfcafca9`
+passed required Actions run `42704888597`. A fresh single-file browser install
+actually replaced a deliberately different initial loader with checked GitHub
+bytes. A second installation retained the matching loader. Both emitted all nine
+progress stages; PIN, signing key and project/task data persisted. Independent
+Node Ed25519 verification passed for 37 receipts; authenticated automatic status
+reported up_to_date. UI/accessibility fixtures passed across eleven states.
+This was cloud PHP/Chromium validation, not a test on the owner’s cPanel account.
 Check the current Actions result and test the current change before making new
 readiness claims. Actual hosting access and live provider use remain separate.
 
