@@ -106,3 +106,19 @@ projects/tasks persist there. Connect the server-side provider and exercise one
 bounded real task response. Next add authenticated worker/tool execution and
 linked code/test/PR evidence. Keep access and custody limitations explicit while
 following the owner's current testing scope.
+
+## Admin and research workspace
+
+Admin stores encrypted private keys and notes outside the public directory.
+`openai_api_key` connects research and task agents; opted-in notes become shared
+AI context, while keys stay out of prompts. Research projects have persistent
+project-specific chats and optional provider web search. See ADMIN_RESEARCH.md
+for storage, bounds and exact validation scope. Run `php tests/workspace.php`
+alongside existing checks. Live provider operation still needs a host-side key.
+
+Admin/research release `19ee11f9664e09380c6a72733b67483d45d18d68` passed required
+Actions run `42707954873`, local PHP/HTTP/provider-fixture checks and thirteen
+UI/accessibility states (zero violations). Real GitHub install and repeat update
+preserved encrypted vault bytes, vault key, research project, signing identity
+and coding project/task data. Both nine-stage streams and 37 independently
+verified receipts passed. Live provider research remains untested without a key.

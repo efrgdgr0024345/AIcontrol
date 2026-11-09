@@ -65,3 +65,8 @@ isolation/root inventory remains a production hosting requirement.
 Changing a detected path or private identity is never an automatic code-update
 side effect. Do not delete server markers, regenerate keys or reset runtime data
 to work around an installation error.
+
+Admin/research defaults: the same PIN session manages the vault; private runtime
+`vault.key`, encrypted `vault.json` and `research.sqlite` persist across releases.
+The `openai_api_key` vault entry supplies research/task provider credentials unless
+the server environment overrides it. Shared notes require explicit opt-in.
