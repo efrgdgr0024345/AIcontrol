@@ -76,8 +76,10 @@ the account's existing authorized server-management path.
 
 ## Release limits
 
-`loader.php` preserves the public entry filename, but the exact-commit updater
-does not exist yet. No “Check GitHub / Install” buttons are presented as working.
+The initial planning commit preserved the public entry filename without an
+updater. The follow-up standalone loader implements authenticated GitHub check,
+exact-commit archive staging and code-pointer recovery; see STANDALONE_LOADER.md
+for its testing scope and remaining production release requirements.
 The health endpoint identifies its scope as `metadata_panel_only`; the fallback
 without configured private storage is HTTP 503. A deployment of this planning
 release is not approval to load real credentials or run generated code.

@@ -3,3 +3,5 @@
 /.env
 /var/
 *.log
+/.aicontrol-location.php
+__pycache__/

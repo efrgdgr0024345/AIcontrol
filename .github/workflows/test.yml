@@ -1,0 +1,25 @@
+name: PHP planning panel
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  planning-panel:
+    name: planning-panel
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Host compatibility and syntax
+        run: |
+          php bin/check-host.php
+          find . -name '*.php' -not -path './.git/*' -print0 | xargs -0 -n1 php -l
+      - name: Verify release manifest
+        run: php bin/build-manifest.php --check
+      - name: Application and installer checks
+        run: |
+          php tests/run.php
+          php tests/loader.php
+          python3 -B -m unittest -v tests/http_smoke.py
+          python3 -B -m unittest -v tests/standalone_smoke.py

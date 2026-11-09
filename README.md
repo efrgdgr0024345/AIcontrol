@@ -13,6 +13,12 @@ can propose work only; it cannot authorize consequential operations.
 - [Baseline review and architecture](docs/BASELINE_REVIEW.md)
 - [Implementation tickets](docs/IMPLEMENTATION_TICKETS.md)
 - [Run locally and install on cPanel](docs/RUNNING.md)
+- [Upload only loader.php: standalone installation](docs/STANDALONE_LOADER.md)
+
+`loader.php` is now a standalone authenticated installer. Upload that one file,
+configure its installer password hash, then check and install an exact GitHub
+commit. The application and data are downloaded/created in private server
+storage. See the standalone guide for prerequisites and the testing channel.
 
 ## Development
 

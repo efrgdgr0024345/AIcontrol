@@ -1,5 +1,9 @@
 # Running the planning panel
 
+For the intended **one uploaded file → GitHub download → installation** workflow,
+use [the standalone loader guide](STANDALONE_LOADER.md). The source-checkout
+procedures below are for development and manual operator installations.
+
 ## What this release does
 
 One password-authenticated user can record project briefs and task proposals,
@@ -76,8 +80,8 @@ server-management path. This cloud checkout alone does not deploy to cPanel.
    run the host check on the actual account. Enable required PHP extensions.
 2. Fetch the reviewed source commit directly from GitHub to cPanel through the
    authorized server-management path. Do not transfer private state with it.
-   Until the exact-commit updater is built, this is an operator installation,
-   not a verified AIcontrol “Install this checked commit” operation.
+   This checkout-based procedure is a manual operator installation. The separate
+   standalone loader now provides the checked-commit download/install flow.
 3. Put the source in the intended document root. The supplied Apache 2.4
    `.htaccess` routes through `loader.php`, allows the single CSS asset and
    disables directory indexing. Verify rewrite support; it must not be ignored.

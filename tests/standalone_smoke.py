@@ -1,0 +1,123 @@
+"""One public file, private release, and real HTTP routing in a subdirectory.
+
+Network archive/check integration is separately validated against GitHub.
+"""
+
+import json
+import os
+from pathlib import Path
+import secrets
+import shutil
+import socket
+import subprocess
+import tempfile
+import time
+import unittest
+import urllib.error
+import urllib.parse
+import urllib.request
+import http.cookiejar
+import re
+
+ROOT = Path(__file__).resolve().parents[1]
+PHP = os.environ.get("PHP_BINARY", "php")
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+class StandaloneSmokeTest(unittest.TestCase):
+    def test_one_file_bootstrap_and_private_release(self):
+        with tempfile.TemporaryDirectory(prefix="aicontrol-one-file-") as temporary:
+            temporary = Path(temporary)
+            public = temporary / "public"
+            control = public / "control"
+            control.mkdir(parents=True)
+            shutil.copy(ROOT / "loader.php", control / "loader.php")
+            sessions = temporary / "sessions"
+            sessions.mkdir(mode=0o700)
+            home = temporary / "private"
+            home.mkdir(mode=0o700)
+            releases = home / "releases"
+            releases.mkdir(mode=0o700)
+            sha = "a" * 40
+            release = releases / sha
+            release.mkdir(mode=0o700)
+            manifest = json.loads((ROOT / "release-manifest.json").read_text())
+            for name in [*manifest["files"], "release-manifest.json"]:
+                destination = release / name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy(ROOT / name, destination)
+            password = secrets.token_urlsafe(32)
+            subprocess.run([PHP, "bin/setup.php", f"--private-dir={home / 'runtime'}", f"--public-root={public}"], cwd=ROOT, input=password, text=True, check=True, capture_output=True)
+            installer_hash = subprocess.run([PHP, "-r", "echo password_hash(stream_get_contents(STDIN), PASSWORD_DEFAULT);"], input=secrets.token_urlsafe(32), text=True, check=True, capture_output=True).stdout
+            def private_json(path, value, prefix=""):
+                path.write_text(prefix + json.dumps(value))
+                path.chmod(0o600)
+
+            import hashlib
+            state = {"sha": sha, "manifest_hash": hashlib.sha256((ROOT / "release-manifest.json").read_bytes()).hexdigest()}
+            private_json(home / "current.json", state)
+            with socket.socket() as listener:
+                listener.bind(("127.0.0.1", 0))
+                port = listener.getsockname()[1]
+            environment = dict(os.environ, AICONTROL_LOCAL_DEV="1", AICONTROL_INSTALL_PASSWORD_HASH=installer_hash)
+            server = subprocess.Popen([PHP, "-d", f"session.save_path={sessions}", "-S", f"127.0.0.1:{port}", "-t", str(public)], cwd=ROOT, env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            cookies = http.cookiejar.CookieJar()
+            client = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookies), NoRedirect())
+            def request(query="", fields=None):
+                data = None if fields is None else urllib.parse.urlencode(fields).encode()
+                try:
+                    result = client.open(f"http://127.0.0.1:{port}/control/loader.php{query}", data=data, timeout=5)
+                except urllib.error.HTTPError as error:
+                    result = error
+                with result:
+                    return result.status, result.headers, result.read().decode()
+
+            try:
+                for _ in range(100):
+                    try:
+                        status, _, page = request()
+                        break
+                    except urllib.error.URLError:
+                        time.sleep(0.05)
+                else:
+                    self.fail("Standalone server did not start")
+                self.assertEqual(status, 200)
+                self.assertIn("Installer password", page)
+                self.assertNotIn("Panel password", page)
+                private_json(control / ".aicontrol-location.php", {"home": str(home), "roots": [str(public)]}, "<?php exit; ?>\n")
+                status, _, page = request()
+                self.assertEqual(status, 200)
+                self.assertIn('action="/control/loader.php"', page)
+                self.assertIn('href="/control/loader.php?asset=panel.css"', page)
+                token = re.search(r'name="csrf" value="([a-f0-9]+)"', page).group(1)
+                status, headers, _ = request(fields={"action": "login", "password": password, "csrf": token})
+                self.assertEqual(status, 303)
+                self.assertEqual(headers["Location"], "/control/loader.php")
+                self.assertEqual(request("?asset=panel.css")[0], 200)
+                self.assertEqual(json.loads(request("?health=1")[2])["scope"], "metadata_panel_only")
+                self.assertIn("Installer password", request("?installer=1")[2])
+                self.assertEqual(set(p.name for p in control.iterdir()), {"loader.php", ".aicontrol-location.php"})
+                app = release / "app.php"
+                original = app.read_bytes()
+                app.write_bytes(original + b"modified")
+                self.assertEqual(request()[0], 503)
+                app.write_bytes(original)
+                self.assertEqual(request()[0], 200)
+                private_json(home / "journal.json", {"phase": "activating", "previous": state})
+                private_json(home / "current.json", {"sha": "b" * 40, "manifest_hash": "c" * 64})
+                self.assertEqual(request()[0], 200)
+                self.assertEqual(json.loads((home / "journal.json").read_text())["phase"], "recovered")
+                (home / "runtime/config.json").rename(home / "runtime/config.saved")
+                self.assertEqual(request()[0], 503)
+                self.assertFalse((home / "runtime/config.json").exists())
+            finally:
+                server.terminate()
+                server.wait(timeout=5)
+
+
+if __name__ == "__main__":
+    unittest.main()

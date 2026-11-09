@@ -8,6 +8,11 @@ use Throwable;
 
 final class Panel
 {
+    private static function entry(): string
+    {
+        $entry = $_SERVER['SCRIPT_NAME'] ?? '/loader.php';
+        return is_string($entry) && preg_match('~^/[A-Za-z0-9_./-]+\.php$~D', $entry) ? $entry : '/loader.php';
+    }
     private static function escape(string|int $value): string
     {
         return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
@@ -90,7 +95,7 @@ final class Panel
                 } elseif (strlen(self::input('password')) <= 256 && password_verify(self::input('password'), $config['password_hash'])) {
                     session_regenerate_id(true);
                     $_SESSION = ['authenticated' => true, 'expires' => time() + 1800, 'csrf' => bin2hex(random_bytes(32))];
-                    header('Location: /loader.php', true, 303);
+                    header('Location: ' . self::entry(), true, 303);
                     return;
                 } else {
                     $store->failedLogin($client);
@@ -104,7 +109,7 @@ final class Panel
                 $_SESSION = [];
                 session_destroy();
                 setcookie(session_name(), '', ['expires' => time() - 3600, 'path' => '/', 'secure' => $secure, 'httponly' => true, 'samesite' => 'Strict']);
-                header('Location: /loader.php', true, 303);
+                header('Location: ' . self::entry(), true, 303);
                 return;
             } else {
                 try {
@@ -119,7 +124,7 @@ final class Panel
                     } else {
                         throw new RuntimeException('Operation unavailable.');
                     }
-                    header('Location: /loader.php?view=projects', true, 303);
+                    header('Location: ' . self::entry() . '?view=projects', true, 303);
                     return;
                 } catch (Throwable) {
                     http_response_code(422);
@@ -131,6 +136,12 @@ final class Panel
         if ($method === 'HEAD') {
             return;
         }
+        $entry = self::entry();
+        ob_start(static fn(string $html): string => str_replace(
+            ['href="/loader.php', 'action="/loader.php', 'href="/assets/panel.css"'],
+            ['href="' . $entry, 'action="' . $entry, 'href="' . $entry . '?asset=panel.css"'],
+            $html
+        ));
         $e = self::escape(...);
         $csrf = '<input type="hidden" name="csrf" value="' . $e($_SESSION['csrf']) . '">';
         echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AIcontrol</title><link rel="stylesheet" href="/assets/panel.css"></head><body>';
