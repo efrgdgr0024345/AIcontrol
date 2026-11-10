@@ -412,7 +412,7 @@ document.addEventListener('submit', event => {
     try {
       const snapshot = await send(form);
       if (action === 'research_start') {
-        const url = new URL(form.getAttribute('action'), location.href); url.searchParams.set('project', snapshot.run.project_id); url.searchParams.set('run', snapshot.run.id); location.assign(url); return;
+        const url = new URL(form.getAttribute('action'), location.href); url.searchParams.set('project', snapshot.run.project_id); url.searchParams.set('run', snapshot.run.id); if(form.dataset.researchFromMap==='1')url.searchParams.set('map','1'); location.assign(url); return;
       }
       render(snapshot); error('');
       if (action === 'research_continue' || form.hasAttribute('data-map-focus')) { halted = false; advance(); }
@@ -464,17 +464,66 @@ document.addEventListener('submit', event => {
   const inspector = map.querySelector('[data-map-inspector-content]');
   const collapsed = new Set(), selectedSources = new Set();
   let snapshot, nodes = [], visible = [], selected = 'root', filter = 'all', scale = 1, width = 600, height = 400, signature = '', count = -1;
-  let view = matchMedia('(min-width: 900px)').matches ? 'map' : 'list';
+  let view = new URLSearchParams(location.search).get('map') === '1' || matchMedia('(min-width: 900px)').matches ? 'map' : 'list';
   const el = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
   const data = node => { try { return JSON.parse(node.data_json || '{}'); } catch (_) { return {}; } };
   const safe = value => { try { const url = new URL(value); return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password; } catch (_) { return false; } };
   const claimInputs = () => [...root.querySelectorAll('[data-dream-cards] input')];
   const reviewing = () => snapshot?.run.status === 'running' && snapshot.run.phase === 'dream_review';
+  const home = document.createComment('Map location'); map.before(home);
+  const header = el('header', undefined, 'map-screen-header');
+  const heading = el('div'); heading.append(el('strong','Research map'),el('span','Preparing the saved investigation…','map-screen-status'));
+  heading.querySelector('span').setAttribute('role','status');heading.querySelector('span').setAttribute('aria-live','polite');
+  const projectName=document.querySelector('.research-project-brief h2')?.textContent || 'Research map';
+  const actions = el('div',undefined,'map-screen-actions');
+  const screenButton = (label,action,style='btn-outline-secondary') => {const button=el('button',label,'btn '+style);button.type='button';button.dataset.mapScreenAction=action;return button;};
+  actions.append(screenButton('▶ Start research','start','btn-primary'),screenButton('■ Stop research','stop','btn-outline-danger'),screenButton('Continue planned search','step'),screenButton('Details','details'),screenButton('List','list'));
+  actions.children[0].setAttribute('aria-label','Start research'); actions.children[1].setAttribute('aria-label','Stop research');
+  header.append(heading,actions);map.prepend(header);
+  const side=map.querySelector('[data-map-inspector]');side.hidden=true;
+  let underlay=[],previousFocus=null,manualViewport=false;
   function showView(next) {
-    view = next; map.hidden = view !== 'map'; root.querySelector('[data-investigate-list]').hidden = view !== 'list';
-    root.querySelectorAll('[data-investigate-view]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.investigateView === view)));
-    if (view === 'map') requestAnimationFrame(fit);
+    view=next;map.hidden=view!=='map';root.querySelector('[data-investigate-list]').hidden=view!=='list';
+    root.querySelectorAll('[data-investigate-view]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.investigateView===view)));
+    if(view==='map'){
+      previousFocus=document.activeElement;document.body.append(map);document.body.classList.add('research-map-open');
+      map.setAttribute('role','dialog');map.setAttribute('aria-modal','true');map.setAttribute('aria-label','Full screen research map');
+      underlay=[...document.body.children].filter(node=>node!==map).map(node=>({node,inert:node.inert,hidden:node.getAttribute('aria-hidden')}));
+      underlay.forEach(({node})=>{node.inert=true;node.setAttribute('aria-hidden','true');node.classList.add('map-underlay');});
+      actions.querySelector('[data-map-screen-action=list]').focus({preventScroll:true});requestAnimationFrame(fit);
+    }else{
+      underlay.forEach(({node,inert,hidden})=>{node.inert=inert;hidden===null?node.removeAttribute('aria-hidden'):node.setAttribute('aria-hidden',hidden);node.classList.remove('map-underlay');});underlay=[];
+      document.body.classList.remove('research-map-open');home.after(map);map.removeAttribute('role');map.removeAttribute('aria-modal');
+      const back=previousFocus?.isConnected&&previousFocus!==document.body?previousFocus:root.querySelector('[data-investigate-view=list]');back?.focus({preventScroll:true});
+    }
   }
+  function screenControls(){
+    if(!snapshot)return;
+    const active=['pending','running'].includes(snapshot.run.status),pending=snapshot.requests.some(request=>request.status==='pending');
+    actions.querySelector('[data-map-screen-action=start]').disabled=active||pending||root.dataset.connected==='0'||snapshot.budget?.remaining===0;
+    actions.querySelector('[data-map-screen-action=stop]').disabled=!(active||pending);
+    actions.querySelector('[data-map-screen-action=step]').hidden=!active||!!snapshot.run.busy_since||snapshot.run.phase!=='evidence';
+    heading.querySelector('strong').textContent=`${projectName} · #${snapshot.run.id}`;
+    heading.querySelector('span').textContent=`${reviewing()?'Review claims to continue':snapshot.run.status+' · '+snapshot.run.phase} · ${snapshot.run.token_input} in / ${snapshot.run.token_output} out tokens${snapshot.run.usage_unknown?' · some usage unknown':''}${snapshot.budget?' · '+snapshot.budget.remaining+'/10 requests remaining':''}`;
+  }
+  function details(open){side.hidden=!open;map.classList.toggle('map-details-open',open);actions.querySelector('[data-map-screen-action=details]').setAttribute('aria-expanded',String(open));}
+  header.addEventListener('click',event=>{
+    const action=event.target.closest('[data-map-screen-action]')?.dataset.mapScreenAction;if(!action)return;
+    if(action==='list'){showView('list');return;}
+    if(action==='details'){details(side.hidden);return;}
+    const form=root.querySelector(`[data-research-action=research_${action}]`);
+    if(action==='start'&&form)form.dataset.researchFromMap='1';
+    form?.requestSubmit();
+  });
+  map.addEventListener('keydown',event=>{
+    if(event.key==='Escape'){event.preventDefault();showView('list');return;}
+    if(event.key!=='Tab')return;
+    const stops=[...map.querySelectorAll('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),a[href],[tabindex="0"]')].filter(node=>node.getClientRects().length);
+    const first=stops[0],last=stops.at(-1);
+    if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}
+    else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
+  });
+  viewport.addEventListener('wheel',()=>manualViewport=true,{passive:true});viewport.addEventListener('pointerdown',()=>manualViewport=true);
   root.querySelector('[data-mindmap-switch]').hidden = false;
   root.querySelectorAll('[data-investigate-view]').forEach(button => button.addEventListener('click', () => showView(button.dataset.investigateView)));
   function normalize() {
@@ -526,28 +575,11 @@ document.addEventListener('submit', event => {
     for (const node of nodes) if (node.parent_id && children.has(node.parent_id)) children.get(node.parent_id).push(node);
     const allowed = new Set(['root']);
     for (const node of nodes.filter(matches)) for (const id of pathIds(node)) allowed.add(id);
-    visible = []; let row = 0; const visited = new Set();
-    function place(node, depth) {
-      if (visited.has(node.id) || !allowed.has(node.id)) return; visited.add(node.id);
-      const start = row; const kids = collapsed.has(node.id) ? [] : children.get(node.id).filter(child => allowed.has(child.id));
-      for (const child of kids) place(child,depth+1);
-      if (row === start) row++;
-      node.x = 24 + depth * 258; node.y = 24 + ((start + row - 1) / 2) * 176;
-      visible.push(node);
-    }
-    place(byId.get('root'),0); visible.sort((a,b) => a.y-b.y || a.x-b.x);
-    width = Math.max(600,...visible.map(node => node.x+244)); height = Math.max(400,row*176+40);
-    world.style.width = `${width}px`; world.style.height = `${height}px`;
-    let svg = world.querySelector('svg'); if (svg) svg.remove();
-    svg = document.createElementNS('http://www.w3.org/2000/svg','svg'); svg.setAttribute('width',width); svg.setAttribute('height',height); svg.setAttribute('aria-hidden','true');
-    const active = pathIds(byId.get(selected) || byId.get('root'));
-    for (const node of visible) {
-      const parent = byId.get(node.parent_id); if (!parent || !visible.includes(parent)) continue;
-      const line = document.createElementNS(svg.namespaceURI,'path'); const x=parent.x+220,y=parent.y+48;
-      line.setAttribute('d',`M${x},${y} C${x+22},${y} ${node.x-22},${node.y+48} ${node.x},${node.y+48}`);
-      line.setAttribute('class',active.has(node.id)&&active.has(parent.id)?'map-edge map-edge-active':'map-edge'); svg.append(line);
-    }
-    world.prepend(svg);
+    const active=pathIds(byId.get(selected)||byId.get('root'));
+    visible=[];const visited=new Set();
+    function collect(node,depth){if(visited.has(node.id)||!allowed.has(node.id))return;visited.add(node.id);node.depth=depth;visible.push(node);if(!collapsed.has(node.id))for(const child of children.get(node.id))collect(child,depth+1);}
+    collect(byId.get('root'),0);
+    world.querySelector('svg')?.remove();
     for (const card of [...world.querySelectorAll('[data-map-node]')]) if (!visible.some(node => node.id === card.dataset.mapNode)) card.remove();
     for (const node of visible) {
       let card = [...world.querySelectorAll('[data-map-node]')].find(card => card.dataset.mapNode === node.id);
@@ -555,7 +587,7 @@ document.addEventListener('submit', event => {
         card = el('article',undefined,'map-node'); card.dataset.mapNode=node.id;
         const button=el('button',undefined,'map-node-button'); button.type='button'; button.append(el('span','','map-node-type'),el('strong','','map-node-title'),el('span','','map-node-status')); card.append(button); world.append(card);
       }
-      card.style.left=`${node.x}px`; card.style.top=`${node.y}px`; card.dataset.type=node.type; card.dataset.status=node.status; card.dataset.path=String(active.has(node.id));
+      card.dataset.type=node.type; card.dataset.status=node.status; card.dataset.path=String(active.has(node.id));
       const button=card.querySelector('button'); button.setAttribute('aria-pressed',String(node.id===selected));
       button.querySelector('.map-node-type').textContent=node.type.replaceAll('_',' ') + (collapsed.has(node.id)?' · collapsed':'');
       button.querySelector('.map-node-title').textContent=node.title;
@@ -570,7 +602,20 @@ document.addEventListener('submit', event => {
         label.append(input,document.createTextNode(`Select source #${source.id}`));card.append(label);
       }
     }
-    setScale(scale); syncSelection(); updateInspector();
+    setScale(scale);syncSelection();updateInspector();
+    const cards=new Map([...world.querySelectorAll('[data-map-node]')].map(card=>[card.dataset.mapNode,card]));
+    function measure(node){
+      node.h=cards.get(node.id).offsetHeight;
+      node.kids=collapsed.has(node.id)?[]:children.get(node.id).filter(child=>visited.has(child.id));
+      node.subtree=Math.max(node.h,node.kids.reduce((sum,child)=>sum+measure(child),0)+Math.max(0,node.kids.length-1)*14);return node.subtree;
+    }
+    function place(node,top){node.x=16+node.depth*244;node.y=top+(node.subtree-node.h)/2;let next=top+(node.subtree-(node.kids.reduce((sum,child)=>sum+child.subtree,0)+Math.max(0,node.kids.length-1)*14))/2;for(const child of node.kids){place(child,next);next+=child.subtree+14;}const card=cards.get(node.id);card.style.left=`${node.x}px`;card.style.top=`${node.y}px`;}
+    measure(byId.get('root'));place(byId.get('root'),16);visible.sort((a,b)=>a.y-b.y||a.x-b.x);
+    width=Math.max(...visible.map(node=>node.x+236));height=byId.get('root').subtree+32;
+    world.style.width=`${width}px`;world.style.height=`${height}px`;
+    const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('width',width);svg.setAttribute('height',height);svg.setAttribute('aria-hidden','true');
+    for(const node of visible){const parent=byId.get(node.parent_id);if(!parent||!visited.has(parent.id))continue;const line=document.createElementNS(svg.namespaceURI,'path'),x=parent.x+220,y=parent.y+parent.h/2;line.setAttribute('d',`M${x},${y} C${x+12},${y} ${node.x-12},${node.y+node.h/2} ${node.x},${node.y+node.h/2}`);line.setAttribute('class',active.has(node.id)&&active.has(parent.id)?'map-edge map-edge-active':'map-edge');svg.append(line);}
+    world.prepend(svg);setScale(scale);
   }
   function updateInspector() {
     const node=nodes.find(node=>node.id===selected)||nodes[0];
@@ -600,13 +645,13 @@ document.addEventListener('submit', event => {
     map.querySelector('[data-map-copy]').hidden=!snapshot.sources.some(source=>sourceIds(node).includes(Number(source.id))&&safe(source.url));
   }
   function inspect(id) {
-    selected=id;draw();
+    selected=id;details(true);draw();
     const card=[...world.querySelectorAll('[data-map-node]')].find(card=>card.dataset.mapNode===id);
     if(card&&!map.hidden)card.scrollIntoView({block:'nearest',inline:'nearest'});
   }
   map.addEventListener('click',async event=>{
     const command=event.target.closest('[data-map-command]');
-    if(command){const key=command.dataset.mapCommand;if(key==='fit')fit();if(key==='in')setScale(scale*1.2);if(key==='out')setScale(scale/1.2);if(key==='collapse'){nodes.filter(node=>node.id!=='root').forEach(node=>collapsed.add(node.id));draw();fit();}if(key==='expand'){collapsed.clear();draw();fit();}return;}
+    if(command){const key=command.dataset.mapCommand;if(key==='fit'){manualViewport=false;fit();}if(key==='in'){manualViewport=true;setScale(scale*1.2);draw();}if(key==='out'){manualViewport=true;setScale(scale/1.2);draw();}if(key==='collapse'){nodes.filter(node=>node.id!=='root').forEach(node=>collapsed.add(node.id));draw();fit();}if(key==='expand'){collapsed.clear();draw();fit();}return;}
     const chip=event.target.closest('[data-map-filter]');if(chip){filter=chip.dataset.mapFilter;map.querySelectorAll('[data-map-filter]').forEach(button=>button.setAttribute('aria-pressed',String(button===chip)));draw();fit();return;}
     const nodeButton=event.target.closest('.map-node-button');if(nodeButton){inspect(nodeButton.closest('[data-map-node]').dataset.mapNode);return;}
     if(event.target.closest('[data-map-toggle-branch]')){collapsed.has(selected)?collapsed.delete(selected):collapsed.add(selected);draw();return;}
@@ -632,9 +677,9 @@ document.addEventListener('submit', event => {
     if(next){event.preventDefault();inspect(next.id);world.querySelector(`[data-map-node="${next.id}"] button`)?.focus();}
   });
   root.addEventListener('research:snapshot',event=>{
-    snapshot=event.detail;normalize();
+    snapshot=event.detail;normalize();screenControls();
     const next=JSON.stringify([snapshot.nodes,snapshot.sources]);
-    if(signature!==next){signature=next;draw();if(count===-1)requestAnimationFrame(fit);if(count!==nodes.length){count=nodes.length;map.querySelector('[data-map-announcement]').textContent=`${snapshot.nodes.length} saved nodes · ${snapshot.sources.length} citation sources. ${snapshot.run.phase==='evidence'?'Choose the direction for your next search.':''}`;}}
+    if(signature!==next){signature=next;draw();if(!manualViewport)requestAnimationFrame(fit);if(count!==nodes.length){count=nodes.length;map.querySelector('[data-map-announcement]').textContent=`${snapshot.nodes.length} saved nodes · ${snapshot.sources.length} citation sources. ${snapshot.run.phase==='evidence'?'Choose the direction for your next search.':''}`;}}
     else {syncSelection();updateInspector();}
     map.querySelector('[data-map-evidence-help]').hidden=snapshot.run.status!=='running'||snapshot.run.phase!=='evidence';
     const strip=map.querySelector('[data-map-outcomes]');strip.replaceChildren();
@@ -643,9 +688,10 @@ document.addEventListener('submit', event => {
       const button=el('button',`${verdict}: ${outcomes.length}`,'map-outcome');button.type='button';button.disabled=!outcomes.length;if(outcomes.length)button.dataset.mapJump=outcomes[0].id;strip.append(button);
     }
   });
-  root.addEventListener('research:controls',()=>{if(snapshot)updateInspector();});
-  root.addEventListener('research:budget',event=>{if(snapshot){snapshot.budget=event.detail;updateInspector();}});
+  root.addEventListener('research:controls',()=>{if(snapshot){updateInspector();screenControls();}});
+  root.addEventListener('research:budget',event=>{if(snapshot){snapshot.budget=event.detail;updateInspector();screenControls();}});
   // Initialize after the status request; live processes are never assumed to survive navigation.
+  new ResizeObserver(()=>{if(!map.hidden&&!manualViewport)fit();}).observe(viewport);
   showView(view);
 })();
 
@@ -1168,6 +1214,42 @@ details[open] summary { margin-bottom: 14px; }
 .map-node-button { min-height:calc(48px / var(--map-scale, 1)); }
 .map-node-check input { width:calc(24px / var(--map-scale, 1)); height:calc(24px / var(--map-scale, 1)); flex-shrink:0; }
 .map-node-check { min-height:calc(32px / var(--map-scale, 1)); }
+
+/* A screen dedicated to research, with chrome outside the canvas kept compact. */
+body.research-map-open { overflow:hidden; }
+.map-underlay { visibility:hidden !important; }
+.research-map-open > .mindmap { position:fixed; inset:0; z-index:1000; width:100%; height:100dvh; margin:0; padding:12px; border:0; border-radius:0; display:flex; flex-direction:column; gap:8px; overflow:hidden; }
+.map-screen-header { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-shrink:0; padding-bottom:8px; border-bottom:1px solid #d8d3e4; }
+.map-screen-header > div:first-child { display:flex; flex-direction:column; gap:3px; min-width:0; }
+.map-screen-status { font-size:.78rem; color:#54596a; }
+.map-screen-actions { display:flex; gap:6px; flex-wrap:wrap; }
+.map-screen-actions .btn { white-space:nowrap; }
+.research-map-open .map-workspace { flex:1; min-height:0; grid-template-columns:minmax(0,1fr); }
+.research-map-open .map-details-open .map-workspace { grid-template-columns:minmax(0,1fr) 320px; }
+.research-map-open .map-viewport { height:100%; min-height:0; }
+.research-map-open .map-inspector { max-height:none; min-height:0; }
+.research-map-open .map-outcomes { margin:0; }
+.research-map-open .map-announcement { margin:0; font-size:.75rem; }
+.research-map-open .map-review,.research-map-open .map-evidence-help { margin:0; padding:8px; font-size:.78rem; flex-shrink:0; }
+.research-map-open .map-review p { flex-basis:auto; flex:1; max-width:42rem; }
+.research-map-open .map-node { min-height:0; }
+.research-map-open .map-node-button { padding:6px 9px; gap:2px; }
+.research-map-open .map-node-check { padding:2px 9px 5px; }
+@media(max-width:700px) {
+ .research-map-open > .mindmap { padding:8px; gap:6px; }
+ .map-screen-header { align-items:flex-start; flex-direction:column; gap:6px; }
+ .map-screen-actions { width:100%; }
+ .map-screen-actions .btn { padding:6px 9px; font-size:.8rem; }
+ .research-map-open .map-details-open .map-workspace { grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(120px,1fr) minmax(100px,40%); }
+ .research-map-open .map-inspector { border-left:0; border-top:1px solid #ded9e8; padding:10px; }
+ .research-map-open .map-review p { display:none; }
+ .research-map-open .map-evidence-help { max-height:48px; overflow:auto; }
+ .research-map-open .map-toolbar .btn { min-height:32px; }
+}
+.research-map-open { height:100dvh; max-height:100dvh; padding:0 !important; }
+.map-underlay { display:none !important; }
+.map-screen-actions [data-map-screen-action=stop] { color:#b42323; border-color:#b42323; background:#fff; }
+.map-screen-actions [data-map-screen-action=stop]:hover { color:#fff; background:#b42323; }
 
 AICONTROL_UI_CSS;
     }

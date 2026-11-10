@@ -82,3 +82,17 @@ Keyboard arrows navigate parent/child and neighboring nodes. The inspector uses
 escaped text and safe external links. Map updates come from the existing status
 poll; it stops polling on terminal states except while a Learn request is pending.
 The server-rendered List and ordinary forms remain the progressive fallback.
+
+The Map view now occupies the full browser viewport. Its compact header includes
+Start research, Stop research, current phase/tokens/budget, a planned-search action
+when applicable, Details, and List. Escape returns to List, restores the page and
+keyboard focus, and never stops or restarts a request. Background controls are
+inert while the map is open; focus stays within the map. Start uses the existing
+authenticated creation form and Stop uses the existing interrupt action.
+
+The canvas takes the remaining height. Details is closed until a node is chosen
+or the user opens it; mobile uses a bottom inspector. Card heights are measured,
+subtrees packed with a 14px sibling gap and 24px column connectors, and the world
+bounds follow actual content. Auto-fit follows growth until the user pans/zooms;
+Fit restores that behavior. Accessible control sizes and the existing review and
+Evidence pauses remain intact. The server-rendered List is unchanged without JS.

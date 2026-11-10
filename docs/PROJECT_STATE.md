@@ -213,3 +213,15 @@ both histories. New loaders check main. The previous feature branch is retained
 as a fast-forward compatibility pointer so older installed loaders can receive
 the main-channel loader through their existing updater. It is not a separate
 development line. Do not delete it until the hosting installations have migrated.
+
+## Full-screen map layout
+
+The owner requested a map that uses the screen and puts Start/Stop at the top.
+Map now opens as a full-viewport, keyboard-contained workspace with a compact
+header and on-demand Details. List/Escape restore the ordinary page. Node packing
+uses actual card/subtree heights rather than the previous uniform 176px rows;
+columns have short connectors and the canvas uses remaining screen height.
+Starting from the map preserves that view through the new-run navigation,
+including on mobile. Existing human review, bounded Evidence steering and Stop
+semantics are preserved. Browser coverage verifies viewport dimensions, canvas
+height, sibling spacing, header controls, restart, and fallback behavior.

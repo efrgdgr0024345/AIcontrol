@@ -480,3 +480,39 @@ details[open] summary { margin-bottom: 14px; }
 .map-node-button { min-height:calc(48px / var(--map-scale, 1)); }
 .map-node-check input { width:calc(24px / var(--map-scale, 1)); height:calc(24px / var(--map-scale, 1)); flex-shrink:0; }
 .map-node-check { min-height:calc(32px / var(--map-scale, 1)); }
+
+/* A screen dedicated to research, with chrome outside the canvas kept compact. */
+body.research-map-open { overflow:hidden; }
+.map-underlay { visibility:hidden !important; }
+.research-map-open > .mindmap { position:fixed; inset:0; z-index:1000; width:100%; height:100dvh; margin:0; padding:12px; border:0; border-radius:0; display:flex; flex-direction:column; gap:8px; overflow:hidden; }
+.map-screen-header { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-shrink:0; padding-bottom:8px; border-bottom:1px solid #d8d3e4; }
+.map-screen-header > div:first-child { display:flex; flex-direction:column; gap:3px; min-width:0; }
+.map-screen-status { font-size:.78rem; color:#54596a; }
+.map-screen-actions { display:flex; gap:6px; flex-wrap:wrap; }
+.map-screen-actions .btn { white-space:nowrap; }
+.research-map-open .map-workspace { flex:1; min-height:0; grid-template-columns:minmax(0,1fr); }
+.research-map-open .map-details-open .map-workspace { grid-template-columns:minmax(0,1fr) 320px; }
+.research-map-open .map-viewport { height:100%; min-height:0; }
+.research-map-open .map-inspector { max-height:none; min-height:0; }
+.research-map-open .map-outcomes { margin:0; }
+.research-map-open .map-announcement { margin:0; font-size:.75rem; }
+.research-map-open .map-review,.research-map-open .map-evidence-help { margin:0; padding:8px; font-size:.78rem; flex-shrink:0; }
+.research-map-open .map-review p { flex-basis:auto; flex:1; max-width:42rem; }
+.research-map-open .map-node { min-height:0; }
+.research-map-open .map-node-button { padding:6px 9px; gap:2px; }
+.research-map-open .map-node-check { padding:2px 9px 5px; }
+@media(max-width:700px) {
+ .research-map-open > .mindmap { padding:8px; gap:6px; }
+ .map-screen-header { align-items:flex-start; flex-direction:column; gap:6px; }
+ .map-screen-actions { width:100%; }
+ .map-screen-actions .btn { padding:6px 9px; font-size:.8rem; }
+ .research-map-open .map-details-open .map-workspace { grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(120px,1fr) minmax(100px,40%); }
+ .research-map-open .map-inspector { border-left:0; border-top:1px solid #ded9e8; padding:10px; }
+ .research-map-open .map-review p { display:none; }
+ .research-map-open .map-evidence-help { max-height:48px; overflow:auto; }
+ .research-map-open .map-toolbar .btn { min-height:32px; }
+}
+.research-map-open { height:100dvh; max-height:100dvh; padding:0 !important; }
+.map-underlay { display:none !important; }
+.map-screen-actions [data-map-screen-action=stop] { color:#b42323; border-color:#b42323; background:#fff; }
+.map-screen-actions [data-map-screen-action=stop]:hover { color:#fff; background:#b42323; }

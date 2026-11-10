@@ -2,8 +2,8 @@
     "version": 2,
     "files": {
         "app.php": "28c1f4c172eec964d70646344b399fdef36e99c405c54ecea9c1e6e3e9b577b4",
-        "assets/panel.css": "d20d2a740c8079cd7454e78c3ffafe7e2f10544f2e159c0f3d0aa75bd4e43a6c",
-        "assets/panel.js": "051bdf6efcea5ec3c7ba3cd8d8ce66f4cfb48a2f34c73833f566efe2c244781c",
+        "assets/panel.css": "1444bad47059c935cbd1fbcfb6f5c3c367433026463bb4ee1abd514857045e43",
+        "assets/panel.js": "14b784a395f5638d4e53f2b002c8e799a7f84fa184ac85b39341f5a2b4407baf",
         "src/AccessPolicy.php": "44469fc613bb1704d857e06e6d70d484d44083b33753e99feaec93baed561cd8",
         "src/AgentRunner.php": "b5e92ef438d7eaaaf9a86b85dbb17694e10959d297e57061e197a326fbf4e982",
         "src/Bootstrap.php": "68184329531c1526cb67b6e8068d98e238b3571feaccd4ff6c81d1f012245409",
@@ -16,12 +16,12 @@
         "src/Research.php": "d24b20df9573b2d9e9df7ad08745da3bc5fca270849b23bcfddb0cc0a84f6217",
         "src/ResearchApi.php": "7f7dd548b9e9644ac2fe85a9b9f15f9066cd8bade3bec25574dffc3205c1283e",
         "src/ResearchView.php": "8088bef1ef73de4e284fb5204c265e01ec8b42cf3014c7dd11ab4ee6fb6c09ea",
-        "src/Ui.php": "7eb39f6c4661c784d11cce3ac109d459cdf2e0c9b67062db6ee261e243dd8fd1",
+        "src/Ui.php": "2792436385f5893774a5e00f1d2b364ac1b815a5571a109eb553815f2da2f156",
         "src/Vault.php": "67293540cbcc1dcd8f97033789e9a9b1c9688f0462f2720cc6c1cd83ec3fbded",
         "src/WorkspaceView.php": "c96ffa03550b12ed85373e08f14afd7367739d38a92817d01d2218cf78583f2f"
     },
     "bootstrap": {
         "path": "loader.php",
-        "sha256": "bdf2cbe0f7db91187479516a026a7af49a75ee8df93ea58d415cc6fee8ef2b5c"
+        "sha256": "a720fb6a254ebc0523ae8262ab9daae95b62848b8329a6df11e612fc90d5d34a"
     }
 }
