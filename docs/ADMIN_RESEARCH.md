@@ -160,3 +160,27 @@ quotations. Repeated citation URLs can belong to multiple claims. Final outcomes
 are summarized in the claim matrix; excluded claims stay visible, and dead ends
 remain in the claim's history. The full tree, source library and Markdown export
 retain the detailed record. Old runs remain readable after additive migration.
+
+### Steerable mind map
+
+Desktop investigations open in Map; List remains available and is the default on
+mobile or without JavaScript. Node buttons reveal full details and citation URLs
+in the inspector. Scroll to pan, zoom or Fit (with a readable minimum zoom), and
+collapse branches. Filters focus on claims, sources, dead ends or open findings.
+Map claim checkboxes mirror the list's review selection; Continue still freezes
+that selection before planning. The outcome strip jumps to a verdict and its
+claim/source path. Filters and collapse never delete saved nodes.
+
+Before each Evidence search, choose a selected claim or linked dead end and use
+**Search this direction**, optionally with a short note. This replaces the next
+planned slot; it does not add searches. The original plan is labelled incomplete
+when redirected so its query is not falsely reported as executed. Alternatively,
+use **Continue next phase** to run the planned search. Focus is disabled outside
+an idle Evidence phase, including completed runs and unlinked open questions.
+A completed investigation does not start another cycle from a map click.
+
+Select citation source nodes to Learn from those cards only, once the run is
+idle. The inspector also offers the current source's Learn and copy-link actions.
+No vault notes or Dream hypotheses are sent as Learn context. The ordinary Learn
+form continues to use all collected cards. See RESEARCH_MAP_CONTRACT.md for the
+status fields, request contracts and a separate live-host validation checklist.

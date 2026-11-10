@@ -181,3 +181,28 @@ claims, verification/evidence, outcomes and open questions, with every collected
 source URL retained. Optional mid-run brief editing, previous-question seeding
 and SSE are deferred. Validation uses synthetic transport and local browsers;
 no new live provider, hosting deployment or publication is implied.
+
+## Research mind map
+
+Research now has a desktop-first spatial Map with a full List fallback. The map
+shares the persisted node tree and source records, supports inspection, filters,
+zoom, collapse, keyboard navigation, claim selection and source-specific Learn.
+Mobile starts in List. Status adds derived claim/source links, confidence and
+dead-end reasons without schema changes. See RESEARCH_MAP_CONTRACT.md.
+
+JavaScript pauses before each Evidence request for explicit direction. Optional
+focus replaces a remaining planned search, stays within two searches per run,
+and records its note/claim/node on the request phase and resulting search. The
+replaced plan is explicitly incomplete; its original query was not executed.
+Only selected claims or their linked open/dead-end nodes can be focused, during
+an idle Evidence phase. No completed or uncertain run is revived. Source-selected
+Learn validates run ownership and sends only the chosen cards and project brief.
+Markdown export includes the node-to-parent outline and real source URLs.
+Validation uses synthetic PHP transport, concurrent HTTP Stop tests and Chromium
+with keyboard/mobile/accessibility checks; live billed/hosting validation remains
+separate. Optional drawn comparison edges and vault pinning are not introduced.
+
+The owner wants tested application updates released automatically without another
+deployment-confirmation question. Use the existing implementation branch and
+required exact-SHA checks. Live-host activation still requires an authenticated
+hosting/panel connection; never label a GitHub push as verified host activation.

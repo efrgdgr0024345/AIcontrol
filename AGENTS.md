@@ -32,3 +32,10 @@ the required GitHub Actions check on the exact release commit.
 Update the state/defaults documents when behavior or scope changes. Record exact
 validation scope. Do not label API fixtures as live AI operation, model output
 as executed code, or cloud validation as a completed cPanel deployment.
+
+The owner has authorized publishing tested application updates to the existing
+implementation/release branch without asking for deployment confirmation. Finish
+the release and verify the required `planning-panel` check on the exact SHA;
+do not stop at local changes. This does not authorize changing cloud environment
+publication settings. Distinguish a published checked release from activation on
+the live host, and never claim host activation without authenticated evidence.

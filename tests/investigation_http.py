@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import signal
 import socket
+import sqlite3
 import subprocess
 import tempfile
 import time
@@ -142,7 +143,28 @@ namespace { $_SERVER['SCRIPT_NAME']='/aiadmin/loader.php';require getenv('TEST_A
                 plan_body = json.loads((Path(directory)/'body.json').read_text())
                 sent_claims = json.loads(plan_body['input'].split('Dream nodes: ')[1])
                 self.assertEqual([n['id'] for n in sent_claims], [chosen])
-                request('?research_api=1', dict(csrf=csrf, action='research_stop', run_id=reviewed_run))
+                self.assertEqual(request('?research_api=1', dict(csrf=csrf, action='research_step', run_id=reviewed_run, focus_node_id='999999'))[0], 422)
+                self.assertEqual(request('?research_api=1', dict(csrf='bad', action='research_step', run_id=reviewed_run, focus_node_id=chosen))[0], 403)
+                self.assertTrue(all('linked_claim_ids' in n and 'source_ids' in n for n in snapshot['nodes']))
+                # Focused I/O must release the session exactly like ordinary phases.
+                (Path(directory)/'fast').unlink()
+                ready.unlink(missing_ok=True)
+                cookie = '; '.join(f'{c.name}={c.value}' for c in jar)
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    focused = pool.submit(request, '?research_api=1', dict(csrf=csrf, action='research_step', run_id=reviewed_run, focus_node_id=chosen, focus_note='Find primary sources'), None, cookie)
+                    deadline = time.monotonic()+6
+                    while not ready.exists() and time.monotonic()<deadline:
+                        time.sleep(.02)
+                    self.assertTrue(ready.exists())
+                    start = time.monotonic()
+                    status, _, body = request('?research_api=1', dict(csrf=csrf, action='research_stop', run_id=reviewed_run), cookie=cookie)
+                    self.assertLess(time.monotonic()-start, 1.5, 'Focused Stop blocked by session')
+                    self.assertEqual(json.loads(body)['run']['status'], 'interrupted')
+                    snapshot = json.loads(focused.result()[2])
+                    self.assertEqual(snapshot['run']['status'], 'interrupted')
+                    self.assertFalse(any(n['type']=='search' for n in snapshot['nodes']), 'Late focus applied')
+                (Path(directory)/'fast').touch()
+
                 # A form without the JS marker continues with all claims, preserving no-JS operation.
                 _, _, body = request('?research_api=1', dict(csrf=csrf, action='research_start', project_id='1'))
                 fallback_run = json.loads(body)['run']['id']
@@ -152,6 +174,21 @@ namespace { $_SERVER['SCRIPT_NAME']='/aiadmin/loader.php';require getenv('TEST_A
                 self.assertEqual(snapshot['run']['phase'], 'plan')
                 self.assertTrue(all(n['selected']==1 for n in snapshot['nodes'] if n['type']=='dream_claim'))
                 request('?research_api=1', dict(csrf=csrf, action='research_stop', run_id=fallback_run))
+                # Source-specific Learn uses the same authenticated endpoint and no broader context.
+                with sqlite3.connect(private/'research.sqlite') as db:
+                    source_ids=[]
+                    for target, title, url in [(reviewed_run,'Chosen fixture','https://example.com/chosen-http'),(reviewed_run,'Other fixture','https://example.com/other-http'),(fallback_run,'Foreign fixture','https://example.com/foreign-http')]:
+                        cursor=db.execute("INSERT INTO research_nodes(run_id,parent_id,type,status,title,content,created_at,updated_at) VALUES(?,NULL,'source','complete',?,'Synthetic source',?,?)",(target,title,int(time.time()),int(time.time())))
+                        cursor=db.execute("INSERT INTO research_sources(run_id,node_id,url,title,extract,domain,retrieved_at,meta_json) VALUES(?,?,?,?,?,'example.com',?,'{}')",(target,cursor.lastrowid,url,title,'Synthetic extract',int(time.time())))
+                        source_ids.append(cursor.lastrowid)
+                self.assertEqual(request('?research_api=1',dict(csrf=csrf,action='research_learn',run_id=reviewed_run,learn_action='explain',source_selection_explicit='1'))[0],422)
+                self.assertEqual(request('?research_api=1',dict(csrf=csrf,action='research_learn',run_id=reviewed_run,learn_action='explain',**{'source_ids[]':[source_ids[2]]}))[0],422)
+                status, _, body=request('?research_api=1',dict(csrf=csrf,action='research_learn',run_id=reviewed_run,learn_action='explain',source_selection_explicit='1',**{'source_ids[]':[source_ids[0]]}))
+                self.assertEqual(status,200,body)
+                learned=json.loads((Path(directory)/'body.json').read_text())
+                cards=json.loads(learned['input'].split('Collected evidence: ')[1].split('\nUser question/understanding: ')[0])
+                self.assertEqual([card['url'] for card in cards],['https://example.com/chosen-http'])
+                self.assertNotIn('tools',learned)
                 status, _, body = request('?research_api=1', dict(csrf=csrf, action='research_start', project_id='999'))
                 self.assertEqual(status, 422)
                 self.assertNotIn('synthetic-http-only', body)

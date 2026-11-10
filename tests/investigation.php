@@ -20,9 +20,10 @@ namespace AIcontrol {
 }
 namespace {
 require dirname(__DIR__).'/src/Vault.php';require dirname(__DIR__).'/src/AgentRunner.php';require dirname(__DIR__).'/src/Research.php';
-umask(0077);$checks=0;$dirs=[];
-function verify(bool $condition,string $message):void{global $checks;if(!$condition)throw new \RuntimeException($message);$checks++;}
+umask(0077);$checks=0;$dirs=[];$failures=[];
+function verify(bool $condition,string $message):void{global $checks,$failures;if(!$condition){$failures[]=$message;throw new \RuntimeException($message);}$checks++;}
 function denied(callable $work,string $label):void{$denied=false;try{$work();}catch(\RuntimeException){$denied=true;}verify($denied,$label);}
+function evidenceCards(array $body):array{return json_decode(explode("\nUser question/understanding: ",explode('Collected evidence: ',$body['input'])[1])[0],true,32,JSON_THROW_ON_ERROR);}
 function fixture():array {
  global $dirs;$dir=sys_get_temp_dir().'/aicontrol-investigate-'.bin2hex(random_bytes(7));mkdir($dir,0700);$dirs[]=$dir;
  putenv('AICONTROL_PRIVATE_DIR='.$dir);putenv('AICONTROL_OPENAI_API_KEY=synthetic-test-only');
@@ -64,7 +65,7 @@ try {
  verify((int)$snapshot['run']['token_input']===50&&(int)$snapshot['run']['token_output']===100,'Token counts incorrect');
  verify(count(array_filter($snapshot['nodes'],fn($n)=>$n['type']==='synthesis'))===3,'Reconciliation missing');
  verify(str_contains($engine->export($run),'https://example.com/solar')&&str_contains($engine->export($run),'dead_end'),'Export missing evidence/dead ends');
- \AIcontrol\InvestigationWire::$handler=function(array $body):array {verify(!isset($body['tools']),'Learn enabled search');verify(str_contains($body['input'],'https://example.com/solar')&&!str_contains($body['input'],'OPTED-IN-CONTEXT'),'Learn evidence scope');return reply('Explanation based on the collected study.');};
+ \AIcontrol\InvestigationWire::$handler=function(array $body):array {verify(!isset($body['tools']),'Learn enabled search');verify(in_array('https://example.com/solar',array_column(evidenceCards($body),'url'),true)&&!str_contains($body['input'],'OPTED-IN-CONTEXT'),'Learn evidence scope');return reply('Explanation based on the collected study.');};
  $snapshot=$engine->learn($run,'compare','What differs?');verify(end($snapshot['nodes'])['type']==='learn','Learn not persisted');
  $requests=(int)$db->query('SELECT COUNT(*) FROM research_requests')->fetchColumn();
  for($i=$requests;$i<10;$i++)$db->exec("INSERT INTO research_requests(run_id,node_id,kind,status,created_at) VALUES($run,1,'learn','complete',".time().")");
@@ -147,6 +148,47 @@ try {
  $db->exec('UPDATE research_requests SET created_at='.(time()-3601));
  verify($engine->requestBudget()['remaining']===9,'Expired requests still consume visible budget');
  $report=$engine->export($run);verify(str_contains($report,'Claims, evidence and outcomes')&&str_contains($report,'Open questions and learning notes'),'Notebook report headings missing');
+ // Focus consumes an existing Evidence slot and preserves attribution, bounds and Stop.
+ [$dir,$engine,$old,$db]=fixture();$run=$engine->createRun(1);\AIcontrol\InvestigationWire::$handler=fn($body)=>reply(json_encode($valid));
+ $snapshot=$engine->step($run);$claims=array_values(array_filter($snapshot['nodes'],fn($n)=>$n['type']==='dream_claim'));
+ foreach(['confidence','linked_claim_ids','source_ids','dead_end_reason','sort_order'] as $key)verify(array_key_exists($key,$claims[0]),'Map contract missing '.$key);
+ $first=(int)$claims[0]['id'];$second=(int)$claims[1]['id'];
+ denied(fn()=>$engine->step($run,$first),'Focus bypassed review');$engine->continueRun($run);
+ \AIcontrol\InvestigationWire::$handler=fn($body)=>reply(json_encode(['steps'=>[['claim_id'=>$first,'query'=>'Original angle one'],['claim_id'=>$first,'query'=>'Original angle two']]]));$engine->step($run);
+ denied(fn()=>$engine->step($run,99999),'Foreign focus accepted');denied(fn()=>$engine->step($run,$second,str_repeat('x',1001)),'Oversized note accepted');
+ \AIcontrol\InvestigationWire::$handler=function($body)use($second){
+  verify($body['max_tool_calls']===1&&$body['max_output_tokens']===1600,'Focused search expanded bounds');
+  verify(str_contains($body['input'],'counter-evidence')&&!str_contains($body['input'],'Original angle one'),'Focus did not replace original query');
+  $r=reply('Synthetic focused summary',[['type'=>'web_search_call','status'=>'completed']]);$r['output'][1]['content'][0]['annotations']=[['type'=>'url_citation','url'=>'https://example.com/focused','title'=>'Focused study']];return $r;
+ };
+ $snapshot=$engine->step($run,$second,'counter-evidence');$searches=array_values(array_filter($snapshot['nodes'],fn($n)=>$n['type']==='search'));
+ verify(count($searches)===1&&(int)$searches[0]['parent_id']===$second,'Focused branch parent incorrect');
+ verify(json_decode($searches[0]['data_json'],true)['note']==='counter-evidence','Focus note not recorded');
+ verify((int)$snapshot['run']['evidence_index']===1&&count(array_filter($snapshot['nodes'],fn($n)=>$n['type']==='plan_step'))===2,'Focus added search slots');
+ verify($snapshot['sources'][0]['url']==='https://example.com/focused'&&$searches[0]['linked_claim_ids']===[$second],'Focused source/claim contract incorrect');
+ $plan=array_values(array_filter($snapshot['nodes'],fn($n)=>$n['type']==='plan_step'))[0];verify($plan['status']==='incomplete'&&str_contains($plan['content'],'not executed'),'Redirected plan falsely marked verified');
+ \AIcontrol\InvestigationWire::$handler=function($body)use($engine,$run){$engine->stop($run);return reply('Late focused answer',[['type'=>'web_search_call','status'=>'completed']]);};
+ $snapshot=$engine->step($run,$first,'primary sources');
+ verify($snapshot['run']['status']==='interrupted'&&count(array_filter($snapshot['nodes'],fn($n)=>$n['type']==='search'))===1,'Late focused reply overwrote Stop');
+ denied(fn()=>$engine->step($run,$first),'Focus revived stopped run');
+ $source=(int)$snapshot['sources'][0]['id'];$engine->addSource($run,$second,'https://example.com/not-selected','Unselected card','OTHER-CARD-CONTEXT',['claim_id'=>$second]);
+ denied(fn()=>$engine->learn($run,'explain','',[]),'Empty source selection accepted');
+ denied(fn()=>$engine->learn($run,'explain','',[9999]),'Foreign source accepted');
+ denied(fn()=>$engine->learn($run,'explain','',[$source,$source]),'Duplicate source accepted');
+ \AIcontrol\InvestigationWire::$handler=function($body){verify(!isset($body['tools'])&&!str_contains($body['input'],'OTHER-CARD-CONTEXT')&&!str_contains($body['input'],'Unchecked prior')&&!str_contains($body['input'],'OPTED-IN-CONTEXT')&&(array_column(evidenceCards($body),'url')===['https://example.com/focused']),'Selected Learn scope leaked');return reply('Selected evidence explanation');};
+ $snapshot=$engine->learn($run,'explain','',[$source]);verify(end($snapshot['nodes'])['status']==='complete','Selected Learn not complete');verify(end($snapshot['nodes'])['source_ids']===[$source],'Selected Learn attribution lost');
+ verify(str_contains($engine->export($run),'Map outline (node → parent)'),'Map outline missing from export');
+ // No focus may bypass a locked worker, excluded claim, spent slot or hourly cap.
+ [$dir,$engine,$old,$db]=fixture();$run=$engine->createRun(1);\AIcontrol\InvestigationWire::$handler=fn($body)=>reply(json_encode($valid));
+ $snapshot=$engine->step($run);$claims=array_values(array_filter($snapshot['nodes'],fn($n)=>$n['type']==='dream_claim'));$first=(int)$claims[0]['id'];$second=(int)$claims[1]['id'];$engine->continueRun($run,[$first]);
+ \AIcontrol\InvestigationWire::$handler=fn($body)=>reply(json_encode(['steps'=>[['claim_id'=>$first,'query'=>'One bounded query']]]));$engine->step($run);
+ denied(fn()=>$engine->step($run,$second),'Excluded focus accepted');
+ $db->exec("UPDATE research_runs SET busy='locked',busy_since=".time()." WHERE id=$run");denied(fn()=>$engine->step($run,$first),'Busy focus accepted');$db->exec("UPDATE research_runs SET busy=NULL,busy_since=NULL,evidence_index=2 WHERE id=$run");
+ denied(fn()=>$engine->step($run,$first),'Spent slot accepted');$db->exec("UPDATE research_runs SET evidence_index=0 WHERE id=$run");
+ $node=(int)$snapshot['nodes'][0]['id'];for($i=2;$i<10;$i++)$db->exec("INSERT INTO research_requests(run_id,node_id,kind,status,created_at) VALUES($run,$node,'learn','complete',".time().")");
+ $calls=count(\AIcontrol\InvestigationWire::$bodies);$snapshot=$engine->step($run,$first);
+ verify($snapshot['run']['status']==='incomplete'&&count(\AIcontrol\InvestigationWire::$bodies)===$calls,'Focus bypassed hourly budget');
+ if($failures)throw new \RuntimeException("Fixture assertion failures: ".implode("; ",$failures));
  echo "PASS: $checks investigation migration, phase, budget, evidence, Learn, Stop race and uncertainty checks (synthetic transport only)\n";
 } finally {foreach($dirs as $dir){foreach(glob($dir.'/*') as $file)unlink($file);rmdir($dir);}}
 }
