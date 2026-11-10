@@ -73,3 +73,12 @@ Upload the updater-capable `loader.php` once, then use Check GitHub â†’ review â
 Install this checked commit. Future releases can update both the workspace and
 bootstrap with manifest hashes, backups, journal recovery and progress. Existing
 PIN/location markers and private data are retained. See [UPDATES.md](UPDATES.md).
+
+Research uses a native HTML/SVG hierarchical mind map with keyed node buttons,
+connector paths and a side inspector (below the map on mobile). It is embedded
+with the workspace assets, with no graph library/CDN or favicon requests. Zoom
+keeps controls at accessible target sizes; scrolling handles larger graphs.
+Keyboard arrows navigate parent/child and neighboring nodes. The inspector uses
+escaped text and safe external links. Map updates come from the existing status
+poll; it stops polling on terminal states except while a Learn request is pending.
+The server-rendered List and ordinary forms remain the progressive fallback.

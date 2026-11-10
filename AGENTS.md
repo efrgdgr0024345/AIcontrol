@@ -1,18 +1,41 @@
-# Start here for AIcontrol
+# AIcontrol session entry point
 
-Read `docs/PROJECT_STATE.md` and `docs/DEPLOYMENT_DEFAULTS.md`. They record the
-owner's current decisions and setup defaults for continuing across chat sessions.
+Read `docs/PROJECT_STATE.md`, `docs/DEPLOYMENT_DEFAULTS.md` and
+`docs/STANDALONE_LOADER.md` before changing installation behavior.
+`docs/TEAM_HANDOVER.md` is the wider production specification; PROJECT_STATE
+records the owner's subsequent testing-stage decisions.
 
-The working implementation is on `feature/control-panel-foundation`, not this
-documentation-only main branch. Before application work, inspect the working
-tree and fetch that branch. Use the existing checkout and switch to it when
-clean, preserving user changes/local commits. Do not reset work or create a
-worktree unless requested. Then read that branch's AGENTS.md and current guides.
+The implementation and release branch is `main`. Use the existing checkout,
+preserve user changes and local commits, and do not create a worktree unless
+requested. `feature/control-panel-foundation` is retained only as a compatibility
+pointer for older installed loaders. Keep that pointer fast-forwarded to tested
+main releases while those loaders still depend on it; do not force-push it.
 
-Current installation: one loader file; first visit sets a PIN; next visit signs
-in and offers Check GitHub. Storage and release settings are automatic. Do not
-ask the owner for filesystem paths, REMOTE_USER, Directory Privacy or copied keys.
-Private PIN/key/session/runtime state stays on the server, not in GitHub/chat.
+Current intended flow: upload one loader, set PIN on first visit, sign in on the
+next visit, click Check GitHub, review and install a checked commit. No hosting
+login/REMOTE_USER, manual hash, filesystem-path or release-ref fields are required.
+Private storage is selected automatically and recorded server-side. Never reset
+an existing PIN/key/database merely to make setup pass.
 
-Keep the continuity documents updated as decisions change. Do not call model
-fixtures a live provider connection or cloud tests a completed cPanel deployment.
+Keep private credentials, PIN verifiers, signing identities, sessions and runtime
+records out of GitHub and public document roots. Do not ask for secret values in
+chat. Server-generated keys sign update evidence; they do not replace provider
+API authentication or independent owner authorization.
+
+Use PHP 8.2–8.5. In the prepared cloud snapshot PHP may be available at
+`/workspace/toolchains/php/php`; otherwise inspect the current environment rather
+than assuming this path exists. Run the checks in PROJECT_STATE after changes,
+run `php bin/build-ui.php` before the release manifest when UI sources change,
+regenerate the release manifest after application-source changes, and confirm
+the required GitHub Actions check on the exact release commit.
+
+Update the state/defaults documents when behavior or scope changes. Record exact
+validation scope. Do not label API fixtures as live AI operation, model output
+as executed code, or cloud validation as a completed cPanel deployment.
+
+The owner has authorized publishing tested application updates to the existing
+implementation/release branch without asking for deployment confirmation. Finish
+the release and verify the required `planning-panel` check on the exact SHA;
+do not stop at local changes. This does not authorize changing cloud environment
+publication settings. Distinguish a published checked release from activation on
+the live host, and never claim host activation without authenticated evidence.

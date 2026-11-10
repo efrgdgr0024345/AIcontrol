@@ -1,0 +1,641 @@
+(() => {
+  'use strict';
+  let installing = false;
+  const statusRoot = document.querySelector('[data-update-status-url]');
+  const formatTime = timestamp => new Intl.DateTimeFormat('en-AU', {timeZone: 'Australia/Perth', hour: 'numeric', minute: '2-digit'}).format(new Date(timestamp * 1000)) + ' AWST';
+
+  async function checkUpdates(refresh = false) {
+    if (!statusRoot || installing) return;
+    const url = new URL(statusRoot.dataset.updateStatusUrl, location.href);
+    if (refresh) url.searchParams.set('refresh', '1');
+    const notice = document.querySelector('[data-update-notice]');
+    const badge = document.querySelector('[data-update-badge]');
+    const label = document.querySelector('[data-update-label]');
+    const detail = document.querySelector('[data-update-detail]');
+    const review = document.querySelector('[data-update-review]');
+    const button = document.querySelector('[data-check-updates]');
+    if (button) { button.disabled = true; button.textContent = 'Checking…'; }
+    try {
+      const response = await fetch(url, {credentials: 'same-origin', headers: {'Accept': 'application/json'}});
+      if (!response.ok || !(response.headers.get('content-type') || '').includes('application/json')) throw new Error('status');
+      const result = await response.json();
+      if (notice) notice.hidden = false;
+      if (badge) badge.hidden = result.state !== 'update_available';
+      if (review) review.hidden = result.state !== 'update_available' && !result.integrity_changed;
+      if (label) label.textContent = result.integrity_changed ? 'Loader hash needs verification' : ({update_available: 'An update is available', up_to_date: 'You’re up to date', checking: 'Checking for updates…', checks_pending: 'Latest release is waiting for checks', check_failed: 'Update check could not be completed'}[result.state] || 'Update status unavailable');
+      if (notice) notice.dataset.state = result.integrity_changed ? 'warning' : result.state;
+      if (detail) {
+        const parts = [];
+        if (result.state === 'update_available') parts.push([result.loader_update ? 'Loader' : '', result.app_update ? 'workspace' : ''].filter(Boolean).join(' and ') + ' update ready for review.');
+        if (result.release_title && result.state === 'update_available') parts.push(result.release_title);
+        if (result.checked_at) parts.push('Checked ' + formatTime(result.checked_at));
+        if (result.message) parts.push(result.message);
+        detail.textContent = parts.join(' · ');
+      }
+    } catch (_) {
+      if (notice) { notice.hidden = false; notice.dataset.state = 'check_failed'; }
+      if (label) label.textContent = 'Update status unavailable';
+      if (detail) detail.textContent = 'Open application updates to check the connection or sign in again.';
+    } finally {
+      if (button) { button.disabled = false; button.textContent = 'Check again'; }
+    }
+  }
+
+  document.querySelector('[data-check-updates]')?.addEventListener('click', () => checkUpdates(true));
+  if (statusRoot) { checkUpdates(); setInterval(() => checkUpdates(), 300000); }
+
+  function progressDialog() {
+    let dialog = document.querySelector('#update-progress-dialog');
+    if (dialog) return dialog;
+    dialog = document.createElement('dialog');
+    dialog.id = 'update-progress-dialog';
+    dialog.className = 'update-dialog';
+    dialog.setAttribute('aria-labelledby', 'update-progress-title');
+    dialog.innerHTML = '<div class="update-dialog-body"><div class="eyebrow">VERIFIED SERVER UPDATE</div><h2 id="update-progress-title">Preparing your update</h2><p data-progress-detail aria-live="polite">Confirming the checked selection.</p><progress class="update-progress" max="9" value="0" aria-label="Completed update stages"></progress><p class="muted" data-progress-count>0 of 9 stages complete</p><ol class="update-stage-list" data-progress-stages></ol><div class="update-result" data-progress-result hidden></div><div class="update-dialog-actions" data-progress-actions hidden></div></div>';
+    dialog.addEventListener('cancel', event => { if (installing) event.preventDefault(); });
+    document.body.append(dialog);
+    return dialog;
+  }
+
+  document.addEventListener('submit', async event => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement) || !form.matches('[data-update-install]') || !window.fetch || !window.ReadableStream) return;
+    event.preventDefault();
+    if (installing) return;
+    installing = true;
+    const submit = form.querySelector('button[type=submit],button:not([type])');
+    if (submit) submit.disabled = true;
+    const dialog = progressDialog();
+    const title = dialog.querySelector('#update-progress-title');
+    const detail = dialog.querySelector('[data-progress-detail]');
+    const bar = dialog.querySelector('progress');
+    const count = dialog.querySelector('[data-progress-count]');
+    const list = dialog.querySelector('[data-progress-stages]');
+    const result = dialog.querySelector('[data-progress-result]');
+    const actions = dialog.querySelector('[data-progress-actions]');
+    list.replaceChildren(); result.replaceChildren(); actions.replaceChildren();
+    result.hidden = true; actions.hidden = true; bar.value = 0;
+    title.textContent = 'Preparing your update'; detail.textContent = 'Confirming the checked selection.'; count.textContent = '0 of 9 stages complete';
+    dialog.dataset.state = 'working';
+    if (!dialog.open) dialog.showModal();
+    const destination = new URL(form.getAttribute('action') || location.href, location.href);
+    destination.searchParams.set('stream', '1');
+    let finished = false;
+    const render = update => {
+      if (update.event === 'progress') {
+        title.textContent = update.label;
+        detail.textContent = update.detail;
+        bar.value = Math.max(0, update.step - 1);
+        count.textContent = Math.max(0, update.step - 1) + ' of ' + update.total + ' stages complete';
+        for (const item of list.children) item.dataset.state = 'complete';
+        let item = list.querySelector('[data-step="' + Number(update.step) + '"]');
+        if (!item) { item = document.createElement('li'); item.dataset.step = String(update.step); list.append(item); }
+        item.textContent = update.label; item.dataset.state = 'working';
+      } else if (update.event === 'complete' || update.event === 'error') {
+        finished = true;
+        const success = update.event === 'complete';
+        dialog.dataset.state = success ? 'complete' : 'error';
+        title.textContent = success ? 'Update installed' : 'Update stopped';
+        detail.textContent = update.message;
+        if (success) { bar.value = 9; count.textContent = '9 of 9 stages complete'; for (const item of list.children) item.dataset.state = 'complete'; }
+        result.hidden = false;
+        if (update.summary) {
+          const summary = document.createElement('ul');
+          const changes = update.summary.changes || {};
+          for (const text of [update.summary.loader_updated ? 'Loader updated and its saved hash verified.' : 'Loader already matched the checked hash.',
+            (changes.added?.length || 0) + ' files added · ' + (changes.changed?.length || 0) + ' changed · ' + (changes.removed?.length || 0) + ' removed',
+            'PIN, signing keys and project data retained.']) { const line = document.createElement('li'); line.textContent = text; summary.append(line); }
+          result.append(summary);
+        }
+        actions.hidden = false;
+        const destinations = success ? [['Open panel', ''], ['Update details', '?installer=1']] : [['Return to updates', '?installer=1']];
+        for (const [text, query] of destinations) {
+          const link = document.createElement('a'); link.className = 'btn ' + (actions.childElementCount ? 'btn-outline-secondary' : 'btn-primary'); link.href = destination.pathname + query; link.textContent = text; actions.append(link);
+        }
+      }
+    };
+    try {
+      const payload = new FormData(form);
+    if (form.dataset.researchAction === 'research_continue') payload.set('selection_explicit', '1');
+    const response = await fetch(destination, {method: 'POST', body: payload, credentials: 'same-origin', headers: {'Accept': 'application/x-ndjson'}});
+      if (!(response.headers.get('content-type') || '').includes('application/x-ndjson') || !response.body) throw new Error('Session expired or progress is unavailable. Open updates to confirm the active version.');
+      const reader = response.body.getReader(), decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const chunk = await reader.read();
+        buffer += decoder.decode(chunk.value || new Uint8Array(), {stream: !chunk.done});
+        let end;
+        while ((end = buffer.indexOf('\n')) >= 0) { const line = buffer.slice(0, end).trim(); buffer = buffer.slice(end + 1); if (line) render(JSON.parse(line)); }
+        if (chunk.done) break;
+      }
+      if (buffer.trim()) render(JSON.parse(buffer));
+      if (!finished) throw new Error('The connection ended before the update result was received. Open updates to confirm its status; do not repeat it blindly.');
+    } catch (failure) {
+      render({event: 'error', message: failure instanceof Error ? failure.message : 'Update progress was interrupted. Verify the installed version before retrying.'});
+    } finally {
+      installing = false;
+    }
+  });
+})();
+
+document.addEventListener('submit', event => {
+  const form = event.target;
+  if (!form.matches('[data-research-chat]')) return;
+  const button = form.querySelector('button');
+  button.disabled = true;
+  form.querySelector('[data-research-status]').textContent = 'Researching… This may take up to a minute.';
+});
+
+// Investigation requests advance one persisted phase at a time. Stop/poll use
+// separate requests; the server releases its session lock before provider I/O.
+(() => {
+  'use strict';
+  const root = document.querySelector('[data-investigation]');
+  const csrf = () => document.querySelector('input[name=csrf]')?.value || '';
+  let stepping = false, halted = false, polling = false, lastSnapshot = '';
+  const element = (tag, text, className) => {
+    const node = document.createElement(tag);
+    if (text !== undefined) node.textContent = text;
+    if (className) node.className = className;
+    return node;
+  };
+  function error(message) {
+    const node = root?.querySelector('[data-research-error]') || document.querySelector('[data-request-error]');
+    if (node) node.textContent = message;
+  }
+  function budgetLabel(budget) {
+    return `${budget.remaining} of 10 requests remaining this hour · max 2 searches per investigation` +
+      (budget.remaining === 0 ? ` · Next request available in about ${Math.ceil(budget.retry_after_seconds / 60)} minutes` : '');
+  }
+  function showBudget(budget) {
+    if (!budget) return;
+    document.querySelector('[data-request-budget]').textContent = budgetLabel(budget);
+  }
+  function safeUrl(value) {
+    try { const url = new URL(value); return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password; } catch (_) { return false; }
+  }
+  function claimData(node) {
+    try { const data = JSON.parse(node.data_json || '{}'); if (data.claim) return data; } catch (_) { /* Legacy text below. */ }
+    const data = {claim: node.title, confidence: 'unknown', uncertainty: '', verify: '', priority: 'normal'};
+    for (const [label, key] of [['Confidence', 'confidence'], ['Uncertainty', 'uncertainty'], ['Verify', 'verify']]) {
+      const match = node.content.match(new RegExp('^' + label + ': (.*)$', 'm')); if (match) data[key] = match[1];
+    }
+    return data;
+  }
+  function claimSources(snapshot, claim) {
+    const parents = new Map(snapshot.nodes.map(node => [Number(node.id), Number(node.parent_id)]));
+    return snapshot.sources.filter(source => {
+      try { if ((JSON.parse(source.meta_json || '{}').claim_ids || []).map(Number).includes(Number(claim))) return true; } catch (_) { /* Legacy ancestor lookup. */ }
+      let id = Number(source.node_id); const seen = new Set();
+      while (id && !seen.has(id)) { if (id === Number(claim)) return true; seen.add(id); id = parents.get(id); }
+      return false;
+    });
+  }
+  function sourceCard(source) {
+    const card = element('article', undefined, 'research-source'); card.dataset.sourceId = source.id;
+    const link = element('a', source.url); link.href = source.url; link.target = '_blank'; link.rel = 'noopener noreferrer';
+    const captured = new Intl.DateTimeFormat('en-AU', {timeZone: 'Australia/Perth', dateStyle: 'medium', timeStyle: 'short'}).format(new Date(source.retrieved_at * 1000));
+    const domain = element('div', undefined, 'source-domain'), mark = element('span', source.domain.slice(0,1).toUpperCase(), 'source-monogram'); mark.setAttribute('aria-hidden', 'true'); domain.append(mark, document.createTextNode(source.domain + ' · Cited source'));
+    card.append(domain, element('h4', `Source #${source.id} · ${source.title}`), link, element('p', source.extract), element('small', `${source.domain} · Citation captured ${captured} AWST`));
+    return card;
+  }
+  function renderClaims(snapshot, review) {
+    const cards = root.querySelector('[data-dream-cards]');
+    const claims = snapshot.nodes.filter(node => node.type === 'dream_claim');
+    for (const claim of claims) {
+      let card = cards.querySelector(`[data-claim-id="${Number(claim.id)}"]`);
+      if (!card) { card = element('article', undefined, 'dream-card'); card.dataset.claimId = claim.id; cards.append(card); }
+      // Review polling must not recreate checkboxes or steal focus/selection.
+      const serial = JSON.stringify([claim, snapshot.nodes.filter(node => node.type !== 'learn'), snapshot.sources]);
+      if (card.dataset.serial !== serial) {
+        const old = card.querySelector('input'); const checked = old ? old.checked : Number(claim.selected ?? 1) === 1;
+        const focused = old === document.activeElement;
+        const data = claimData(claim), label = element('label', undefined, 'claim-selection');
+        const checkbox = element('input'); checkbox.type = 'checkbox'; checkbox.name = 'claim_ids[]'; checkbox.value = claim.id; checkbox.checked = checked;
+        label.append(checkbox, element('span', `Include claim #${claim.id}`));
+        const badges = element('p', undefined, 'claim-badges'), confidence = element('span', `${data.confidence} prior confidence`, 'claim-badge'); confidence.dataset.confidence = data.confidence; badges.append(confidence);
+        if (data.priority === 'high') badges.append(element('span', 'High priority', 'claim-badge'));
+        const uncertainty = element('p'); uncertainty.append(element('strong', 'Uncertainty: '), document.createTextNode(data.uncertainty));
+        const verify = element('p'); verify.append(element('strong', 'Verify: '), document.createTextNode(data.verify));
+        card.replaceChildren(element('div', `PRIOR / ${String(claim.id).padStart(2, '0')}`, 'claim-number'), label, element('h4', data.claim), badges, uncertainty, verify);
+        if (Number(claim.selected ?? 1) === 0) card.append(element('p', 'Excluded from verification'));
+        const trail = element('div', undefined, 'claim-trail'), descendants = new Set([Number(claim.id)]);
+        for (const node of snapshot.nodes) if (descendants.has(Number(node.parent_id))) {
+          descendants.add(Number(node.id));
+          if (['plan_step', 'dead_end', 'synthesis'].includes(node.type)) {
+            const event = element('article', undefined, 'claim-event'); event.dataset.status = node.status;
+            let content = node.content;
+            if (node.type === 'synthesis') { try { content = JSON.parse(node.data_json || '{}').reason || content; } catch (_) { /* Legacy text. */ } }
+            event.append(element('h5', (node.type === 'dead_end' ? '⚑ Dead end · ' : '') + node.title), element('p', content)); trail.append(event);
+          }
+        }
+        for (const source of claimSources(snapshot, claim.id).filter(source => safeUrl(source.url))) {
+          trail.append(element('p', `Evidence collected to test claim #${claim.id}`, 'source-relevance'), sourceCard(source));
+        }
+        card.append(trail); card.dataset.serial = serial; if (focused && review) checkbox.focus();
+      }
+      card.querySelector('input').disabled = !review;
+    }
+    const context = root.querySelector('[data-prior-context]'); context.replaceChildren();
+    for (const node of snapshot.nodes) {
+      let data; try { data = JSON.parse(node.data_json || '{}'); } catch (_) { continue; }
+      if (!data.least_confident) continue;
+      context.append(element('h4', 'Prior context'));
+      for (const [label, value] of [['Competing angles', data.competing_angles.join('; ')], ['Least confident', data.least_confident], ['Background assumptions', data.background_assumptions.join('; ')]]) {
+        const p = element('p'); p.append(element('strong', label + ': '), document.createTextNode(value)); context.append(p);
+      }
+    }
+    const rows = root.querySelector('[data-matrix-rows]'); rows.replaceChildren();
+    for (const claim of claims) {
+      const verdict = snapshot.nodes.find(node => node.type === 'synthesis' && Number(node.parent_id) === Number(claim.id));
+      let data = {}; try { data = JSON.parse(verdict?.data_json || '{}'); } catch (_) { /* Legacy title. */ }
+      const outcome = Number(claim.selected ?? 1) === 0 ? 'Excluded from verification' : (data.verdict || verdict?.title.split(' · ')[0] || 'open');
+      const tr = element('tr'), th = element('th', claimData(claim).claim); th.scope = 'row';
+      const sources = claimSources(snapshot, claim.id).filter(source => safeUrl(source.url) && (!data.source_ids || data.source_ids.includes(Number(source.id))));
+      const td = element('td', sources.length ? '' : 'No useful source');
+      for (const source of sources) { const link = element('a', source.title); link.href = source.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; td.append(link, document.createTextNode(' ')); }
+      tr.append(th, element('td', outcome), td); rows.append(tr);
+    }
+    root.querySelector('[data-claim-matrix]').hidden = snapshot.run.status !== 'complete';
+    root.querySelector('[data-dream-empty]').hidden = claims.length > 0;
+    const generating = snapshot.run.status === 'running' && snapshot.run.phase === 'dream';
+    root.querySelector('[data-dream-empty]').textContent = generating ? 'Generating prior hypotheses… Claims will appear as they are saved. No evidence has been established yet.' : 'No prior claims were saved for this run. Inspect the saved status before starting again.';
+    root.querySelector('[data-dream-skeleton]').hidden = !generating || claims.length > 0;
+    const plans = snapshot.nodes.filter(node => node.type === 'plan_step');
+    root.querySelector('[data-live-progress]').textContent = snapshot.run.phase === 'evidence' ? `Verification search ${Math.min(Number(snapshot.run.evidence_index || 0) + 1, plans.length)} of ${plans.length} · ${snapshot.run.busy_since ? 'request in progress' : 'ready for the next step'}` : (review ? 'Dream complete — choose what to verify before continuing.' : '');
+    const stages = ['dream', 'dream_review', 'plan', 'evidence', 'reconciliation'];
+    root.querySelectorAll('[data-phase-rail] li').forEach((item, index) => {
+      item.removeAttribute('aria-current');
+      if (stages[index] === snapshot.run.phase) item.setAttribute('aria-current', 'step');
+      const done = snapshot.nodes.some(node => node.type === 'phase' && node.title.toLowerCase() === stages[index] && node.status === 'complete') || (stages[index] === 'dream_review' && stages.indexOf(snapshot.run.phase) > index);
+      item.dataset.done = done ? '1' : '0';
+      const link = item.querySelector('a'); link.setAttribute('aria-disabled', String(!done)); link.tabIndex = done ? 0 : -1;
+    });
+    const metrics = root.querySelector('[data-research-metrics]');
+    metrics.querySelectorAll('strong').forEach((item, index) => item.textContent = [claims.length, snapshot.sources.length, snapshot.run.status][index]);
+    updateSelection();
+  }
+  function updateSelection() {
+    if (!root) return;
+    const review = root.dataset.review === '1';
+    const total = root.querySelectorAll('[data-dream-cards] input:checked').length;
+    root.querySelector('[data-selection-count]').textContent = review ? `${total} of ${root.querySelectorAll('[data-dream-cards] input').length} claims selected · will use up to 2 searches` : '';
+    root.querySelector('[data-continue-claims]').disabled = review && total === 0;
+    root.querySelector('[data-review-shortcuts]').hidden = !review;
+  }
+  root?.addEventListener('change', event => { if (event.target.matches('[name="claim_ids[]"]')) updateSelection(); });
+  function render(snapshot) {
+    if (!root || !snapshot.run) return;
+    const serial = JSON.stringify(snapshot);
+    if (serial === lastSnapshot) return;
+    lastSnapshot = serial;
+    const run = snapshot.run;
+    showBudget(snapshot.budget);
+    const active = ['pending', 'running'].includes(run.status);
+    const review = active && run.phase === 'dream_review';
+    root.dataset.review = review ? '1' : '0';
+    root.querySelector('[data-review-copy]').hidden = !review;
+    root.querySelector('[data-continue-claims]').hidden = !review;
+    renderClaims(snapshot, review);
+    const pending = snapshot.requests.some(request => request.status === 'pending');
+    root.dataset.status = run.status;
+    root.dataset.phase = run.phase;
+    root.dataset.busy = run.busy_since ? '1' : '0';
+    root.querySelector('[data-research-summary]').textContent = `${run.status} · ${review ? 'Dream complete — review claims' : run.phase} · ${run.token_input} input / ${run.token_output} output tokens confirmed${run.usage_unknown ? ' · some usage unknown' : ''}`;
+    root.querySelector('[data-research-reason]').textContent = run.stop_reason;
+    root.querySelector('[data-stop-control]').hidden = !(active || pending);
+    root.querySelector('[data-step-control]').hidden = !active || !!run.busy_since || review;
+    const tree = root.querySelector('[data-research-tree]');
+    const existing = new Map([...tree.querySelectorAll('[data-node-id]')].map(node => [Number(node.dataset.nodeId), node]));
+    const parents = new Map();
+    for (const item of snapshot.nodes.filter(item => item.type !== 'learn')) {
+      let node = existing.get(Number(item.id));
+      if (!node) {
+        node = element('details', undefined, 'investigation-node'); node.open = true; node.dataset.nodeId = item.id;
+        const summary = element('summary'); summary.append(element('span'), document.createTextNode(' '), element('small'));
+        node.append(summary, element('div', '', 'node-content'), element('div', undefined, 'node-children'));
+      }
+      if (item.status === 'running' || item.status === 'pending') node.open = true;
+      node.dataset.status = item.status;
+      node.querySelector('summary > span').textContent = item.title;
+      node.querySelector('summary > small').textContent = `${item.type} · ${item.status}`;
+      node.querySelector('.node-content').textContent = item.content;
+      parents.set(Number(item.id), node);
+    }
+    // Moving existing nodes preserves their expanded state and keyboard focus.
+    for (const item of snapshot.nodes.filter(item => item.type !== 'learn')) {
+      const node = parents.get(Number(item.id));
+      const parent = item.parent_id ? parents.get(Number(item.parent_id))?.querySelector('.node-children') : tree;
+      if (parent && node.parentNode !== parent) parent.append(node);
+    }
+    const cards = root.querySelector('[data-research-sources]');
+    const saved = new Set([...cards.querySelectorAll('[data-source-id]')].map(card => Number(card.dataset.sourceId)));
+    for (const source of snapshot.sources) {
+      if (saved.has(Number(source.id)) || !safeUrl(source.url)) continue;
+      cards.append(sourceCard(source));
+    }
+    const learning = root.querySelector('[data-learn-results]');
+    for (const item of snapshot.nodes.filter(item => item.type === 'learn')) {
+      let article = learning.querySelector(`[data-learning-id="${Number(item.id)}"]`);
+      if (!article) { article = element('article', undefined, 'research-message'); article.dataset.learningId = item.id; article.append(element('h4'), element('p')); learning.append(article); }
+      article.querySelector('h4').textContent = `${item.title} · ${item.status}`;
+      article.querySelector('p').textContent = item.content || 'Waiting for the explanation outcome.';
+    }
+    const hasSources = snapshot.sources.length > 0;
+    root.querySelector('[data-learn-link]').hidden = !hasSources;
+    root.querySelector('[data-learn-panel]').hidden = !hasSources || root.dataset.selectedTab !== 'learn';
+    root.querySelector('[data-source-empty]').hidden = hasSources;
+    root.querySelector('[data-learn-submit]').disabled = active || pending;
+    document.querySelectorAll('[data-research-action=research_start] button').forEach(button => button.disabled = active || pending);
+    root.querySelector('[data-recovery]').hidden = !['interrupted','uncertain','incomplete','failed'].includes(run.status);
+    root.querySelector('[data-learn-followups]').hidden = !snapshot.nodes.some(node => node.type === 'learn' && node.status === 'complete');
+    root.querySelectorAll('[data-learn-followup]').forEach(button => button.disabled = active || pending || !hasSources);
+    if (!active && !pending) { stepping = false; }
+    root.dispatchEvent(new CustomEvent('research:snapshot', {detail:snapshot}));
+  }
+  async function send(form) {
+    const destination = new URL(form.getAttribute('action') || location.href, location.href);
+    destination.searchParams.set('research_api', '1');
+    const payload = new FormData(form);
+    if (form.dataset.researchAction === 'research_continue') payload.set('selection_explicit', '1');
+    const response = await fetch(destination, {method: 'POST', body: payload, credentials: 'same-origin', headers: {'Accept': 'application/json'}});
+    if (!(response.headers.get('content-type') || '').includes('application/json')) throw new Error('Research session expired. Sign in again and inspect the saved run before continuing.');
+    const data = await response.json();
+    showBudget(data.budget);
+    if (data.budget && root) root.dispatchEvent(new CustomEvent('research:budget',{detail:data.budget}));
+    if (!response.ok || data.error) throw new Error(data.error || 'Research request failed. Inspect the saved state before continuing.');
+    return data;
+  }
+  async function advance(manual = false) {
+    if (!root || stepping || halted || root.dataset.status !== 'running' || root.dataset.busy === '1' || root.dataset.review === '1') return;
+    if (!manual && root.dataset.phase === 'evidence') return;
+    const form = root.querySelector('[data-research-action=research_step]');
+    stepping = true;
+    try { render(await send(form)); }
+    catch (failure) { halted = true; error(failure.message); }
+    finally { stepping = false; }
+    if (!halted && root.dataset.status === 'running') setTimeout(advance, 200);
+  }
+  async function poll(force = false) {
+    if (!root || polling) return;
+    const pending = !root.querySelector('[data-stop-control]').hidden;
+    if (!force && !['pending', 'running'].includes(root.dataset.status) && !pending) return;
+    polling = true;
+    try {
+      const url = new URL(root.dataset.entry, location.href); url.searchParams.set('research_api', 'status'); url.searchParams.set('run_id', root.dataset.runId);
+      const response = await fetch(url, {credentials: 'same-origin', headers: {'X-CSRF-Token': csrf(), 'Accept': 'application/json'}});
+      if (!response.ok || !(response.headers.get('content-type') || '').includes('application/json')) throw new Error('Progress could not be verified. Sign in again if needed; no phase will be retried automatically.');
+      const data = await response.json(); if (data.error) throw new Error(data.error);
+      render(data);
+      if (!halted) advance();
+    } catch (failure) { halted = true; error(failure.message); }
+    finally { polling = false; }
+  }
+  document.addEventListener('submit', async event => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement) || !form.dataset.researchAction || form.dataset.researchAction === 'research_export') return;
+    event.preventDefault();
+    const action = form.dataset.researchAction;
+    const button = event.submitter || form.querySelector('button:not([type=button])'); button.disabled = true;
+    if (action === 'research_stop') halted = true;
+    if (action === 'research_step' && !form.hasAttribute('data-map-focus')) { halted = false; advance(true); button.disabled = false; return; }
+    if (action === 'research_learn') { root.querySelectorAll('[data-learn-followup], [data-learn-submit]').forEach(button => button.disabled = true); error('Explaining collected evidence… No web search.'); root.querySelector('[data-stop-control]').hidden = false; }
+    try {
+      const snapshot = await send(form);
+      if (action === 'research_start') {
+        const url = new URL(form.getAttribute('action'), location.href); url.searchParams.set('project', snapshot.run.project_id); url.searchParams.set('run', snapshot.run.id); location.assign(url); return;
+      }
+      render(snapshot); error('');
+      if (action === 'research_continue' || form.hasAttribute('data-map-focus')) { halted = false; advance(); }
+    } catch (failure) { error(failure.message);  }
+    finally { button.disabled = false; root?.dispatchEvent(new Event('research:controls')); }
+  });
+  root?.addEventListener('click', event => {
+    const quick = event.target.closest('[data-keep]');
+    if (quick && root.dataset.review === '1') {
+      root.querySelectorAll('[data-dream-cards] input').forEach(input => {
+        const card = input.closest('[data-claim-id]');
+        const priority = !![...card.querySelectorAll('.claim-badge')].find(badge => badge.textContent === 'High priority');
+        const confidence = card.querySelector('[data-confidence]')?.dataset.confidence;
+        input.checked = quick.dataset.keep === 'all' || (quick.dataset.keep === 'priority' ? priority : confidence !== 'low');
+      });
+      updateSelection();
+    }
+    const stage = event.target.closest('[data-phase-rail] a');
+    if (stage) {
+      event.preventDefault(); if (stage.getAttribute('aria-disabled') === 'true') return;
+      root.querySelector('section[id^=investigate-]').hidden = false; root.querySelector('[data-learn-panel]').hidden = true; root.dataset.selectedTab = 'investigate';
+      const target = document.querySelector(stage.getAttribute('href')); if (target.tagName === 'DETAILS') target.open = true;
+      target.tabIndex = -1; target.focus(); target.scrollIntoView({block:'start'});
+    }
+  });
+  if (root) {
+    root.dataset.selectedTab = 'investigate';
+    root.querySelector('[data-learn-panel]').hidden = true;
+    root.querySelectorAll('.research-subtabs a').forEach(link => link.addEventListener('click', event => {
+      event.preventDefault();
+      const learn = link.hasAttribute('data-learn-link'); root.dataset.selectedTab = learn ? 'learn' : 'investigate';
+      root.querySelector('section[id^=investigate-]').hidden = learn;
+      root.querySelector('[data-learn-panel]').hidden = !learn;
+      root.querySelectorAll('.research-subtabs a').forEach(item => item.removeAttribute('aria-current'));
+      link.setAttribute('aria-current', 'page');
+    }));
+    setInterval(poll, 1500);
+    poll(true);
+  }
+})();
+
+// Spatial view of the same persisted nodes. No provider or database operations live here.
+(() => {
+  'use strict';
+  const root = document.querySelector('[data-investigation]');
+  if (!root) return;
+  const map = root.querySelector('[data-mindmap]'), world = map.querySelector('[data-map-world]');
+  const viewport = map.querySelector('[data-map-viewport]'), space = map.querySelector('[data-map-space]');
+  const inspector = map.querySelector('[data-map-inspector-content]');
+  const collapsed = new Set(), selectedSources = new Set();
+  let snapshot, nodes = [], visible = [], selected = 'root', filter = 'all', scale = 1, width = 600, height = 400, signature = '', count = -1;
+  let view = matchMedia('(min-width: 900px)').matches ? 'map' : 'list';
+  const el = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
+  const data = node => { try { return JSON.parse(node.data_json || '{}'); } catch (_) { return {}; } };
+  const safe = value => { try { const url = new URL(value); return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password; } catch (_) { return false; } };
+  const claimInputs = () => [...root.querySelectorAll('[data-dream-cards] input')];
+  const reviewing = () => snapshot?.run.status === 'running' && snapshot.run.phase === 'dream_review';
+  function showView(next) {
+    view = next; map.hidden = view !== 'map'; root.querySelector('[data-investigate-list]').hidden = view !== 'list';
+    root.querySelectorAll('[data-investigate-view]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.investigateView === view)));
+    if (view === 'map') requestAnimationFrame(fit);
+  }
+  root.querySelector('[data-mindmap-switch]').hidden = false;
+  root.querySelectorAll('[data-investigate-view]').forEach(button => button.addEventListener('click', () => showView(button.dataset.investigateView)));
+  function normalize() {
+    nodes = [{id:'root', parent_id:null, type:'root', status:snapshot.run.status, title:`Investigation #${snapshot.run.id}`, content:snapshot.run.stop_reason || 'Unchecked prior → review → plan → evidence → findings.'}, ...snapshot.nodes.map(node => ({...node,id:String(node.id),parent_id:node.parent_id === null ? 'root' : String(node.parent_id)}))];
+    for (const source of snapshot.sources) {
+      if (!nodes.some(node => node.id === String(source.node_id))) nodes.push({id:`source-${source.id}`,parent_id:'root',type:'source',title:source.title,content:source.extract,status:'complete',source_ids:[Number(source.id)]});
+    }
+    for (const node of nodes) if(node.type==='dream_claim')node.confidence ??= data(node).confidence || 'unknown';
+    const ids = new Set(nodes.map(node => node.id));
+    for (const node of nodes) if (node.id !== 'root' && !ids.has(node.parent_id)) node.parent_id = 'root';
+  }
+  function sourceIds(node) {
+    return [...new Set([...(node.source_ids || []), ...snapshot.sources.filter(source => String(source.node_id) === node.id).map(source => Number(source.id))])].map(Number);
+  }
+  function links(node) {
+    if (node.type === 'dream_claim') return [Number(node.id)];
+    const ids = [...(node.linked_claim_ids || [])]; let current = node; const seen = new Set();
+    while (current && !seen.has(current.id)) { seen.add(current.id); if (current.type === 'dream_claim') ids.push(Number(current.id)); current = nodes.find(parent => parent.id === current.parent_id); }
+    return [...new Set(ids)].map(Number);
+  }
+  function setScale(value) {
+    scale = Math.max(.75, Math.min(1.8, value));
+    world.style.setProperty('--map-scale',scale); world.style.transform = `scale(${scale})`; space.style.width = `${width * scale}px`; space.style.height = `${height * scale}px`;
+  }
+  function fit() { if (!map.hidden) { setScale(Math.min(1, (viewport.clientWidth - 32) / width, (viewport.clientHeight - 32) / height)); viewport.scrollTo(0, 0); } }
+  function matches(node) {
+    return filter === 'all' || (filter === 'open' ? (node.type === 'synthesis' && (node.title.toLowerCase().startsWith('open') || data(node).verdict === 'open')) : node.type === filter);
+  }
+  function pathIds(node) {
+    const path = new Set([node.id, ...links(node).map(String)]);
+    for (const id of sourceIds(node)) for (const source of snapshot.sources) if (Number(source.id) === id) path.add(String(source.node_id));
+    for (const id of [...path]) { let current = nodes.find(item => item.id === id); const seen = new Set(); while (current && !seen.has(current.id)) { seen.add(current.id); path.add(current.id); current = nodes.find(parent => parent.id === current.parent_id); } }
+    return path;
+  }
+  function syncSelection() {
+    const inputs = claimInputs(), checked = new Set(inputs.filter(input => input.checked).map(input => input.value));
+    for (const card of world.querySelectorAll('[data-map-node]')) {
+      const node = nodes.find(item => item.id === card.dataset.mapNode);
+      const input = card.querySelector('[data-map-claim]');
+      if (input) { input.checked = checked.has(node.id); input.disabled = !reviewing(); }
+      card.dataset.excluded = String(node.type === 'dream_claim' && !(reviewing() ? checked.has(node.id) : Number(node.selected ?? 1) === 1));
+    }
+    map.querySelector('[data-map-review]').hidden = !reviewing();
+    map.querySelector('[data-map-selection-count]').textContent = `${checked.size} of ${inputs.length} claims selected · up to two searches`;
+    map.querySelector('[data-map-continue]').disabled = !reviewing() || !checked.size;
+  }
+  function draw() {
+    const byId = new Map(nodes.map(node => [node.id,node])), children = new Map(nodes.map(node => [node.id,[]]));
+    for (const node of nodes) if (node.parent_id && children.has(node.parent_id)) children.get(node.parent_id).push(node);
+    const allowed = new Set(['root']);
+    for (const node of nodes.filter(matches)) for (const id of pathIds(node)) allowed.add(id);
+    visible = []; let row = 0; const visited = new Set();
+    function place(node, depth) {
+      if (visited.has(node.id) || !allowed.has(node.id)) return; visited.add(node.id);
+      const start = row; const kids = collapsed.has(node.id) ? [] : children.get(node.id).filter(child => allowed.has(child.id));
+      for (const child of kids) place(child,depth+1);
+      if (row === start) row++;
+      node.x = 24 + depth * 258; node.y = 24 + ((start + row - 1) / 2) * 176;
+      visible.push(node);
+    }
+    place(byId.get('root'),0); visible.sort((a,b) => a.y-b.y || a.x-b.x);
+    width = Math.max(600,...visible.map(node => node.x+244)); height = Math.max(400,row*176+40);
+    world.style.width = `${width}px`; world.style.height = `${height}px`;
+    let svg = world.querySelector('svg'); if (svg) svg.remove();
+    svg = document.createElementNS('http://www.w3.org/2000/svg','svg'); svg.setAttribute('width',width); svg.setAttribute('height',height); svg.setAttribute('aria-hidden','true');
+    const active = pathIds(byId.get(selected) || byId.get('root'));
+    for (const node of visible) {
+      const parent = byId.get(node.parent_id); if (!parent || !visible.includes(parent)) continue;
+      const line = document.createElementNS(svg.namespaceURI,'path'); const x=parent.x+220,y=parent.y+48;
+      line.setAttribute('d',`M${x},${y} C${x+22},${y} ${node.x-22},${node.y+48} ${node.x},${node.y+48}`);
+      line.setAttribute('class',active.has(node.id)&&active.has(parent.id)?'map-edge map-edge-active':'map-edge'); svg.append(line);
+    }
+    world.prepend(svg);
+    for (const card of [...world.querySelectorAll('[data-map-node]')]) if (!visible.some(node => node.id === card.dataset.mapNode)) card.remove();
+    for (const node of visible) {
+      let card = [...world.querySelectorAll('[data-map-node]')].find(card => card.dataset.mapNode === node.id);
+      if (!card) {
+        card = el('article',undefined,'map-node'); card.dataset.mapNode=node.id;
+        const button=el('button',undefined,'map-node-button'); button.type='button'; button.append(el('span','','map-node-type'),el('strong','','map-node-title'),el('span','','map-node-status')); card.append(button); world.append(card);
+      }
+      card.style.left=`${node.x}px`; card.style.top=`${node.y}px`; card.dataset.type=node.type; card.dataset.status=node.status; card.dataset.path=String(active.has(node.id));
+      const button=card.querySelector('button'); button.setAttribute('aria-pressed',String(node.id===selected));
+      button.querySelector('.map-node-type').textContent=node.type.replaceAll('_',' ') + (collapsed.has(node.id)?' · collapsed':'');
+      button.querySelector('.map-node-title').textContent=node.title;
+      const source=snapshot.sources.find(source => sourceIds(node).includes(Number(source.id)));
+      button.querySelector('.map-node-status').textContent=source?`${source.domain} · ${links(node).map(id=>'claim #'+id).join(', ')}`:`${node.status}${node.confidence?' · '+node.confidence+' prior confidence':''}`;
+      if (node.type==='dream_claim' && !card.querySelector('[data-map-claim]')) {
+        const label=el('label',undefined,'map-node-check'),input=el('input');input.type='checkbox';input.dataset.mapClaim=node.id;
+        label.append(input,document.createTextNode(`Keep claim #${node.id}`));card.append(label);
+      }
+      if (source && !card.querySelector('[data-map-source]')) {
+        const label=el('label',undefined,'map-node-check'),input=el('input');input.type='checkbox';input.dataset.mapSource=source.id;input.checked=selectedSources.has(Number(source.id));
+        label.append(input,document.createTextNode(`Select source #${source.id}`));card.append(label);
+      }
+    }
+    setScale(scale); syncSelection(); updateInspector();
+  }
+  function updateInspector() {
+    const node=nodes.find(node=>node.id===selected)||nodes[0];
+    const stamp=JSON.stringify([node,snapshot.sources,selectedSources.size,snapshot.run.status,snapshot.run.phase,snapshot.run.busy_since,snapshot.budget]);
+    if (inspector.dataset.stamp!==stamp) {
+      const title=el('h3',node.title),detail=el('p',`${node.type.replaceAll('_',' ')} · ${node.status}`,'map-inspector-status');
+      inspector.replaceChildren(title,detail,el('p',node.dead_end_reason||node.content||'No details saved yet.','map-inspector-text'));
+      const linked=links(node);if(linked.length)inspector.append(el('p',`Linked claims: ${linked.map(id=>'#'+id).join(', ')}`));
+      for(const source of snapshot.sources.filter(source=>sourceIds(node).includes(Number(source.id))&&safe(source.url))){
+        const card=el('article',undefined,'research-source'),link=el('a',source.url);link.href=source.url;link.target='_blank';link.rel='noopener noreferrer';
+        card.append(el('h4',source.title),link,el('p',source.extract),el('small',`${source.domain} · captured ${new Date(source.retrieved_at*1000).toISOString()}`));inspector.append(card);
+      }
+      inspector.dataset.stamp=stamp;
+    }
+    const linked=links(node),busy=snapshot.run.busy_since!==null||snapshot.requests.some(request=>request.status==='pending');
+    const capacity=root.dataset.connected!=='0'&&(!snapshot.budget||snapshot.budget.remaining>0);
+    const focusable=['dream_claim','dead_end','synthesis'].includes(node.type) && linked.length && linked.every(id=>nodes.some(claim=>claim.id===String(id)&&Number(claim.selected??1)===1)) && (node.type!=='synthesis'||node.title.toLowerCase().startsWith('open'));
+    const canSearch=focusable&&capacity&&!busy&&snapshot.run.status==='running'&&snapshot.run.phase==='evidence';
+    map.querySelector('[data-map-search]').disabled=!canSearch;
+    map.querySelector('[name=focus_node_id]').value=canSearch?node.id:'';
+    const learnIds=selectedSources.size?[...selectedSources]:sourceIds(node);
+    const inputs=map.querySelector('[data-map-source-inputs]');inputs.replaceChildren();
+    for(const id of learnIds){const input=el('input');input.type='hidden';input.name='source_ids[]';input.value=id;inputs.append(input);}
+    const learn=map.querySelector('[data-map-learn-button]');learn.disabled=!learnIds.length||busy||!capacity||['pending','running'].includes(snapshot.run.status);
+    learn.textContent=selectedSources.size?`Learn from ${selectedSources.size} selected source${selectedSources.size===1?'':'s'}`:'Learn from this source';
+    const toggle=map.querySelector('[data-map-toggle-branch]');toggle.disabled=!nodes.some(child=>child.parent_id===node.id);toggle.textContent=collapsed.has(node.id)?'Expand branch':'Collapse branch';
+    map.querySelector('[data-map-copy]').hidden=!snapshot.sources.some(source=>sourceIds(node).includes(Number(source.id))&&safe(source.url));
+  }
+  function inspect(id) {
+    selected=id;draw();
+    const card=[...world.querySelectorAll('[data-map-node]')].find(card=>card.dataset.mapNode===id);
+    if(card&&!map.hidden)card.scrollIntoView({block:'nearest',inline:'nearest'});
+  }
+  map.addEventListener('click',async event=>{
+    const command=event.target.closest('[data-map-command]');
+    if(command){const key=command.dataset.mapCommand;if(key==='fit')fit();if(key==='in')setScale(scale*1.2);if(key==='out')setScale(scale/1.2);if(key==='collapse'){nodes.filter(node=>node.id!=='root').forEach(node=>collapsed.add(node.id));draw();fit();}if(key==='expand'){collapsed.clear();draw();fit();}return;}
+    const chip=event.target.closest('[data-map-filter]');if(chip){filter=chip.dataset.mapFilter;map.querySelectorAll('[data-map-filter]').forEach(button=>button.setAttribute('aria-pressed',String(button===chip)));draw();fit();return;}
+    const nodeButton=event.target.closest('.map-node-button');if(nodeButton){inspect(nodeButton.closest('[data-map-node]').dataset.mapNode);return;}
+    if(event.target.closest('[data-map-toggle-branch]')){collapsed.has(selected)?collapsed.delete(selected):collapsed.add(selected);draw();return;}
+    const selection=event.target.closest('[data-map-select]');if(selection){claimInputs().forEach(input=>input.checked=selection.dataset.mapSelect==='all');claimInputs()[0]?.dispatchEvent(new Event('change',{bubbles:true}));syncSelection();return;}
+    if(event.target.closest('[data-map-continue]'))root.querySelector('[data-research-action=research_continue]').requestSubmit();
+    const outcome=event.target.closest('[data-map-jump]');if(outcome){collapsed.clear();filter='all';inspect(outcome.dataset.mapJump);world.querySelector(`[data-map-node="${outcome.dataset.mapJump}"] button`)?.focus();}
+    if(event.target.closest('[data-map-copy]')){
+      const node=nodes.find(node=>node.id===selected),source=snapshot.sources.find(source=>sourceIds(node).includes(Number(source.id))&&safe(source.url));
+      try {await navigator.clipboard.writeText(source.url);map.querySelector('[data-map-announcement]').textContent='Source link copied.';}catch(_){map.querySelector('[data-map-announcement]').textContent='Copy the source URL from the inspector link.';}
+    }
+  });
+  map.addEventListener('change',event=>{
+    const input=event.target;if(input.dataset.mapClaim){const original=claimInputs().find(item=>item.value===input.dataset.mapClaim);if(original){original.checked=input.checked;original.dispatchEvent(new Event('change',{bubbles:true}));}}
+    if(input.dataset.mapSource){const id=Number(input.dataset.mapSource);input.checked?selectedSources.add(id):selectedSources.delete(id);updateInspector();}
+  });
+  root.addEventListener('change',event=>{if(event.target.matches('[data-dream-cards] input'))syncSelection();});
+  world.addEventListener('keydown',event=>{
+    const button=event.target.closest('.map-node-button');if(!button)return;
+    const node=visible.find(node=>node.id===button.closest('[data-map-node]').dataset.mapNode);let next;
+    if(event.key==='ArrowRight'){if(collapsed.has(node.id)){collapsed.delete(node.id);draw();}next=visible.find(child=>child.parent_id===node.id);}
+    if(event.key==='ArrowLeft')next=visible.find(parent=>parent.id===node.parent_id);
+    if(event.key==='ArrowDown')next=visible[visible.indexOf(node)+1];if(event.key==='ArrowUp')next=visible[visible.indexOf(node)-1];
+    if(next){event.preventDefault();inspect(next.id);world.querySelector(`[data-map-node="${next.id}"] button`)?.focus();}
+  });
+  root.addEventListener('research:snapshot',event=>{
+    snapshot=event.detail;normalize();
+    const next=JSON.stringify([snapshot.nodes,snapshot.sources]);
+    if(signature!==next){signature=next;draw();if(count===-1)requestAnimationFrame(fit);if(count!==nodes.length){count=nodes.length;map.querySelector('[data-map-announcement]').textContent=`${snapshot.nodes.length} saved nodes · ${snapshot.sources.length} citation sources. ${snapshot.run.phase==='evidence'?'Choose the direction for your next search.':''}`;}}
+    else {syncSelection();updateInspector();}
+    map.querySelector('[data-map-evidence-help]').hidden=snapshot.run.status!=='running'||snapshot.run.phase!=='evidence';
+    const strip=map.querySelector('[data-map-outcomes]');strip.replaceChildren();
+    for(const verdict of ['supported','weakened','contradicted','open']){
+      const outcomes=nodes.filter(node=>node.type==='synthesis'&&(data(node).verdict===verdict||node.title.toLowerCase().startsWith(verdict+' ·')));
+      const button=el('button',`${verdict}: ${outcomes.length}`,'map-outcome');button.type='button';button.disabled=!outcomes.length;if(outcomes.length)button.dataset.mapJump=outcomes[0].id;strip.append(button);
+    }
+  });
+  root.addEventListener('research:controls',()=>{if(snapshot)updateInspector();});
+  root.addEventListener('research:budget',event=>{if(snapshot){snapshot.budget=event.detail;updateInspector();}});
+  // Initialize after the status request; live processes are never assumed to survive navigation.
+  showView(view);
+})();

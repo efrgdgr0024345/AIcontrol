@@ -7,7 +7,7 @@ private records persist on the hosting server.
 | Setting | Current definition |
 |---|---|
 | Repository | `efrgdgr0024345/AIcontrol` |
-| Release channel | `feature/control-panel-foundation` |
+| Release channel | `main` |
 | Required exact-SHA check | `planning-panel` / GitHub Actions |
 | Entry point | One uploaded `loader.php`, including subfolder support |
 | Interface | Tabler 1.7.4 (MIT), bundled locally; local JS enhances update checks/progress |

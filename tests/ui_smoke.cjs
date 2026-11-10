@@ -1,0 +1,288 @@
+// UI test fixtures contain synthetic data only. No provider or GitHub calls.
+const {chromium}=require('playwright');
+const fs=require('fs'),os=require('os'),path=require('path'),crypto=require('crypto');
+const {spawn,spawnSync}=require('child_process');
+(async()=>{
+ const root=path.resolve(__dirname,'..'),php=process.env.PHP_BINARY||'php';
+ const artifacts=process.env.UI_ARTIFACT_DIR||path.join(root,'test-artifacts');fs.mkdirSync(artifacts,{recursive:true});
+ const net=require('net');const freePort=()=>new Promise(resolve=>{const server=net.createServer();server.listen(0,'127.0.0.1',()=>{const port=server.address().port;server.close(()=>resolve(port));});});
+ const pinPort=await freePort(),appPort=await freePort(),pinUrl=`http://127.0.0.1:${pinPort}`,appUrl=`http://127.0.0.1:${appPort}`;
+ const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'aicontrol-ui-'));
+ const privateDir=path.join(temporary,'private'),publicDir=path.join(temporary,'public'),sessions=path.join(temporary,'sessions');
+ fs.mkdirSync(publicDir);fs.mkdirSync(sessions,{mode:0o700});fs.copyFileSync(path.join(root,'loader.php'),path.join(publicDir,'loader.php'));
+ const setup=spawnSync(php,['bin/setup.php','--access-mode=local',`--private-dir=${privateDir}`,`--public-root=${root}`],{cwd:root,encoding:'utf8'});
+ if(setup.status!==0)throw new Error(setup.stderr);
+ const first=spawn(php,['-d',`session.save_path=${sessions}`,'-S',`127.0.0.1:${pinPort}`,'-t',publicDir],{env:{...process.env,AICONTROL_OPENAI_API_KEY:'',AICONTROL_LOCAL_DEV:'1'},stdio:'ignore'});
+ const second=spawn(php,['-S',`127.0.0.1:${appPort}`,'bin/dev-router.php'],{cwd:root,env:{...process.env,AICONTROL_OPENAI_API_KEY:'',AICONTROL_LOCAL_DEV:'1',AICONTROL_PRIVATE_DIR:privateDir,AICONTROL_PIN_VERIFIED:'1',AICONTROL_UPDATE_STATUS_URL:'/loader.php?update_api=status'},stdio:'ignore'});
+ let browser;
+ try{
+  browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||['/usr/bin/google-chrome','/usr/bin/chromium'].find(file=>fs.existsSync(file)),headless:true,args:['--no-sandbox']});
+  const page=await browser.newPage({viewport:{width:1440,height:1000}});const errors=[],accessibility=[],auditedViews=[];
+  let updateFixture={state:'up_to_date',installed_sha:'a'.repeat(40),latest_sha:'a'.repeat(40),checked_at:Math.floor(Date.now()/1000)};
+  await page.route('**/loader.php?update_api=status*',route=>route.fulfill({contentType:'application/json',body:JSON.stringify(updateFixture)}));
+  await page.route('**/loader.php?asset=*', route=>route.abort());
+  page.on('request',request=>{const url=new URL(request.url());if(['http:','https:'].includes(url.protocol)&&!['127.0.0.1','localhost'].includes(url.hostname))errors.push('Unexpected external UI request: '+url.hostname);});
+  const audit=async(name)=>{await page.waitForFunction(()=>document.getAnimations().every(animation=>animation.playState!=='running'||animation.effect.getComputedTiming().iterations===Infinity));auditedViews.push(name);await page.evaluate(require('axe-core').source);const result=await page.evaluate(async()=>await axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa','wcag22aa']}}));for(const violation of result.violations)accessibility.push({page:name,id:violation.id,impact:violation.impact,nodes:violation.nodes.map(node=>({target:node.target,summary:node.failureSummary}))});};
+  page.on('pageerror',error=>errors.push(error.message));
+  page.on('console',message=>{if(message.type()==='error'&& !message.text().includes('favicon')&&!message.text().includes('status of 401')) errors.push(message.text());});
+  await page.goto(pinUrl+'/loader.php');
+  await page.screenshot({path:path.join(artifacts,'ui-pin-desktop.png'),fullPage:true});await audit('PIN setup');
+  await page.setViewportSize({width:390,height:844});if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw new Error('PIN screen overflows');await page.screenshot({path:path.join(artifacts,'ui-pin-mobile.png'),fullPage:true});await page.setViewportSize({width:1440,height:1000});
+  const pin=String(crypto.randomInt(100000,999999));
+  await page.getByLabel('PIN',{exact:true}).fill(pin);await page.getByLabel('Confirm PIN',{exact:true}).fill(pin);
+  await page.getByRole('button',{name:'Set PIN',exact:true}).click();
+  await page.getByRole('link',{name:'Continue to sign in',exact:true}).click();
+  await page.getByLabel('PIN',{exact:true}).fill('000000');await page.getByRole('button',{name:'Sign in',exact:true}).click();await page.getByRole('alert').filter({hasText:'Incorrect PIN'}).waitFor();await audit('PIN login error');
+  await page.getByLabel('PIN',{exact:true}).fill(pin);await page.getByRole('button',{name:'Sign in',exact:true}).click();
+  await page.getByRole('button',{name:'Check GitHub',exact:true}).waitFor();
+  await page.screenshot({path:path.join(artifacts,'ui-installer-desktop.png'),fullPage:true});await audit('Installer');
+  await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(artifacts,'ui-installer-mobile.png'),fullPage:true});
+  await page.setViewportSize({width:1440,height:1000});await page.goto(appUrl+'/loader.php');if(await page.locator('link[rel=stylesheet],script[src]').count())throw new Error('Workspace still depends on separate assets');if(await page.locator('.app-sidebar').evaluate(element=>getComputedStyle(element).position)!=='fixed')throw new Error('Embedded workspace CSS missing');await page.setViewportSize({width:1440,height:1000});
+  await page.screenshot({path:path.join(artifacts,'ui-empty-desktop.png'),fullPage:true});
+  await page.keyboard.press('Tab');if(await page.evaluate(()=>document.activeElement.textContent.trim())!=='Skip to content')throw new Error('Skip link is not keyboard accessible');await page.keyboard.press('Enter');
+  await page.getByRole('link',{name:'Projects & tasks',exact:true}).click();
+  for(const [name,brief] of [['AIcontrol launch','Build a useful control panel, then verify the installation and first task workflow.'],['Client website','Refresh the website structure and make the first-time experience clearer.'],['Reporting toolkit','Define a simple reporting workflow with observable, reviewable results.']]){
+   await page.getByLabel('Name',{exact:true}).fill(name);await page.getByLabel('Brief and intended outcome').fill(brief);await page.getByRole('button',{name:'Create project',exact:true}).click();
+  }
+  for(const [project,title,criteria] of [['AIcontrol launch','Review the installation experience','Verify PIN setup, automatic settings and a clear checked-release installation.'],['Client website','Draft the homepage structure','Propose a concise page structure. List what needs client confirmation.'],['Reporting toolkit','Define reporting acceptance criteria','Describe the inputs, expected result and a repeatable validation method.']]){
+   await page.getByLabel('Project',{exact:true}).selectOption({label:project});await page.getByLabel('Task',{exact:true}).fill(title);await page.getByLabel('Acceptance criteria').fill(criteria);await page.getByRole('button',{name:'Save proposal',exact:true}).click();
+  }
+  const seed=spawnSync(php,['-r',`require 'src/PanelStore.php'; $store=new \\AIcontrol\\PanelStore(getenv('TEST_UI_DB')); $run=$store->startAgent(1,'ui-test-fixture'); $store->finishAgent($run['id'],'in_review',"UI test fixture only. No provider request or code execution.\\nProposed next steps:\\n1. Verify the PIN flow.\\n2. Review the checked commit.\\n3. Confirm task results remain available.");`],{env:{...process.env,TEST_UI_DB:path.join(privateDir,'panel.sqlite')},encoding:'utf8'});
+  if(seed.status!==0)throw new Error(seed.stderr||seed.stdout);
+  await page.getByRole('link',{name:'Admin',exact:true}).click();
+  await page.getByLabel('Entry name',{exact:true}).fill('shared_guidance');
+  await page.getByLabel('Entry type',{exact:true}).selectOption('note');
+  await page.getByLabel('New value',{exact:true}).fill('Synthetic private guidance');
+  await page.getByLabel('Share this note with AI', {exact:false}).check();
+  await page.getByRole('button',{name:'Save private entry',exact:true}).click();
+  await page.getByRole('heading',{name:'shared_guidance',exact:true}).waitFor({timeout:5000}).catch(async()=>{throw new Error('Admin save result: '+await page.locator('main').innerText());});
+  if((await page.content()).includes('Synthetic private guidance'))throw new Error('Vault plaintext returned to browser');
+  await page.getByRole('link',{name:'Research projects',exact:true}).click();
+  await page.getByRole('link',{name:'Create your first research project',exact:true}).waitFor();
+  await audit('Research first project');
+  await page.getByLabel('Research name',{exact:true}).fill('Research fixture project');
+  await page.getByLabel('Research brief',{exact:true}).fill('Explore a test idea without a provider call.');
+  await page.getByRole('button',{name:'Create research project',exact:true}).click();
+  await page.getByRole('heading',{name:'Research fixture project',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Start research',exact:true}).waitFor();
+  if(!await page.getByRole('button',{name:'Start research',exact:true}).isDisabled())throw new Error('Disconnected research enabled');
+  for(const [name,file] of [['Overview','overview'],['Projects & tasks','projects'],['Agent runs','runs'],['Systems','systems'],['Activity','activity'],['Admin','admin'],['Research projects','research']]){
+   await page.getByRole('link',{name,exact:true}).click();
+   await page.screenshot({path:path.join(artifacts,`ui-${file}-desktop.png`),fullPage:true});await audit(name);
+  }
+  await page.getByRole('link',{name:'Projects & tasks',exact:true}).click();
+  await page.getByRole('textbox',{name:'Search projects and tasks'}).fill('homepage');await page.getByRole('button',{name:'Search',exact:true}).click();
+  await page.getByRole('heading',{name:'Draft the homepage structure',exact:true}).waitFor();
+  if(await page.getByRole('heading',{name:'Review the installation experience',exact:true}).count())throw new Error('Project/task search did not filter');
+  await page.getByRole('link',{name:'Clear search',exact:true}).click();
+  updateFixture={state:'update_available',app_update:true,loader_update:true,installed_sha:'a'.repeat(40),latest_sha:'b'.repeat(40),release_title:'UI fixture release',checked_at:Math.floor(Date.now()/1000)};
+  await page.getByRole('button',{name:'Check again',exact:true}).click();
+  await page.getByText('An update is available',{exact:true}).waitFor();
+  await page.getByRole('link',{name:'Review update',exact:true}).waitFor();await audit('Update available');
+  for(const scenario of ['success','failure']){
+    const events=[{event:'progress',step:1,total:9,label:'Verify selection',detail:'UI fixture only.'},{event:'progress',step:5,total:9,label:'Verify hashes',detail:'UI fixture only.'}];
+    events.push(scenario==='success'?{event:'complete',message:'UI fixture installation completed.',summary:{loader_updated:true,changes:{added:['example.php'],changed:['loader.php'],removed:[]}}}:{event:'error',message:'UI fixture stopped safely. Prior code retained.'});
+    await page.route('**/loader.php?ui_test_stream='+scenario+'&stream=1',route=>route.fulfill({contentType:'application/x-ndjson',body:events.map(event=>JSON.stringify(event)).join('\n')+'\n'}));
+    await page.evaluate(({url,scenario})=>{const form=document.createElement('form');form.action=url+'/loader.php?ui_test_stream='+scenario;form.method='post';form.dataset.updateInstall='';const action=document.createElement('input');action.type='hidden';action.name='action';action.value='install';form.append(action);const button=document.createElement('button');button.textContent='Test '+scenario;form.append(button);document.querySelector('main').append(form);},{url:appUrl,scenario});
+    await page.getByRole('button',{name:'Test '+scenario,exact:true}).click();
+    const dialog=page.getByRole('dialog');await dialog.getByRole('heading',{name:scenario==='success'?'Update installed':'Update stopped',exact:true}).waitFor();
+    if(scenario==='failure'&&await dialog.locator('progress').getAttribute('value')==='9')throw new Error('Failed update displayed 100%');
+    await audit('Update '+scenario);await page.screenshot({path:path.join(artifacts,'ui-update-'+scenario+'.png'),fullPage:true});await page.keyboard.press('Escape');
+  }
+  updateFixture={state:'up_to_date',installed_sha:'a'.repeat(40),latest_sha:'a'.repeat(40),checked_at:Math.floor(Date.now()/1000)};
+  await page.getByRole('button',{name:'Check again',exact:true}).click();
+  await page.getByText('You’re up to date',{exact:true}).waitFor();
+
+  await page.locator('summary').filter({hasText:'Agent run #1'}).click();
+  await page.getByText('UI test fixture only.',{exact:false}).waitFor();
+  for(const [name,file] of [['Overview','overview'],['Projects & tasks','projects'],['Agent runs','runs'],['Systems','systems'],['Activity','activity'],['Admin','admin'],['Research projects','research']]){
+   await page.setViewportSize({width:390,height:844});await page.getByRole('link',{name,exact:true}).click();
+   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+   if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth)){
+    await page.screenshot({path:path.join(artifacts,'ui-overflow.png'),fullPage:true});
+    const metrics=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,body:document.body.scrollWidth}));const bad=await page.evaluate(()=>[...document.querySelectorAll('body *')].map(element=>({tag:element.tagName,class:element.className,left:element.getBoundingClientRect().left,right:element.getBoundingClientRect().right})).filter(item=>item.right>innerWidth+1||item.left< -1).slice(0,15));
+    throw new Error(`Horizontal overflow on ${name}: `+JSON.stringify({metrics,bad}));
+   }
+   await page.screenshot({path:path.join(artifacts,`ui-${file}-mobile.png`),fullPage:true});
+  }
+  await page.setViewportSize({width:1440,height:1000});
+  const researchSeed=spawnSync(php,['-r',`require 'src/Vault.php'; (new \\AIcontrol\\Vault(getenv('TEST_RESEARCH_HOME')))->change('openai_api_key','key','synthetic-browser-fixture',false);`],{env:{...process.env,TEST_RESEARCH_HOME:privateDir},encoding:'utf8'});
+  if(researchSeed.status!==0)throw new Error(researchSeed.stderr||researchSeed.stdout);
+  let investigation={budget:{remaining:9,retry_after_seconds:0},run:{id:1,project_id:1,status:'running',phase:'dream',busy_since:null,token_input:0,token_output:0,usage_unknown:0,stop_reason:''},nodes:[],sources:[],requests:[]};
+  let stepCalls=0,stopped=false,pollCalls=0,reviewMode=false,continued=false,focusedMode=false,focusedCalls=0;
+  const clone=()=>JSON.parse(JSON.stringify(investigation));
+  await page.route('**/loader.php?research_api=status*',route=>{pollCalls++;return route.fulfill({contentType:'application/json',body:JSON.stringify(clone())});});
+  await page.route('**/loader.php?view=research&research_api=1',async route=>{
+    const body=route.request().postData()||'';
+    if(body.includes('research_start'))return route.continue();
+    if(body.includes('research_stop')){stopped=true;investigation.run.status='interrupted';investigation.run.busy_since=null;investigation.run.usage_unknown=1;investigation.run.stop_reason='Stopped fixture; provider outcome unknown.';investigation.requests.forEach(request=>request.status='uncertain');investigation.nodes.forEach(node=>{if(node.status==='running')node.status='interrupted';});}
+    else if(body.includes('research_continue')){
+      const ids=[...body.matchAll(/name="claim_ids\[\]"\r?\n\r?\n(\d+)/g)].map(match=>Number(match[1]));
+      if(ids.length!==1||ids[0]!==2||!body.includes('selection_explicit'))throw new Error('Review submitted incorrect claims: '+JSON.stringify(ids));
+      continued=true;investigation.run.phase='plan';investigation.nodes.find(node=>node.id===9).selected=0;
+    }
+    else if(body.includes('research_step')){
+      if(focusedMode){
+        if(!body.includes('focus_node_id')||!body.includes('counter-evidence'))throw new Error('Focused map request lost context');
+        focusedCalls++;investigation.nodes.push({id:45,parent_id:2,type:'search',status:'complete',title:'Focused evidence search',content:'Completed synthetic search',data_json:JSON.stringify({focus_node_id:2,note:'counter-evidence'})},{id:46,parent_id:45,type:'source',status:'complete',title:'Focused citation',content:'Synthetic citation'});
+        investigation.sources.push({id:2,node_id:46,url:'https://example.com/focused-map',title:'Focused citation',extract:'Synthetic focus summary',domain:'example.com',retrieved_at:Math.floor(Date.now()/1000)});
+        investigation.run.status='complete';investigation.run.phase='reconciliation';
+        return route.fulfill({contentType:'application/json',body:JSON.stringify(clone())});
+      }
+      if(reviewMode){
+        if(!continued)throw new Error('Plan started before claim approval');
+        investigation.run.status='complete';investigation.run.phase='reconciliation';
+        investigation.nodes.push({id:10,parent_id:2,type:'plan_step',status:'dead_end',title:'Verify local tariff savings',content:'Compare measured local tariff data'},{id:11,parent_id:10,type:'dead_end',status:'dead_end',title:'Local evidence still missing',content:'No useful source for the local tariff claim.'},{id:12,parent_id:2,type:'synthesis',status:'complete',title:'Open · claim #2',content:'Local applicability remains uncertain.',data_json:JSON.stringify({verdict:'open',source_ids:[]})});
+        return route.fulfill({contentType:'application/json',body:JSON.stringify(clone())});
+      }
+      stepCalls++;investigation.run.busy_since=Math.floor(Date.now()/1000);investigation.requests=[{id:1,kind:'dream',status:'pending'}];
+      investigation.nodes=[{id:1,parent_id:null,type:'phase',status:'running',title:'Dream',content:'Model’s prior thoughts — not yet checked.'}];
+      setTimeout(()=>{if(!stopped)investigation.nodes.push({id:2,parent_id:1,type:'dream_claim',status:'complete',title:'Fixture unchecked claim',content:'Uncertainty: needs evidence.'});},600);
+      await new Promise(resolve=>setTimeout(resolve,4000));
+    } else if(body.includes('research_learn')){
+      if(focusedMode){const ids=[...body.matchAll(/name="source_ids\[\]"\r?\n\r?\n(\d+)/g)].map(match=>Number(match[1]));if(ids.length!==1||ids[0]!==2)throw new Error('Map Learn sent incorrect source scope');}
+      investigation.nodes.push({id:8,parent_id:null,type:'learn',status:'complete',title:'Learn: compare',content:'Fixture explanation uses collected evidence only.'});
+    } else return route.abort();
+    await route.fulfill({contentType:'application/json',body:JSON.stringify(clone())});
+  });
+  await page.goto(appUrl+'/loader.php?view=research');
+  await page.getByRole('button',{name:'Start research',exact:true}).click();
+  await page.getByRole('button',{name:'List',exact:true}).click();
+  await page.getByRole('heading',{name:'Fixture unchecked claim',exact:true}).waitFor();
+  if(pollCalls<2)throw new Error('Tree did not grow through status polling');
+  await audit('Investigation growing');
+  await page.getByRole('button',{name:'Stop research',exact:true}).click();
+  await page.locator('[data-investigation][data-status=interrupted]').waitFor();
+  await new Promise(resolve=>setTimeout(resolve,4200));
+  if(stepCalls!==1||!stopped)throw new Error('Stop did not prevent phase continuation');
+  await page.getByRole('button',{name:'Start a new investigation from this project',exact:true}).waitFor();
+  await audit('Investigation interrupted');
+  investigation.run={...investigation.run,status:'complete',phase:'reconciliation',token_input:55,token_output:120,usage_unknown:0,busy_since:null};
+  investigation.nodes.push({id:3,parent_id:2,type:'plan_step',status:'dead_end',title:'Verify fixture claim',content:'No useful second source.'},{id:4,parent_id:3,type:'dead_end',status:'dead_end',title:'No usable cited source',content:'The branch remains open.'});
+  investigation.nodes.push({id:5,parent_id:3,type:'search',status:'complete',title:'Evidence search',content:'Completed search'},{id:6,parent_id:5,type:'source',status:'complete',title:'Collected source fixture',content:'Provider summary'},{id:7,parent_id:2,type:'synthesis',status:'complete',title:'Open · claim #2',content:'A useful source exists, but local applicability remains uncertain.',data_json:JSON.stringify({verdict:'open',reason:'A useful source exists, but local applicability remains uncertain.',source_ids:[1]})});
+  investigation.sources=[{id:1,node_id:6,url:'https://example.com/research-fixture',title:'Collected source fixture',extract:'Provider summary, not a quotation.',domain:'example.com',retrieved_at:Math.floor(Date.now()/1000)}];
+  investigation.requests=[{id:1,status:'complete',kind:'dream'}];
+  await page.reload();await page.getByRole('link',{name:'Learn',exact:true}).waitFor();
+  await page.locator('[data-map-node="6"] .map-node-button').waitFor();
+  await page.locator('[data-map-node="6"] .map-node-button').click();
+  await page.getByRole('complementary',{name:'Node inspector'}).getByRole('link',{name:'https://example.com/research-fixture',exact:true}).waitFor();
+  await audit('Map source inspector');
+  await page.getByRole('button',{name:'List',exact:true}).click();
+  await page.locator('.source-catalog > summary').click();
+  await page.locator('[data-research-sources]').getByRole('link',{name:'https://example.com/research-fixture',exact:true}).waitFor();
+  await page.locator('[data-dream-cards]').getByRole('heading',{name:'⚑ Dead end · No usable cited source',exact:true}).waitFor();
+  await audit('Investigation evidence');await page.screenshot({path:path.join(artifacts,'ui-investigate-desktop.png'),fullPage:true});
+  await page.getByRole('link',{name:'Learn',exact:true}).click();
+  await page.getByLabel('Learning action',{exact:true}).selectOption('compare');
+  await page.getByRole('button',{name:'Learn from collected evidence',exact:true}).click();
+  await page.getByRole('region',{name:'Saved learning responses',exact:true}).getByText('Fixture explanation uses collected evidence only.',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'Explain this caveat further',exact:true}).click();
+  await audit('Research Learn result');
+  await page.getByRole('link',{name:'Investigate',exact:true}).click();
+  await page.setViewportSize({width:390,height:844});
+  if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw new Error('Investigation tree overflows mobile viewport');
+  await page.screenshot({path:path.join(artifacts,'ui-investigate-mobile.png'),fullPage:true});
+  // Review mode must pause automatic progression and preserve checkbox state through polls.
+  reviewMode=true;continued=false;stopped=false;
+  const rich=(claim,confidence,uncertainty,verify,priority)=>JSON.stringify({claim,confidence,uncertainty,verify,priority});
+  investigation={budget:{remaining:8,retry_after_seconds:0},run:{id:1,project_id:1,status:'running',phase:'dream_review',busy_since:null,token_input:90,token_output:210,usage_unknown:0,stop_reason:''},nodes:[
+    {id:1,parent_id:null,type:'phase',status:'complete',title:'Dream',content:'Unchecked prior',data_json:JSON.stringify({competing_angles:['Self-consumption may matter more than panel size.'],least_confident:'Future export tariffs and installation cost.',background_assumptions:['A suitable unshaded roof is available.']})},
+    {id:2,parent_id:1,type:'dream_claim',status:'complete',title:'Solar savings depend on local tariffs',content:'Unchecked prior',selected:1,data_json:rich('Solar savings depend on local tariffs','medium','Future export prices may change.','Compare current local tariffs and measured household use.','high')},
+    {id:9,parent_id:1,type:'dream_claim',status:'complete',title:'Upfront cost may dominate payback',content:'Unchecked prior',selected:1,data_json:rich('Upfront cost may dominate payback','low','Installation cost varies by site.','Find independent installed-cost ranges.','normal')}
+  ],sources:[],requests:[{id:1,kind:'dream',status:'complete'}]};
+  await page.setViewportSize({width:1440,height:1000});await page.reload();
+  await page.locator('[data-map-node="2"] .map-node-button').waitFor();
+  await page.locator('[data-map-node="2"] .map-node-button').click();
+  await page.getByRole('complementary',{name:'Node inspector'}).getByRole('heading',{name:'Solar savings depend on local tariffs',exact:true}).waitFor();
+  await page.locator('[data-map-claim="9"]').uncheck();
+  await new Promise(resolve=>setTimeout(resolve,1800));
+  if(await page.locator('[data-map-claim="9"]').isChecked())throw new Error('Map poll lost claim selection');
+  await page.getByRole('button',{name:'Select none',exact:true}).click();
+  if(!await page.locator('[data-map-continue]').isDisabled())throw new Error('Map allows empty selection');
+  await page.getByRole('button',{name:'Select all',exact:true}).click();
+  await page.locator('[data-map-node="2"] .map-node-button').focus();await page.keyboard.press('ArrowLeft');
+  if(!await page.locator('[data-map-node="1"] .map-node-button').evaluate(node=>node===document.activeElement))throw new Error('Map keyboard parent navigation failed');
+  await audit('Map claim review');await page.screenshot({path:path.join(artifacts,'ui-mindmap-review.png'),fullPage:true});
+  await page.getByRole('button',{name:'List',exact:true}).click();
+  await page.getByRole('button',{name:'Continue with selected claims',exact:true}).waitFor();
+  await page.locator('[data-request-budget]').filter({hasText:'8 of 10 requests remaining'}).waitFor();
+  const claims=page.locator('[data-dream-cards]');
+  await page.getByRole('button',{name:'Keep high-priority only',exact:true}).click();
+  if(await claims.getByLabel('Include claim #9',{exact:true}).isChecked())throw new Error('Priority shortcut kept normal priority');
+  await page.getByRole('button',{name:'Keep all',exact:true}).click();
+  if(!await claims.getByLabel('Include claim #9',{exact:true}).isChecked())throw new Error('Keep all failed');
+  await page.getByRole('button',{name:'Exclude low-confidence',exact:true}).click();
+  if(await claims.getByLabel('Include claim #9',{exact:true}).isChecked())throw new Error('Low confidence shortcut failed');
+  await page.locator('[data-phase-rail] a').first().click();
+  await page.getByText('1 of 2 claims selected · will use up to 2 searches',{exact:true}).waitFor();
+  await claims.getByLabel('Include claim #2',{exact:true}).focus();
+  await new Promise(resolve=>setTimeout(resolve,3200));
+  if(continued||await claims.getByLabel('Include claim #9',{exact:true}).isChecked())throw new Error('Review poll lost selection or auto-continued');
+  if(!await claims.getByLabel('Include claim #2',{exact:true}).evaluate(node=>node===document.activeElement))throw new Error('Review poll stole keyboard focus');
+  if(!await page.getByRole('button',{name:'Start research',exact:true}).isDisabled())throw new Error('Active review allowed Start');
+  if(await page.getByRole('link',{name:'Learn',exact:true}).isVisible())throw new Error('Learn visible without sources');
+  await audit('Dream claim review');await page.screenshot({path:path.join(artifacts,'ui-dream-review-desktop.png'),fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw new Error('Dream board overflows mobile');
+  await claims.scrollIntoViewIfNeeded();
+  const stopBounds=await page.getByRole('button',{name:'Stop research',exact:true}).boundingBox();
+  if(!stopBounds||stopBounds.y<0||stopBounds.y+stopBounds.height>844)throw new Error('Mobile Stop is out of reach');
+  await page.screenshot({path:path.join(artifacts,'ui-dream-review-mobile.png'),fullPage:true});
+  await claims.getByLabel('Include claim #2',{exact:true}).uncheck();
+  if(!await page.getByRole('button',{name:'Continue with selected claims',exact:true}).isDisabled())throw new Error('Empty review selection enabled Continue');
+  await claims.getByLabel('Include claim #2',{exact:true}).check();
+  await page.getByRole('button',{name:'Map',exact:true}).click();
+  await page.locator('[data-map-continue]').click();
+  await page.locator('[data-investigation][data-status=complete]').waitFor();
+  await page.getByRole('button',{name:'List',exact:true}).click();
+  if(!continued)throw new Error('Continue did not submit selected claims');
+  await claims.getByText('Excluded from verification',{exact:true}).waitFor();
+  await claims.getByRole('heading',{name:'⚑ Dead end · Local evidence still missing',exact:true}).waitFor();
+  if(await claims.locator('[data-claim-id="9"] .claim-event').count())throw new Error('Excluded claim has verification events');
+  await audit('Selected claim outcomes');
+  await page.setViewportSize({width:1440,height:1000});await page.screenshot({path:path.join(artifacts,'ui-claim-outcomes-desktop.png'),fullPage:true});
+  // A chosen map branch spends only the next explicit Evidence slot.
+  focusedMode=true;investigation.run.status='running';investigation.run.phase='evidence';investigation.run.evidence_index=0;
+  investigation.nodes=investigation.nodes.filter(node=>![10,11,12].includes(node.id));
+  investigation.nodes.push({id:40,parent_id:2,type:'plan_step',status:'pending',title:'First bounded search',content:'Original planned angle'},{id:41,parent_id:2,type:'plan_step',status:'pending',title:'Second bounded search',content:'Second planned angle'});
+  await page.reload();
+  await page.locator('[data-map-node="2"] .map-node-button').click();
+  await new Promise(resolve=>setTimeout(resolve,1700));
+  if(focusedCalls)throw new Error('Evidence spent a search without explicit steering');
+  await page.getByLabel('Focus for this search only (optional)',{exact:true}).fill('counter-evidence');
+  await page.getByRole('button',{name:'Search this direction',exact:true}).click();
+  await page.locator('[data-map-node="46"] .map-node-button').waitFor();
+  if(focusedCalls!==1)throw new Error('Map ran extra searches');
+  await page.locator('[data-map-node="46"] .map-node-button').click();
+  if(!await page.getByRole('button',{name:'Search this direction',exact:true}).isDisabled())throw new Error('Focused search remained enabled after completion');
+  await page.locator('[data-map-source="2"]').check();
+  await page.getByRole('button',{name:'Learn from 1 selected source',exact:true}).click();
+  await audit('Map focused result');
+  await page.locator('[data-map-filter="source"]').click();
+  await page.locator('[data-map-node="46"] .map-node-button').waitFor();
+  await page.getByRole('button',{name:'Collapse all',exact:true}).click();
+  if(await page.locator('[data-map-node="46"]').count())throw new Error('Map collapse failed');
+  await page.getByRole('button',{name:'Expand all',exact:true}).click();
+  await page.getByRole('button',{name:'Fit',exact:true}).click();
+  await page.screenshot({path:path.join(artifacts,'ui-mindmap-evidence.png'),fullPage:true});
+  await page.setViewportSize({width:390,height:844});await page.reload();
+  await page.getByRole('button',{name:'Map',exact:true}).waitFor();
+  if(await page.locator('[data-mindmap]').isVisible())throw new Error('Mobile did not default to list');
+  await page.getByRole('button',{name:'Map',exact:true}).click();
+  await page.locator('[data-map-node="46"] .map-node-button').click();
+  if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw new Error('Mind map overflows mobile page');
+  await audit('Mobile map inspector');await page.screenshot({path:path.join(artifacts,'ui-mindmap-mobile.png'),fullPage:true});
+  const noJs=await browser.newContext({javaScriptEnabled:false});const fallback=await noJs.newPage();
+  await fallback.goto(appUrl+'/loader.php?view=research');
+  if(!await fallback.locator('[data-investigate-list]').isVisible()||await fallback.locator('[data-mindmap]').isVisible())throw new Error('No-JS list fallback unavailable');
+  if(!await fallback.getByRole('button',{name:'Continue next phase',exact:true}).isVisible())throw new Error('No-JS phase form unavailable');
+  await noJs.close();
+  fs.writeFileSync(path.join(artifacts,'ui-accessibility.json'),JSON.stringify({tool:'axe-core',version:require('axe-core/package.json').version,views:auditedViews,violations:accessibility},null,2));if(accessibility.length)throw new Error('Accessibility checks failed; inspect test-artifacts/ui-accessibility.json.');
+  if(errors.length)throw new Error(errors.join('\n'));
+  console.log('PASS: PIN/setup, all workspace views, project/task forms, search, agent-result fixture, mobile overflow and browser errors.');
+ }finally{
+  if(browser)await browser.close();const stop=server=>server.exitCode!==null?Promise.resolve():new Promise(resolve=>{server.once('exit',resolve);server.kill();});await Promise.all([stop(first),stop(second)]);
+  const marker=path.join(publicDir,'.aicontrol-pin.php');if(fs.existsSync(marker)){const d=JSON.parse(fs.readFileSync(marker,'utf8').split('\n').slice(1).join('\n')).directory;if(d.startsWith('/tmp/aicontrol-pin-'))fs.rmSync(d,{recursive:true,force:true});}
+  fs.rmSync(temporary,{recursive:true,force:true});
+ }
+})().catch(error=>{console.error(error.message);process.exitCode=1});

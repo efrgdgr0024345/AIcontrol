@@ -1,0 +1,5 @@
+Options -Indexes
+RewriteEngine On
+RewriteRule ^assets/panel\.css$ - [END]
+RewriteRule ^loader\.php$ - [END]
+RewriteRule ^ loader.php [END]

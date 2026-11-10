@@ -7,10 +7,9 @@ revisions; do not infer a live hosting revision from the latest source commit.
 ## Where the implementation lives
 
 - Repository: `efrgdgr0024345/AIcontrol` on GitHub.
-- Implementation/release branch: `feature/control-panel-foundation`.
+- Implementation/release branch: `main`.
 - Required check on the selected full SHA: `planning-panel` from GitHub Actions.
-- `main` keeps the original production specification and continuity documents;
-  do not assume the implementation has already been merged there.
+- `main` contains the full implementation, tests and continuity documents.
 - Public entry/download: `loader.php` on the implementation branch. Download
   that file's actual contents, not the GitHub HTML file-view page.
 
@@ -116,9 +115,101 @@ project-specific chats and optional provider web search. See ADMIN_RESEARCH.md
 for storage, bounds and exact validation scope. Run `php tests/workspace.php`
 alongside existing checks. Live provider operation still needs a host-side key.
 
-Admin/research release `19ee11f9664e09380c6a72733b67483d45d18d68` passed required
-Actions run `42707954873`, local PHP/HTTP/provider-fixture checks and thirteen
-UI/accessibility states (zero violations). Real GitHub install and repeat update
-preserved encrypted vault bytes, vault key, research project, signing identity
-and coding project/task data. Both nine-stage streams and 37 independently
-verified receipts passed. Live provider research remains untested without a key.
+## Workspace asset delivery fix
+
+The owner reported unstyled overview/admin/runs at easyai.com.au under /aiadmin/.
+Unauthenticated live asset requests return PIN HTML, not CSS; the authenticated
+host response was not accessible in this session. Workspace pages now embed the
+verified release CSS and JS with per-response CSP nonces, like the standalone
+sign-in/installer. They no longer depend on additional authenticated asset loads.
+Browser tests deliberately block separate asset requests and verify layout,
+forms and accessibility. Existing asset endpoints remain compatible.
+
+## Investigation plan implementation
+
+The supplied plan is saved as docs/RESEARCH_IMPLEMENTATION_PLAN.md. Research now
+adds a persisted Dream/Plan/Evidence/Reconciliation phase machine, progressive
+polling tree, Stop, first-class provider-cited source cards and dead ends,
+evidence-only Learn, history and Markdown export. Legacy project chat/data stays.
+Investigation.php handles schema/state/provider bounds; ResearchApi.php releases
+session locks before I/O; ResearchView.php renders the progressively enhanced UI.
+Limits and uncertainty semantics are documented in ADMIN_RESEARCH.md. Add
+`php tests/investigation.php` and `python3 -B -m unittest -v tests/investigation_http.py`
+to the reproducible checks. Provider tests use synthetic transport; live billed
+provider/shared-host validation remains separate.
+
+## Claim review and research output redesign
+
+Dream now requests 2–5 bounded core hypotheses with prior confidence, uncertainty,
+verification angle and priority, plus competing angles, assumptions and the least
+confident area. These remain explicitly unchecked. New runs pause in
+`dream_review` with status `running`, retaining the single-active-run guard.
+`research_step` cannot bypass review or spend another request there.
+`research_continue` validates selected claim IDs in a transaction before Plan;
+without JavaScript it selects all claims. Existing in-progress runs keep their
+saved phase and plain-text claims remain readable. Additive node columns preserve
+structured display data and selection; nothing resets project or private state.
+
+The research output is now a claim board with a stage rail, review controls,
+claim-linked verification/evidence/dead ends, a compact final outcome matrix,
+and separate prior context. The full expandable tree and source library are
+available as details. Shared source URLs retain relevance to multiple claims.
+Plan accepts selected claims only; reconciliation evaluates selected claims only.
+Selection polling preserves checkboxes and keyboard focus. Learn still requires
+sources and an idle investigation. Stop, request bounds, and uncertain outcomes
+retain their existing behavior.
+
+Validation for this change uses synthetic provider transport, HTTP requests,
+and desktop/mobile Chromium with accessibility checks. It does not establish
+live provider quality, a checked GitHub release, or deployment to cPanel.
+
+## Research notebook flow polish
+
+The next UI pass adds first-project guidance, review selection shortcuts, explicit
+irreversible-selection copy, Dream loading placeholders, search progress, completed
+phase navigation, source-domain markers, visible dead-end labels and a completion
+matrix ahead of the board. Mobile uses a compact current-stage rail and reachable
+Stop controls. Interrupted/uncertain runs retain their evidence and offer a new
+investigation on the same project without retrying an unknown request.
+
+The visible rolling-hour budget counts both investigation requests and legacy
+assistant chat, including pending/failed calls; it shows the next availability
+estimate when exhausted. Existing enforcement remains authoritative. Learn
+follow-ups reuse the bounded evidence-only actions. Markdown export now groups
+claims, verification/evidence, outcomes and open questions, with every collected
+source URL retained. Optional mid-run brief editing, previous-question seeding
+and SSE are deferred. Validation uses synthetic transport and local browsers;
+no new live provider, hosting deployment or publication is implied.
+
+## Research mind map
+
+Research now has a desktop-first spatial Map with a full List fallback. The map
+shares the persisted node tree and source records, supports inspection, filters,
+zoom, collapse, keyboard navigation, claim selection and source-specific Learn.
+Mobile starts in List. Status adds derived claim/source links, confidence and
+dead-end reasons without schema changes. See RESEARCH_MAP_CONTRACT.md.
+
+JavaScript pauses before each Evidence request for explicit direction. Optional
+focus replaces a remaining planned search, stays within two searches per run,
+and records its note/claim/node on the request phase and resulting search. The
+replaced plan is explicitly incomplete; its original query was not executed.
+Only selected claims or their linked open/dead-end nodes can be focused, during
+an idle Evidence phase. No completed or uncertain run is revived. Source-selected
+Learn validates run ownership and sends only the chosen cards and project brief.
+Markdown export includes the node-to-parent outline and real source URLs.
+Validation uses synthetic PHP transport, concurrent HTTP Stop tests and Chromium
+with keyboard/mobile/accessibility checks; live billed/hosting validation remains
+separate. Optional drawn comparison edges and vault pinning are not introduced.
+
+The owner wants tested application updates released automatically without another
+deployment-confirmation question. Use the existing implementation branch and
+required exact-SHA checks. Live-host activation still requires an authenticated
+hosting/panel connection; never label a GitHub push as verified host activation.
+
+## Main branch consolidation
+
+The full implementation and documentation are consolidated on main, preserving
+both histories. New loaders check main. The previous feature branch is retained
+as a fast-forward compatibility pointer so older installed loaders can receive
+the main-channel loader through their existing updater. It is not a separate
+development line. Do not delete it until the hosting installations have migrated.
