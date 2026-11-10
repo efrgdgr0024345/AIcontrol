@@ -31,6 +31,7 @@ jobs:
           php tests/workspace.php
           php tests/investigation.php
           php tests/rigour.php
+          php tests/research_flow.php
           python3 -B -m unittest -v tests/investigation_http.py
           python3 -B -m unittest -v tests/http_smoke.py
           python3 -B -m unittest -v tests/standalone_smoke.py

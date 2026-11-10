@@ -126,7 +126,7 @@ final class PanelView
     {
         $review = count(array_filter($data['tasks'], static fn(array $task): bool => $task['status'] === 'in_review'));
         echo '<div class="metric-grid">';
-        foreach ([['Projects', count($data['projects']), 'folder', 'Briefs with a place to grow'], ['Task proposals', count($data['tasks']), 'task', 'Work with acceptance criteria'], ['In review', $review, 'robot', 'Results waiting for a decision'], ['Provider cost', 'Unknown', 'receipt', 'No verified billing total']] as [$name, $value, $icon, $caption]) {
+        foreach ([['Projects', count($data['projects']), 'folder', 'Briefs with a place to grow'], ['Task proposals', count($data['tasks']), 'task', 'Work with acceptance criteria'], ['In review', $review, 'robot', 'Results waiting for a decision'], ['Task API estimate', '$'.number_format(array_sum(array_map(static fn(array $p):float=>(float)$p['usage']['estimated_usd'],$data['projects'])),4), 'receipt', 'USD estimated · '.array_sum(array_map(static fn(array $p):int=>(int)$p['usage']['unknown_requests'],$data['projects'])).' unpriced calls']] as [$name, $value, $icon, $caption]) {
             echo '<section class="card metric-card"><div class="card-body"><div class="metric-top"><span>' . $name . '</span>' . Ui::icon($icon) . '</div><div class="metric-value ' . (is_string($value) ? 'word' : '') . '">' . Ui::e($value) . '</div><div class="metric-caption">' . $caption . '</div></div></section>';
         }
         echo '</div><div class="dashboard-grid"><div class="stack"><section class="card welcome-card"><div class="card-body"><div class="welcome-tag">' . Ui::icon('spark') . 'PROJECT PLANNING</div><h2>Turn a good brief into the next step.</h2><p>Give your project a home, define a task, and keep the result beside the work that led to it.</p><a class="btn btn-primary" href="/loader.php?view=projects">Manage projects ' . Ui::icon('arrow') . '</a></div></section><section class="card"><div class="card-header"><h2 class="card-title">Your projects</h2><a class="ms-auto muted" href="/loader.php?view=projects">View all</a></div>';
@@ -158,7 +158,7 @@ final class PanelView
         }
         foreach ($projects as $project) {
             $count = count(array_filter($data['tasks'], static fn(array $task): bool => (int) $task['project_id'] === (int) $project['id']));
-            echo '<section class="card section-anchor" id="project-' . Ui::e($project['id']) . '"><div class="card-body"><div class="task-meta"><span class="project-avatar">' . Ui::e(mb_strtoupper(mb_substr($project['name'], 0, 1))) . '</span>' . self::pill('Planning', 'purple') . '</div><h3 class="task-title">' . Ui::e($project['name']) . '</h3><p class="task-description preserve">' . Ui::e($project['brief']) . '</p><div class="task-project">' . $count . ' tasks · Created ' . Ui::e(Ui::time($project['created_at'])) . '</div></div></section>';
+            echo '<section class="card section-anchor" id="project-' . Ui::e($project['id']) . '"><div class="card-body"><div class="task-meta"><span class="project-avatar">' . Ui::e(mb_strtoupper(mb_substr($project['name'], 0, 1))) . '</span>' . self::pill('Planning', 'purple') . '</div><h3 class="task-title">' . Ui::e($project['name']) . '</h3><p class="task-description preserve">' . Ui::e($project['brief']) . '</p><div class="task-project">' . $count . ' tasks · Created ' . Ui::e(Ui::time($project['created_at'])) . '</div><p class="project-spend">'.Ui::e(UsageMeter::label($project['usage'])).' · '.number_format($project['usage']['total_tokens']).' tokens</p></div></section>';
         }
         echo '</div></div><div><div class="section-title"><h2>Task proposals</h2><span>' . count($tasks) . ' tasks</span></div><div class="stack">';
         if ($tasks === []) {
@@ -169,14 +169,14 @@ final class PanelView
         foreach ($tasks as $task) {
             echo '<section class="card task-card section-anchor" id="task-' . Ui::e($task['id']) . '"><div class="card-body"><div class="task-meta">' . self::status($task['status']) . '<span class="task-project">Task #' . Ui::e($task['id']) . '</span></div><h3 class="task-title">' . Ui::e($task['title']) . '</h3><a class="task-project" href="/loader.php?view=projects#project-' . Ui::e($task['project_id']) . '">' . Ui::e($task['project_name']) . '</a><p class="task-description preserve">' . Ui::e($task['criteria']) . '</p><div class="task-footer">';
             if (AgentRunner::configured()) {
-                echo '<form method="post" action="/loader.php">' . $csrf . '<input type="hidden" name="action" value="run_agent"><input type="hidden" name="task_id" value="' . Ui::e($task['id']) . '"><button class="btn btn-primary">' . Ui::icon('spark') . 'Run AI task</button></form><p>Up to 1,000 output tokens · 3 runs/hour · cost unknown</p>';
+                echo '<form method="post" action="/loader.php">' . $csrf . '<input type="hidden" name="action" value="run_agent"><input type="hidden" name="task_id" value="' . Ui::e($task['id']) . '"><button class="btn btn-primary">' . Ui::icon('spark') . 'Run AI task</button></form><p>Up to 1,000 output tokens · 3 runs/hour · estimated USD cost from API usage</p>';
             } else {
                 echo '<button class="btn btn-outline-secondary" disabled>' . Ui::icon('robot') . 'Run AI task</button><p>Agent not connected yet. <a href="/loader.php?view=systems#openai">Set up the connection</a></p>';
             }
             echo '</div>';
             foreach ($data['runs'] as $run) {
                 if ((int) $run['task_id'] === (int) $task['id']) {
-                    echo '<details class="mt-3"><summary>Agent run #' . Ui::e($run['id']) . ' · ' . Ui::e(str_replace('_', ' ', $run['status'])) . '</summary><pre class="result preserve">' . Ui::e($run['output'] !== '' ? $run['output'] : 'No text result recorded.') . '</pre><p class="muted">Model: ' . Ui::e($run['model']) . ' · Cost: unknown</p></details>';
+                    echo '<details class="mt-3"><summary>Agent run #' . Ui::e($run['id']) . ' · ' . Ui::e(str_replace('_', ' ', $run['status'])) . '</summary><pre class="result preserve">' . Ui::e($run['output'] !== '' ? $run['output'] : 'No text result recorded.') . '</pre><p class="muted">Model: ' . Ui::e($run['model']) . ' · '.Ui::e(UsageMeter::label(UsageMeter::summary([$run]))).' · '.(int)($run['input_tokens']??0).' input / '.(int)($run['output_tokens']??0).' output tokens</p></details>';
                 }
             }
             echo '</div></section>';
@@ -207,7 +207,7 @@ final class PanelView
         echo '<div class="stack">';
         foreach ($data['runs'] as $run) {
             $task = array_values(array_filter($data['tasks'], static fn(array $task): bool => (int) $task['id'] === (int) $run['task_id']))[0] ?? null;
-            echo '<section class="card"><div class="card-header"><h2 class="card-title">Run #' . Ui::e($run['id']) . '</h2><span class="ms-auto">' . self::status($run['status']) . '</span></div><div class="card-body"><h3 class="task-title"><a href="/loader.php?view=projects#task-' . Ui::e($run['task_id']) . '">' . Ui::e($task['title'] ?? 'Task #' . $run['task_id']) . '</a></h3><p class="muted">' . Ui::e($run['model']) . ' · ' . Ui::e(Ui::time((int) $run['started_at'])) . '</p><pre class="result preserve">' . Ui::e($run['output'] !== '' ? $run['output'] : 'No text result recorded.') . '</pre><p class="muted">Input tokens: ' . Ui::e($run['input_tokens'] ?? 'Unknown') . ' · Output tokens: ' . Ui::e($run['output_tokens'] ?? 'Unknown') . ' · Cost: unknown</p>';
+            echo '<section class="card"><div class="card-header"><h2 class="card-title">Run #' . Ui::e($run['id']) . '</h2><span class="ms-auto">' . self::status($run['status']) . '</span></div><div class="card-body"><h3 class="task-title"><a href="/loader.php?view=projects#task-' . Ui::e($run['task_id']) . '">' . Ui::e($task['title'] ?? 'Task #' . $run['task_id']) . '</a></h3><p class="muted">' . Ui::e($run['model']) . ' · ' . Ui::e(Ui::time((int) $run['started_at'])) . '</p><pre class="result preserve">' . Ui::e($run['output'] !== '' ? $run['output'] : 'No text result recorded.') . '</pre><p class="muted">Input tokens: ' . Ui::e($run['input_tokens'] ?? 'Unknown') . ' · Output tokens: ' . Ui::e($run['output_tokens'] ?? 'Unknown') . ' · '.Ui::e(UsageMeter::label(UsageMeter::summary([$run]))).'</p>';
             if ($run['provider_request_id'] !== null) { echo '<details><summary>Provider evidence</summary><code>' . Ui::e($run['provider_request_id']) . '</code></details>'; }
             echo '</div></section>';
         }

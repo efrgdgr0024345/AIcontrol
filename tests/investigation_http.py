@@ -35,6 +35,8 @@ namespace AIcontrol {
   $body=json_decode($GLOBALS['investigation_options'][CURLOPT_POSTFIELDS],true);
   file_put_contents(getenv('TEST_BODY_FILE'),json_encode($body));
   $fast=file_exists(getenv('TEST_FAST_MARKER'));
+  $stream=file_exists(getenv('TEST_STREAM_MARKER'));
+  if($stream)($GLOBALS['investigation_options'][CURLOPT_WRITEFUNCTION])($h,"event: response.created\n".'data: '.json_encode(['type'=>'response.created'])."\n\n");
   file_put_contents(getenv('TEST_WAIT_MARKER'),'waiting'); if(!$fast)usleep(2500000);
   $text=json_encode(['claims'=>[['claim'=>'Late unchecked fixture','uncertainty'=>'Unknown','confidence'=>'low','verify'=>'Verify externally']]]);
   if($fast){
@@ -50,6 +52,7 @@ namespace AIcontrol {
    $text=json_encode(['assessments'=>array_map(fn($claim)=>['claim_id'=>(int)$claim['id'],'status'=>'open','rationale'=>'No passage-backed relation','strength'=>null],$ledger['claims']),'defects'=>[],'calculations'=>[]]);
   }
   $data=json_encode(['status'=>'completed','usage'=>['input_tokens'=>12,'output_tokens'=>18],'output'=>[['type'=>'message','content'=>[['type'=>'output_text','text'=>$text]]]]]);
+  if($stream)$data="event: response.completed\n".'data: '.json_encode(['type'=>'response.completed','response'=>json_decode($data,true)])."\n\n";
   ($GLOBALS['investigation_options'][CURLOPT_WRITEFUNCTION])($h,$data);return true;
  }
  function curl_getinfo($h,$option) { return 200; }
@@ -60,7 +63,7 @@ namespace { $_SERVER['SCRIPT_NAME']='/aiadmin/loader.php';require getenv('TEST_A
             with socket.socket() as listener:
                 listener.bind(('127.0.0.1', 0))
                 port = listener.getsockname()[1]
-            env = dict(os.environ, AICONTROL_PRIVATE_DIR=str(private), AICONTROL_LOCAL_DEV='1', AICONTROL_PIN_VERIFIED='1', AICONTROL_OPENAI_API_KEY='synthetic-http-only', PHP_CLI_SERVER_WORKERS='4', TEST_WAIT_MARKER=str(ready), TEST_APP_ROOT=str(ROOT), TEST_FAST_MARKER=str(Path(directory)/'fast'), TEST_BODY_FILE=str(Path(directory)/'body.json'))
+            env = dict(os.environ, AICONTROL_RESEARCH_HOURLY_LIMIT='10', AICONTROL_PRIVATE_DIR=str(private), AICONTROL_LOCAL_DEV='1', AICONTROL_PIN_VERIFIED='1', AICONTROL_OPENAI_API_KEY='synthetic-http-only', PHP_CLI_SERVER_WORKERS='4', TEST_WAIT_MARKER=str(ready), TEST_APP_ROOT=str(ROOT), TEST_FAST_MARKER=str(Path(directory)/'fast'), TEST_BODY_FILE=str(Path(directory)/'body.json'),TEST_STREAM_MARKER=str(Path(directory)/'stream'))
             server = subprocess.Popen([PHP, '-S', f'127.0.0.1:{port}', str(fixture)], cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
             try:
                 base = f'http://127.0.0.1:{port}/aiadmin/loader.php'
@@ -89,9 +92,14 @@ namespace { $_SERVER['SCRIPT_NAME']='/aiadmin/loader.php';require getenv('TEST_A
                 self.assertEqual(status, 200)
                 csrf = re.search(r'name="csrf" value="([a-f0-9]+)"', page).group(1)
                 request('?view=research', dict(csrf=csrf, action='research_project', name='Concurrent research', brief='Stop while waiting'))
+                self.assertEqual(request('?research_api=1',dict(csrf='bad',action='research_settings',project_id='1'))[0],403)
+                status, _, body=request('?research_api=1',dict(csrf=csrf,action='research_settings',project_id='1',primary_model='gpt-4.1',spend_cap_usd='5',auto_search='1',growth_searches='3'))
+                self.assertEqual(status,200,body)
+                self.assertEqual(request('?research_api=1',dict(csrf=csrf,action='research_settings',project_id='1',primary_model='invented-model',spend_cap_usd='5',growth_searches='3'))[0],422)
                 status, _, body = request('?view=research&research_api=1', dict(csrf=csrf, action='research_start', project_id='1'))
                 self.assertEqual(status, 200, body[:200])
                 run = json.loads(body)['run']['id']
+                (Path(directory)/'stream').touch()
                 self.assertEqual(request(f'?research_api=status&run_id={run}')[0], 403)
                 self.assertEqual(request('?research_api=1', dict(csrf='bad', action='research_stop', run_id=run))[0], 403)
                 cookie = '; '.join(f'{c.name}={c.value}' for c in jar)
@@ -105,6 +113,8 @@ namespace { $_SERVER['SCRIPT_NAME']='/aiadmin/loader.php';require getenv('TEST_A
                     status, _, body = request(f'?research_api=status&run_id={run}', headers={'X-CSRF-Token': csrf}, cookie=cookie)
                     self.assertEqual(status, 200, body[:200])
                     self.assertEqual(json.loads(body)['run']['status'], 'running')
+                    self.assertEqual(json.loads(body)['requests'][-1]['activity'],'Provider accepted request')
+                    self.assertIsNone(json.loads(body)['requests'][-1]['estimated_usd'])
                     self.assertLess(time.monotonic()-start, 1.5, 'Poll blocked by the phase session lock')
                     start = time.monotonic()
                     status, _, body = request('?research_api=1', dict(csrf=csrf, action='research_stop', run_id=run), cookie=cookie)
@@ -145,6 +155,12 @@ namespace { $_SERVER['SCRIPT_NAME']='/aiadmin/loader.php';require getenv('TEST_A
                 steps = [n for n in snapshot['nodes'] if n['type']=='plan_step']
                 self.assertEqual([n['parent_id'] for n in steps], [chosen, chosen])
                 self.assertTrue(json.loads(steps[-1]['data_json'])['challenge'])
+                before_usage=snapshot['usage']['project']['total_tokens']
+                status, _, ranked=request('?research_api=1',dict(csrf=csrf,action='research_rank',run_id=reviewed_run,node_id=chosen,path_weight='20',model_tier='economy'))
+                self.assertEqual(status,200,ranked)
+                self.assertEqual(json.loads(ranked)['usage']['project']['total_tokens'],before_usage,'Ranking spent tokens')
+                self.assertTrue(any(n['id']==chosen and n['path_weight']==20 for n in json.loads(ranked)['nodes']))
+                self.assertEqual(request('?research_api=1',dict(csrf=csrf,action='research_rank',run_id=reviewed_run,node_id=chosen,path_weight='101',model_tier='economy'))[0],422)
                 plan_body = json.loads((Path(directory)/'body.json').read_text())
                 sent_claims = json.loads(plan_body['input'].split('Dream nodes: ')[1])
                 self.assertEqual([n['id'] for n in sent_claims], [chosen])

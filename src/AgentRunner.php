@@ -39,7 +39,7 @@ final class AgentRunner
         $run = $store->startAgent($task, $model);
         try {
             $body = json_encode([
-                'model' => $model, 'store' => false, 'max_output_tokens' => 1000,
+                'model' => $model, 'service_tier' => 'default', 'store' => false, 'max_output_tokens' => 1000,
                 'instructions' => 'You are a coding assistant. Work on the supplied task. Return a concise proposed solution or patch and validation steps. You have no tools or repository access. Clearly identify missing context. Do not claim code was executed, committed, or deployed.',
                 'input' => 'Project brief: ' . $run['task']['brief'] . "\nTask: " . $run['task']['title'] . "\nAcceptance criteria: " . $run['task']['criteria'] . self::sharedContext(),
             ], JSON_THROW_ON_ERROR);
@@ -79,14 +79,10 @@ final class AgentRunner
                 }
             }
             $text = implode("\n", $output);
-            if ($text === '') {
-                $store->finishAgent($run['id'], 'failed');
-                return;
-            }
             $providerId = is_string($result['id'] ?? null) && preg_match('/^[A-Za-z0-9_-]{1,200}$/D', $result['id']) ? $result['id'] : null;
             $input = $result['usage']['input_tokens'] ?? null;
             $outputCount = $result['usage']['output_tokens'] ?? null;
-            $store->finishAgent($run['id'], 'in_review', $text, $providerId, is_int($input) ? $input : null, is_int($outputCount) ? $outputCount : null);
+            $store->finishAgent($run['id'], $text!==''&&($result['status']??'completed')==='completed'?'in_review':'failed', $text, $providerId, is_int($input) ? $input : null, is_int($outputCount) ? $outputCount : null,UsageMeter::measure($result,$model));
         } catch (Throwable) {
             // A response-parsing or recording failure does not prove no provider work occurred.
             $store->finishAgent($run['id'], 'outcome_uncertain');

@@ -191,6 +191,10 @@ trait EvidenceLedger
                 foreach($defects as $defect)if($defect['severity']==='high'&&($defect['claim_id']===null||$defect['claim_id']===$claim)){$status='open';$strength=null;$reason='Unresolved verification gap. '.$reason;break;}
             }
             $this->recordClaimVersion($claim,$id,$status,$reason,$strength,$phase==='extraction'?'system':'verifier');
+            if($phase!=='extraction'&&(int)$job['run']['flow_version']){
+                $path=$this->rows('SELECT * FROM research_nodes WHERE id=?',[$claim])[0];$delta=['supported'=>10,'weakened'=>-20,'contradicted'=>-35,'open'=>-10][$status];
+                $weight=max(10,min(100,(int)$path['path_weight']+$delta));$this->saveRank($id,$claim,$weight,$weight<40?'economy':$path['model_tier'],'Verifier assessment '.$status.'; research priority, not probability.');
+            }
             $applied[]=['claim_id'=>$claim,'status'=>$status,'rationale'=>$reason,'strength'=>$strength];
             $node=$this->appendNode($id,$claim,'synthesis','complete',ucfirst($status).' · claim #'.$claim,$reason);
             $edgeSources=array_map('intval',array_column($this->rows('SELECT DISTINCT source_id FROM research_edges WHERE run_id=? AND claim_id=?',[$id,$claim]),'source_id'));

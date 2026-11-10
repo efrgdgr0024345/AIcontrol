@@ -10,7 +10,7 @@ namespace AIcontrol {
 }
 namespace {
 require dirname(__DIR__).'/src/Vault.php';require dirname(__DIR__).'/src/AgentRunner.php';require dirname(__DIR__).'/src/Research.php';
-umask(0077);$dir=sys_get_temp_dir().'/aicontrol-workspace-'.bin2hex(random_bytes(6));mkdir($dir,0700);putenv('AICONTROL_PRIVATE_DIR='.$dir);putenv('AICONTROL_OPENAI_API_KEY=');
+putenv('AICONTROL_RESEARCH_HOURLY_LIMIT=10');umask(0077);$dir=sys_get_temp_dir().'/aicontrol-workspace-'.bin2hex(random_bytes(6));mkdir($dir,0700);putenv('AICONTROL_PRIVATE_DIR='.$dir);putenv('AICONTROL_OPENAI_API_KEY=');
 function check(bool $ok,string $message):void{if(!$ok)throw new \RuntimeException($message);}
 try {
  $vault=new \AIcontrol\Vault($dir);$vault->change('openai_api_key','key','synthetic-only-secret',true);$vault->change('shared_note','note','Useful project context',true);$vault->change('private_note','note','Never share this text',false);

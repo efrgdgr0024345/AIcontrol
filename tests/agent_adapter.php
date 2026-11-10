@@ -40,6 +40,7 @@ namespace {
         if ($run['status'] !== 'in_review' || $run['output'] !== 'Proposed solution' || $run['provider_request_id'] !== 'resp_test' || $run['output_tokens'] !== 40) {
             throw new \RuntimeException('Response parsing or persistence failed');
         }
+        if(abs($run['estimated_usd']-0.000072)>1e-9||$store->snapshot()['projects'][0]['usage']['total_tokens']!==60)throw new \RuntimeException('Task-project tokens or pricing not recorded');
         $request = json_decode(\AIcontrol\TestTransport::$options[CURLOPT_POSTFIELDS], true, 32, JSON_THROW_ON_ERROR);
         if ($request['max_output_tokens'] !== 1000 || $request['store'] !== false || !str_contains($request['input'], 'Return a patch')) {
             throw new \RuntimeException('Bounded request shape failed');

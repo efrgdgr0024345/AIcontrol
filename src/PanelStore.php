@@ -6,6 +6,7 @@ namespace AIcontrol;
 use PDO;
 use RuntimeException;
 use Throwable;
+require_once __DIR__ . "/UsageMeter.php";
 
 /** Metadata-only prototype. Never stores credentials, grants or billable jobs. */
 final class PanelStore
@@ -34,6 +35,7 @@ final class PanelStore
             status TEXT NOT NULL, model TEXT NOT NULL, output TEXT NOT NULL DEFAULT "",
             provider_request_id TEXT, input_tokens INTEGER, output_tokens INTEGER,
             started_at INTEGER NOT NULL, finished_at INTEGER)');
+        UsageMeter::migrate($this->db,'agent_runs');
     }
 
     private function transaction(callable $work): int
@@ -91,8 +93,11 @@ final class PanelStore
 
     public function snapshot(): array
     {
+        $projects=$this->db->query('SELECT * FROM projects ORDER BY id DESC')->fetchAll(PDO::FETCH_ASSOC);
+        $all=$this->db->query('SELECT a.*,t.project_id FROM agent_runs a JOIN tasks t ON t.id=a.task_id')->fetchAll(PDO::FETCH_ASSOC);
+        foreach($projects as &$project)$project['usage']=UsageMeter::summary(array_values(array_filter($all,static fn(array $r):bool=>(int)$r['project_id']===(int)$project['id'])));unset($project);
         return [
-            'projects' => $this->db->query('SELECT * FROM projects ORDER BY id DESC')->fetchAll(PDO::FETCH_ASSOC),
+            'projects' => $projects,
             'tasks' => $this->db->query('SELECT tasks.*, projects.name AS project_name FROM tasks JOIN projects ON projects.id=tasks.project_id ORDER BY tasks.id DESC')->fetchAll(PDO::FETCH_ASSOC),
             'events' => $this->db->query('SELECT * FROM events ORDER BY id DESC LIMIT 100')->fetchAll(PDO::FETCH_ASSOC),
             'runs' => $this->db->query('SELECT * FROM agent_runs ORDER BY id DESC LIMIT 100')->fetchAll(PDO::FETCH_ASSOC),
@@ -134,13 +139,13 @@ final class PanelStore
         return $run;
     }
 
-    public function finishAgent(int $id, string $status, string $output = '', ?string $providerId = null, ?int $inputTokens = null, ?int $outputTokens = null): void
+    public function finishAgent(int $id, string $status, string $output = '', ?string $providerId = null, ?int $inputTokens = null, ?int $outputTokens = null,?array $billing=null): void
     {
         if (!in_array($status, ['in_review', 'failed', 'outcome_uncertain'], true)) {
             throw new RuntimeException('Invalid agent outcome.');
         }
-        $this->transaction(function () use ($id, $status, $output, $providerId, $inputTokens, $outputTokens): int {
-            $query = $this->db->prepare('SELECT agent_runs.task_id,tasks.project_id FROM agent_runs JOIN tasks ON tasks.id=agent_runs.task_id WHERE agent_runs.id=? AND agent_runs.status="working"');
+        $this->transaction(function () use ($id, $status, $output, $providerId, $inputTokens, $outputTokens,$billing): int {
+            $query = $this->db->prepare('SELECT agent_runs.task_id,agent_runs.model,tasks.project_id FROM agent_runs JOIN tasks ON tasks.id=agent_runs.task_id WHERE agent_runs.id=? AND agent_runs.status="working"');
             $query->execute([$id]);
             $record = $query->fetch(PDO::FETCH_ASSOC);
             if (!$record) {
@@ -148,8 +153,10 @@ final class PanelStore
             }
             $this->db->prepare('UPDATE agent_runs SET status=?,output=?,provider_request_id=?,input_tokens=?,output_tokens=?,finished_at=? WHERE id=? AND status="working"')
                 ->execute([$status, substr($output, 0, 16000), $providerId, $inputTokens, $outputTokens, time(), $id]);
+            $billing??=UsageMeter::measure(['usage'=>['input_tokens'=>$inputTokens,'output_tokens'=>$outputTokens]],$record['model']);
+            $this->db->prepare('UPDATE agent_runs SET model=?,estimated_usd=?,cached_tokens=?,tool_calls=?,billing_json=? WHERE id=?')->execute([$billing['model'],$billing['estimated_usd'],$billing['cached_tokens'],$billing['tool_calls'],json_encode($billing,JSON_THROW_ON_ERROR),$id]);
             $this->db->prepare('UPDATE tasks SET status=? WHERE id=?')->execute([$status, $record['task_id']]);
-            $this->event('agent.' . $status, (int) $record['project_id'], (int) $record['task_id'], $status === 'in_review' ? 'AI response recorded for review. No code executed or published. Cost unknown.' : 'Run stopped. No automatic retry; review outcome before another request.');
+            $this->event('agent.' . $status, (int) $record['project_id'], (int) $record['task_id'], $status === 'in_review' ? 'AI response recorded for review. No code executed or published. Usage and estimated cost recorded when returned.' : 'Run stopped. No automatic retry; review outcome before another request.');
             return $id;
         });
     }

@@ -1,3 +1,15 @@
+# Current extension: visible usage and bounded question growth
+
+The subsequent owner request adds project/path/model/phase token accounting,
+dated USD estimates and project caps; Responses streaming activity; a findings-
+first header with setup behind Project menu; colour/weight-based priorities and
+economy routing; and two bounded divergent-thinking passes. The approved research
+ceiling is now 30 calls/hour. Existing rigour integrity, review, Stop, freeze and
+legacy compatibility are retained. See PROJECT_STATE.md / ADMIN_RESEARCH.md for
+current limits, rollout fields, model choices and pricing provenance.
+
+---
+
 # Implementation status: research rigour layer
 
 The original plan below is retained as historical scope. The subsequent uploaded

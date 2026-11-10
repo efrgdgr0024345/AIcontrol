@@ -20,11 +20,14 @@ private records persist on the hosting server.
 | Update detection | Signed 15-minute cache; browser checks local endpoint every 5 minutes; explicit refresh at most once/minute |
 | Loader replacement | Checked manifest bootstrap hash, atomic replacement and private verified backup |
 | Signing | Server-generated Ed25519; domain `AIcontrol/receipt/v1` plus zero byte |
-| Model | `gpt-4.1-mini`, overridden only by server `AICONTROL_OPENAI_MODEL` |
+| Task/chat model | `gpt-4.1-mini`, overridden only by server `AICONTROL_OPENAI_MODEL` |
 | AI key | Server `AICONTROL_OPENAI_API_KEY`; never browser/source/chat |
 | Task agent bounds | One active run, three requests/hour, 1,000 output tokens/call |
-| Research bounds | One active investigation/pending request; ten calls/hour shared with chat/Learn; 1,600 output tokens, 60 seconds per call |
-| Verified investigation | Start needs six calls remaining; 1–2 normal searches + one Challenge, extraction, grouped verifier; one optional repair |
+| Research bounds | One active investigation/pending request; 30 calls/hour shared with chat/Learn; 3,200 output tokens for new specialist flows, 1,600 for legacy/Learn; 60 seconds |
+| Verified investigation | Start needs six calls remaining; up to six searches including Challenge and growth, two creative passes, extraction/verifier; one optional repair |
+| Research models | Primary/high-impact/verifier GPT-4.1; economy GPT-4.1 mini; tool-free divergent thinker GPT-4.1 nano; server primary-model override retained |
+| Research spend cap | $5 USD tracked per project by default; adjustable in Project menu; saved API-usage estimates + conservative reservations, not an invoice cap |
+| Rate provenance | Official standard USD prices checked 2026-11-10, saved per request; missing/historical unpriced usage stays unknown |
 
 ## Automatic storage policy v1
 

@@ -5,6 +5,67 @@ AGENTS.md and DEPLOYMENT_DEFAULTS.md. Git history and Actions identify exact cod
 revisions; do not infer a live hosting revision from the latest source commit.
 
 
+## Current research usage, live activity and branching
+
+New runs now use `flow_version=1`; existing runs default to zero and retain their
+saved flow. The owner authorised 30 shared research requests/hour, higher model
+budget for high-impact paths and verification, and bounded unconventional
+exploration. `AICONTROL_RESEARCH_HOURLY_LIMIT=10` retains the former ceiling for
+restricted installations and legacy regression fixtures; the default is 30.
+
+Research projects have a tracked USD spend cap (default $5 for the project, not
+per hour), primary model, autoplay preference and 0–3 additional growth searches.
+Project menu edits these settings; model/pace applies to new runs, cap immediately.
+New runs retain human claim review, then can advance ranked searches automatically.
+Up to six searches and two creative passes create at most twelve untested question
+nodes. Typical expanded runs use twelve calls before optional repair/Learn.
+All work remains one active specialist request at a time on PHP; no daemon, queue
+or fabricated parallel agents. Closing the page stops advancing subsequent calls.
+Stop still rejects late results and never retries an unknown outcome.
+
+High-priority paths and verification default to GPT-4.1; planning, mapping and
+lower-priority searches use GPT-4.1 mini; divergent passes use GPT-4.1 nano without
+search tools. A server model override still controls the primary model. Priority
+weights are attention/model-routing heuristics, not truth probabilities; ranking
+changes have their own history. Failed searches and verifier outcomes can reduce
+rank without deleting a path. New unconventional questions include falsification
+tests, stay visibly untested and never become verified claim assessments merely
+by being generated. Creative passes use current provisional observations/findings.
+
+Research and task requests retain API token usage, cached counts, search counts,
+model and immutable pricing provenance. USD estimates use official standard
+pricing checked 2026-11-10; they are not invoice totals. Old unpriced rows and
+missing usage remain unknown, not zero. Search-preview fees are included; cached
+tokens and reasoning tokens are not counted twice. Provider-reported model names
+are priced only when recognised. Unknown models/tiers are not guessed.
+
+Before each new research call, the engine reserves a conservative maximum cost
+from request bytes, output cap and tool limit. An uncertain outcome keeps that
+reservation; confirmed usage replaces it with the estimate. Cap exhaustion stops
+before dispatch and retains findings. Unpriced historical calls, taxes and account
+credits/discounts are outside the local tracked cap. Requests and legacy chat share
+the same project accounting. Task projects also display accumulated estimates.
+
+The top of Research is a findings bulletin, activity and spend; project controls
+are collapsed into Project menu for existing investigations. Full-screen Map has
+its own findings/activity/spend and access to that menu. Recent search observations
+are provisional until verification. Usage expands into per-area, phase, model and
+request breakdowns; shared work stays separate from path totals. Streamed Responses
+events update provider activity/visible response-character counts; the browser
+shows elapsed time and last successful poll. Token totals arrive only when the API
+returns usage. No fake token ticker, progress percentage or hidden reasoning trace.
+
+Validation adds 45 checks in `php tests/research_flow.php` to all prior checks: pricing/caching,
+stream chunks/truncation, bounded growth, cap-before-dispatch, attribution, model
+routing and Stop races use synthetic transport. Concurrent HTTP covers actual SSE
+activity, session-free polling/Stop and settings/ranking. Chromium covers the
+findings-first menu, usage, path priorities and live activity on desktop/mobile
+with 29 axe audits and zero violations.
+No live billed provider run or authenticated cPanel activation is established.
+The older rigour section below describes the previous release; this section
+supersedes its ten-call/1600-token default for new flow-enabled runs. New specialist
+calls permit 3,200 output tokens; Learn and legacy runs retain 1,600.
+
 ## Current research rigour upgrade
 
 New runs use an additive passage/typed-edge/assessment-version ledger. The flow

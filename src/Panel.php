@@ -147,7 +147,7 @@ final class Panel
                 setcookie(session_name(), '', ['expires' => time() - 3600, 'path' => '/', 'secure' => $secure, 'httponly' => true, 'samesite' => 'Strict']);
                 header('Location: ' . self::entry(), true, 303);
                 return;
-            } elseif (in_array($action, ['research_start','research_continue','research_finish','research_repair','research_step','research_stop','research_learn','research_export'], true)) {
+            } elseif (in_array($action, ['research_settings','research_rank','research_start','research_continue','research_finish','research_repair','research_step','research_stop','research_learn','research_export'], true)) {
                 // Release this session before provider I/O so polling and Stop can proceed.
                 session_write_close();
                 ResearchApi::action($directory, $action, self::entry(), ($_GET['research_api'] ?? '') === '1');

@@ -173,7 +173,7 @@ document.addEventListener('submit', event => {
     if (node) node.textContent = message;
   }
   function budgetLabel(budget) {
-    return `${budget.remaining} of 10 requests remaining this hour · shared across search, verification and Learn` +
+    return `${budget.remaining} of ${budget.limit||10} requests remaining this hour · shared across search, verification and Learn` +
       (budget.remaining === 0 ? ` · Next request available in about ${Math.ceil(budget.retry_after_seconds / 60)} minutes` : '');
   }
   function showBudget(budget) {
@@ -295,9 +295,41 @@ document.addEventListener('submit', event => {
     root.querySelector('[data-review-shortcuts]').hidden = !review;
   }
   root?.addEventListener('change', event => { if (event.target.matches('[name="claim_ids[]"]')) updateSelection(); });
+  const usd=value=>'$'+Number(value||0).toFixed(Number(value)>0&&Number(value)<0.0001?6:4)+' USD estimated';
+  const usageLabel=usage=>usd(usage.estimated_usd)+(usage.unknown_requests?' + '+usage.unknown_requests+' unpriced/unknown calls':'');
+  function renderInsight(snapshot){
+    const findings=snapshot.findings||[{status:'collecting',text:snapshot.sources.length+' cited sources collected.',reason:'Review source scope before treating a claim as established.',provisional:true}];
+    document.querySelectorAll('[data-current-findings]').forEach(list=>{list.replaceChildren();for(const finding of findings.slice(0,list.hasAttribute('data-map-findings')?3:5)){const item=element('li');item.append(element('strong',finding.status+(finding.provisional?' · provisional':'')+': '),document.createTextNode(finding.text+' '+finding.reason));list.append(item);}});
+    const current=snapshot.requests.filter(q=>q.status==='pending').at(-1);
+    root.dataset.requestStarted=String(current?.created_at||snapshot.run.busy_since||0);
+    root.dataset.providerHeartbeat=String(current?.heartbeat_at||0);
+    const activity=current?`${current.worker_role||current.kind} · ${current.model||snapshot.run.model||'model pending'} · ${current.activity||'Waiting for provider'}${current.output_chars?' · '+Number(current.output_chars).toLocaleString()+' response characters received':''}. Tokens are confirmed when the API finishes.`:snapshot.run.phase==='dream_review'?'Paused for your claim selection.':snapshot.run.phase==='verification_review'?'Verification finished. Review the findings, then finish or review gaps once.':snapshot.run.status==='running'?(snapshot.run.phase==='evidence'&&!Number(snapshot.run.auto_search)?'Paused for search direction. Continue the planned search or choose a path.':'Preparing the next specialist request…'):`${snapshot.run.status} · ${snapshot.run.stop_reason||'Saved findings are available.'}`;
+    document.querySelectorAll('[data-live-activity]').forEach(node=>{if(node.textContent!==activity)node.textContent=activity;});
+    if(!snapshot.usage)return;
+    const usage=snapshot.usage,project=usage.project;
+    document.querySelectorAll('[data-project-spend]').forEach(node=>node.textContent=usageLabel(project)+' · '+Number(project.total_tokens).toLocaleString()+' tokens'+(project.reserved_usd>0?' · $'+Number(project.reserved_usd).toFixed(4)+' reserved':''));
+    const total=root.querySelector('[data-usage-total]');total.textContent=`${usageLabel(project)} · ${project.input_tokens.toLocaleString()} input / ${project.output_tokens.toLocaleString()} output · $${Number(project.reserved_usd).toFixed(4)} reserved or uncertain risk · $${Number(usage.cap_usd).toFixed(2)} cap`;
+    const areas=root.querySelector('[data-usage-areas]');areas.replaceChildren();
+    for(const area of usage.areas)areas.append(element('p',`${area.title} · priority ${area.weight} · ${usageLabel(area.usage)} · ${area.usage.total_tokens.toLocaleString()} tokens`));
+    areas.append(element('p',`Shared planning, verification and Learn: ${usageLabel(usage.shared)} · ${usage.shared.total_tokens.toLocaleString()} tokens`));
+    const rows=root.querySelector('[data-usage-requests]');rows.replaceChildren();
+    for(const request of snapshot.requests){const row=element('tr');const label=element('th',(request.worker_role||request.kind)+(request.claim_id?' · claim #'+request.claim_id:' · shared'));label.scope='row';row.append(label);for(const value of [request.model||'Historical model unknown',request.token_input??'Unknown',request.cached_tokens??'Unknown',request.token_output??'Unknown',request.tool_calls??'Unknown',request.estimated_usd==null?'Unknown':'$'+Number(request.estimated_usd).toFixed(6),request.status])row.append(element('td',String(value)));rows.append(row);}
+    const groups=root.querySelector('[data-usage-groups]');groups.replaceChildren();
+    for(const [kind,buckets] of [['Phase',usage.phases],['Model',usage.models]])for(const [name,summary] of Object.entries(buckets))groups.append(element('p',`${kind}: ${name} · ${summary.total_tokens.toLocaleString()} tokens · ${usageLabel(summary)}`));
+  }
+  setInterval(()=>{if(!root)return;const now=Date.now(),started=Number(root.dataset.requestStarted||0)*1000,heartbeat=Number(root.dataset.providerHeartbeat||0)*1000,contact=Number(root.dataset.lastContact||0);const text=(started?'Request running '+Math.max(0,Math.floor((now-started)/1000))+'s. ':'')+(heartbeat?'Last provider activity '+Math.max(0,Math.floor((now-heartbeat)/1000))+'s ago. ':'')+(contact?'Progress connection checked '+Math.max(0,Math.floor((now-contact)/1000))+'s ago.':'Checking saved progress…');document.querySelectorAll('[data-live-clock]').forEach(node=>node.textContent=text);},1000);
+  function renderPaths(snapshot){
+    const container=root.querySelector('[data-research-paths]'),paths=snapshot.nodes.filter(n=>['dream_claim','question'].includes(n.type));
+    const stamp=JSON.stringify([paths,snapshot.run.status,snapshot.run.busy_since,snapshot.requests.map(q=>[q.id,q.status,q.token_input,q.token_output,q.estimated_usd])]);if(container.dataset.stamp===stamp||container.contains(document.activeElement))return;container.dataset.stamp=stamp;container.replaceChildren();
+    const editable=snapshot.run.status==='running'&&!snapshot.run.busy_since&&Number(snapshot.run.flow_version)===1;
+    for(const node of paths){const card=element('article');card.dataset.speculative=String(Number(node.speculative||0));card.append(element('h4',node.title),element('p',`Priority ${node.path_weight||50} · ${node.model_tier||'primary'} tier · ${Number(node.speculative)?'Untested idea — may be wrong.':node.weight_reason||'Priority is not evidence strength.'}`));const direct=snapshot.requests.filter(q=>Number(q.path_node_id)===Number(node.id));const tokenTotal=direct.reduce((sum,q)=>sum+Number(q.token_input||0)+Number(q.token_output||0),0),costTotal=direct.reduce((sum,q)=>sum+Number(q.estimated_usd||0),0),unknown=direct.filter(q=>q.estimated_usd==null&&q.status!=='pending').length;card.append(element('p',`Direct path searches: ${usd(costTotal)}${unknown?' + '+unknown+' unknown calls':''} · ${tokenTotal.toLocaleString()} tokens`));if(node.type==='question')card.append(element('p',node.content));
+      if(editable&&Number(node.selected??1)===1){const form=element('form',undefined,'path-priority-form');form.method='post';form.action=root.dataset.entry+'?view=research';form.dataset.researchAction='research_rank';for(const [name,value] of [['csrf',csrf()],['action','research_rank'],['run_id',snapshot.run.id],['node_id',node.id]]){const field=element('input');field.type='hidden';field.name=name;field.value=value;form.append(field);}const weightLabel=element('label','Priority weight'),weight=element('input');weight.type='number';weight.name='path_weight';weight.min=10;weight.max=100;weight.value=node.path_weight||50;weight.className='form-control';weightLabel.append(weight);const tierLabel=element('label','Model budget'),tier=element('select');tier.className='form-select';tier.name='model_tier';for(const [value,label] of [['primary','Automatic by priority'],['economy','Economy · GPT-4.1 mini']]){const option=element('option',label);option.value=value;option.selected=node.model_tier===value;tier.append(option);}tierLabel.append(tier);const button=element('button','Update path priority','btn btn-outline-primary');form.append(weightLabel,tierLabel,button);card.append(form);}container.append(card);}
+  }
   function renderLedger(snapshot) {
     const ledger=snapshot.ledger||{edges:[],passages:[],claim_versions:[],sources:[]};
-    const panel=root.querySelector('[data-evidence-ledger]');panel.hidden=!Number(snapshot.run.rigour_version)&&!ledger.edges.length;
+    const panel=root.querySelector('[data-evidence-ledger]');
+    const stamp=JSON.stringify([ledger,snapshot.nodes.filter(n=>n.type==='phase'&&['Verification','Repair'].includes(n.title)),snapshot.run.status,snapshot.run.phase,snapshot.run.evidence_frozen,snapshot.run.repair_count,snapshot.budget?.remaining]);
+    if(panel.dataset.ledgerStamp===stamp)return;panel.dataset.ledgerStamp=stamp;panel.hidden=!Number(snapshot.run.rigour_version)&&!ledger.edges.length;
     const entries=panel.querySelector('[data-ledger-entries]');entries.replaceChildren();
     const passageView=passage=>{const details=element('details',undefined,'evidence-passage');details.append(element('summary',`Passage #${passage.id} · ${passage.fetch_scope}`),element('blockquote',passage.exact_text),element('small',`${passage.locator||'No locator supplied'} · SHA-256 ${passage.content_hash}`));return details;};
     for(const edge of ledger.edges){
@@ -316,7 +348,7 @@ document.addEventListener('submit', event => {
   }
   function render(snapshot) {
     if (!root || !snapshot.run) return;
-    const serial = JSON.stringify(snapshot);
+    const serial = JSON.stringify({...snapshot,server_time:undefined});
     if (serial === lastSnapshot) return;
     lastSnapshot = serial;
     const run = snapshot.run;
@@ -325,6 +357,7 @@ document.addEventListener('submit', event => {
     const active = ['pending', 'running'].includes(run.status);
     const review = active && run.phase === 'dream_review';
     root.dataset.review = review ? '1' : '0';
+    root.dataset.autoSearch = String(run.auto_search||0);
     root.querySelector('[data-review-copy]').hidden = !review;
     root.querySelector('[data-continue-claims]').hidden = !review;
     renderClaims(snapshot, review);
@@ -382,7 +415,7 @@ document.addEventListener('submit', event => {
     root.querySelector('[data-learn-followups]').hidden = !snapshot.nodes.some(node => node.type === 'learn' && node.status === 'complete');
     root.querySelectorAll('[data-learn-followup]').forEach(button => button.disabled = active || pending || !hasSources);
     if (!active && !pending) { stepping = false; }
-    renderLedger(snapshot);
+    renderLedger(snapshot);renderInsight(snapshot);renderPaths(snapshot);
     root.dispatchEvent(new CustomEvent('research:snapshot', {detail:snapshot}));
   }
   async function send(form) {
@@ -400,7 +433,7 @@ document.addEventListener('submit', event => {
   }
   async function advance(manual = false) {
     if (!root || stepping || halted || root.dataset.status !== 'running' || root.dataset.busy === '1' || root.dataset.review === '1' || root.dataset.phase === 'verification_review') return;
-    if (!manual && root.dataset.phase === 'evidence') return;
+    if (!manual && root.dataset.phase === 'evidence' && root.dataset.autoSearch !== '1') return;
     const form = root.querySelector('[data-research-action=research_step]');
     stepping = true;
     try { render(await send(form)); }
@@ -418,7 +451,7 @@ document.addEventListener('submit', event => {
       const response = await fetch(url, {credentials: 'same-origin', headers: {'X-CSRF-Token': csrf(), 'Accept': 'application/json'}});
       if (!response.ok || !(response.headers.get('content-type') || '').includes('application/json')) throw new Error('Progress could not be verified. Sign in again if needed; no phase will be retried automatically.');
       const data = await response.json(); if (data.error) throw new Error(data.error);
-      render(data);
+      root.dataset.lastContact=String(Date.now());render(data);
       if (!halted) advance();
     } catch (failure) { halted = true; error(failure.message); }
     finally { polling = false; }
@@ -434,6 +467,7 @@ document.addEventListener('submit', event => {
     if (action === 'research_learn') { root.querySelectorAll('[data-learn-followup], [data-learn-submit]').forEach(button => button.disabled = true); error('Explaining collected evidence… No web search.'); root.querySelector('[data-stop-control]').hidden = false; }
     try {
       const snapshot = await send(form);
+      if(action==='research_settings'){location.reload();return;}
       if (action === 'research_start') {
         const url = new URL(form.getAttribute('action'), location.href); url.searchParams.set('project', snapshot.run.project_id); url.searchParams.set('run', snapshot.run.id); if(form.dataset.researchFromMap==='1')url.searchParams.set('map','1'); location.assign(url); return;
       }
@@ -500,9 +534,9 @@ document.addEventListener('submit', event => {
   const projectName=document.querySelector('.research-project-brief h2')?.textContent || 'Research map';
   const actions = el('div',undefined,'map-screen-actions');
   const screenButton = (label,action,style='btn-outline-secondary') => {const button=el('button',label,'btn '+style);button.type='button';button.dataset.mapScreenAction=action;return button;};
-  actions.append(screenButton('▶ Start research','start','btn-primary'),screenButton('■ Stop research','stop','btn-outline-danger'),screenButton('Continue planned search','step'),screenButton('Finish and freeze','finish','btn-primary'),screenButton('Review gaps once','repair'),screenButton('Details','details'),screenButton('List','list'));
+  actions.append(screenButton('▶ Start research','start','btn-primary'),screenButton('■ Stop research','stop','btn-outline-danger'),screenButton('Continue planned search','step'),screenButton('Finish and freeze','finish','btn-primary'),screenButton('Review gaps once','repair'),screenButton('Project menu','menu'),screenButton('Details','details'),screenButton('List','list'));
   actions.children[0].setAttribute('aria-label','Start research'); actions.children[1].setAttribute('aria-label','Stop research');
-  header.append(heading,actions);map.prepend(header);
+  header.append(heading,actions);const brief=el('section',undefined,'map-current-findings');const findings=el('ul');findings.dataset.currentFindings='1';findings.dataset.mapFindings='1';findings.tabIndex=0;findings.setAttribute('aria-label','Current findings');const live=el('p');live.dataset.liveActivity='1';live.setAttribute('role','status');const clock=el('small');clock.dataset.liveClock='1';clock.setAttribute('aria-live','off');const spend=el('p');spend.dataset.projectSpend='1';brief.append(findings,live,clock,spend);map.prepend(header,brief);
   const side=map.querySelector('[data-map-inspector]');side.hidden=true;
   let underlay=[],previousFocus=null,manualViewport=false;
   function showView(next) {
@@ -530,12 +564,13 @@ document.addEventListener('submit', event => {
     for(const action of ['finish','repair']){const button=actions.querySelector(`[data-map-screen-action=${action}]`);button.hidden=!verificationReview;button.disabled=root.querySelector(`[data-research-action=research_${action}] button`).disabled||pending;}
     map.querySelector('[data-map-evidence-help]').textContent=Number(snapshot.run.rigour_version)===1?'Choose a direction or continue the planned search. The reserved Challenge always seeks counter-evidence, including when redirected.':'Choose a direction or continue the planned search. Each uses a remaining slot; at most two searches per run.';
     heading.querySelector('strong').textContent=`${projectName} · #${snapshot.run.id}`;
-    heading.querySelector('span').textContent=`${reviewing()?'Review claims to continue':verificationReview?'Review verification findings · finish or review gaps':snapshot.run.status+' · '+snapshot.run.phase} · ${snapshot.run.token_input} in / ${snapshot.run.token_output} out tokens${snapshot.run.usage_unknown?' · some usage unknown':''}${snapshot.budget?' · '+snapshot.budget.remaining+'/10 requests remaining':''}`;
+    heading.querySelector('span').textContent=`${reviewing()?'Review claims to continue':verificationReview?'Review verification findings · finish or review gaps':snapshot.run.status+' · '+snapshot.run.phase} · ${snapshot.run.token_input} in / ${snapshot.run.token_output} out tokens${snapshot.run.usage_unknown?' · some usage unknown':''}${snapshot.budget?' · '+snapshot.budget.remaining+'/'+(snapshot.budget.limit||10)+' requests remaining':''}`;
   }
   function details(open){side.hidden=!open;map.classList.toggle('map-details-open',open);actions.querySelector('[data-map-screen-action=details]').setAttribute('aria-expanded',String(open));}
   header.addEventListener('click',event=>{
     const action=event.target.closest('[data-map-screen-action]')?.dataset.mapScreenAction;if(!action)return;
     if(action==='list'){showView('list');return;}
+    if(action==='menu'){showView('list');const menu=document.querySelector('[data-project-menu]');menu.open=true;menu.querySelector('summary').focus();menu.scrollIntoView({block:'start'});return;}
     if(action==='details'){details(side.hidden);return;}
     const form=root.querySelector(`[data-research-action=research_${action}]`);
     if(action==='start'&&form)form.dataset.researchFromMap='1';
@@ -616,11 +651,13 @@ document.addEventListener('submit', event => {
         const button=el('button',undefined,'map-node-button'); button.type='button'; button.append(el('span','','map-node-type'),el('strong','','map-node-title'),el('span','','map-node-status')); card.append(button); world.append(card);
       }
       card.dataset.type=node.type; card.dataset.status=node.status; card.dataset.path=String(active.has(node.id));
+      const priority=Number(node.path_weight||50);card.dataset.priority=priority>=75?'high':priority<40?'low':'normal';card.dataset.speculative=String(Number(node.speculative||0));
       const button=card.querySelector('button'); button.setAttribute('aria-pressed',String(node.id===selected));
       button.querySelector('.map-node-type').textContent=node.type.replaceAll('_',' ') + (collapsed.has(node.id)?' · collapsed':'');
       button.querySelector('.map-node-title').textContent=node.title;
       const source=snapshot.sources.find(source => sourceIds(node).includes(Number(source.id)));
       button.querySelector('.map-node-status').textContent=source?`${source.domain} · ${links(node).map(id=>'claim #'+id).join(', ')}`:`${node.status}${node.confidence?' · '+node.confidence+' prior confidence':''}`;
+      if(['dream_claim','question'].includes(node.type))button.querySelector('.map-node-status').textContent+=(node.type==='question'?' · untested':'')+' · priority '+priority;
       if (node.type==='dream_claim' && !card.querySelector('[data-map-claim]')) {
         const label=el('label',undefined,'map-node-check'),input=el('input');input.type='checkbox';input.dataset.mapClaim=node.id;
         label.append(input,document.createTextNode(`Keep claim #${node.id}`));card.append(label);
@@ -642,15 +679,17 @@ document.addEventListener('submit', event => {
     width=Math.max(...visible.map(node=>node.x+236));height=byId.get('root').subtree+32;
     world.style.width=`${width}px`;world.style.height=`${height}px`;
     const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('width',width);svg.setAttribute('height',height);svg.setAttribute('aria-hidden','true');
-    for(const node of visible){const parent=byId.get(node.parent_id);if(!parent||!visited.has(parent.id))continue;const line=document.createElementNS(svg.namespaceURI,'path'),x=parent.x+220,y=parent.y+parent.h/2;line.setAttribute('d',`M${x},${y} C${x+12},${y} ${node.x-12},${node.y+node.h/2} ${node.x},${node.y+node.h/2}`);line.setAttribute('class',active.has(node.id)&&active.has(parent.id)?'map-edge map-edge-active':'map-edge');svg.append(line);}
+    for(const node of visible){const parent=byId.get(node.parent_id);if(!parent||!visited.has(parent.id))continue;const line=document.createElementNS(svg.namespaceURI,'path'),x=parent.x+220,y=parent.y+parent.h/2;line.setAttribute('d',`M${x},${y} C${x+12},${y} ${node.x-12},${node.y+node.h/2} ${node.x},${node.y+node.h/2}`);line.style.strokeWidth=String(Math.max(1,Math.min(4,Number(node.path_weight||50)/25)));line.setAttribute('class',active.has(node.id)&&active.has(parent.id)?'map-edge map-edge-active':'map-edge');svg.append(line);}
     world.prepend(svg);setScale(scale);
   }
   function updateInspector() {
     const node=nodes.find(node=>node.id===selected)||nodes[0];
-    const stamp=JSON.stringify([node,snapshot.sources,snapshot.ledger,selectedSources.size,snapshot.run.status,snapshot.run.phase,snapshot.run.busy_since,snapshot.budget]);
+    const stamp=JSON.stringify([node,snapshot.sources,snapshot.ledger,selectedSources.size,snapshot.run.status,snapshot.run.phase,snapshot.run.busy_since,snapshot.budget,snapshot.requests]);
     if (inspector.dataset.stamp!==stamp) {
       const title=el('h3',node.title),detail=el('p',`${node.type.replaceAll('_',' ')} · ${node.status}`,'map-inspector-status');
       inspector.replaceChildren(title,detail,el('p',node.dead_end_reason||node.content||'No details saved yet.','map-inspector-text'));
+      if(['dream_claim','question'].includes(node.type))inspector.append(el('p',`Priority ${node.path_weight||50} · ${node.model_tier||'primary'} model tier. ${node.weight_reason||'Priority is separate from evidence strength.'}${Number(node.speculative)?' Untested idea — may be wrong.':''}`));
+      const pathRequests=snapshot.requests.filter(q=>Number(q.path_node_id)===Number(node.id));if(pathRequests.length){const input=pathRequests.reduce((sum,q)=>sum+Number(q.token_input||0),0),output=pathRequests.reduce((sum,q)=>sum+Number(q.token_output||0),0),cost=pathRequests.reduce((sum,q)=>sum+Number(q.estimated_usd||0),0);inspector.append(el('p',`${input.toLocaleString()} input / ${output.toLocaleString()} output tokens · $${cost.toFixed(6)} USD known estimate; unknown calls remain in the usage ledger.`));}
       const linked=links(node);if(linked.length)inspector.append(el('p',`Linked claims: ${linked.map(id=>'#'+id).join(', ')}`));
       for(const source of snapshot.sources.filter(source=>sourceIds(node).includes(Number(source.id))&&safe(source.url))){
         const card=el('article',undefined,'research-source'),link=el('a',source.url);link.href=source.url;link.target='_blank';link.rel='noopener noreferrer';
@@ -662,9 +701,12 @@ document.addEventListener('submit', event => {
     const mapLedger=map.querySelector('[data-map-ledger]');mapLedger.replaceChildren();
     for(const saved of snapshot.nodes.filter(n=>n.type==='phase'&&['Verification','Repair'].includes(n.title))){const record=data(saved);const block=el('details');block.append(el('summary',saved.title+' findings'));for(const defect of record.defects||[])block.append(el('p',defect.severity+' · '+defect.kind+' · '+defect.description));for(const check of record.calculations||[])block.append(el('p',`Arithmetic ${check.operation}: ${check.arithmetic_correct?'passed':'failed'} on supplied operands; source accuracy remains unverified.`));if(saved.status==='complete'&&!(record.defects||[]).length)block.append(el('p','No defects reported by this grouped model check. This is not independent source verification.'));mapLedger.append(block);}
     if(snapshot.run.phase==='verification_review'&&snapshot.run.status==='running'){for(const [action,label] of [['research_finish','Finish and freeze evidence'],['research_repair','Review high-impact gaps once']]){const button=el('button',label,'btn btn-primary');button.type='button';const original=root.querySelector(`[data-research-action=${action}] button`);button.disabled=original.disabled;button.addEventListener('click',()=>original.form.requestSubmit());mapLedger.append(button);}}
+    const rank=map.querySelector('[data-map-rank]'),pathNode=['dream_claim','question'].includes(node.type);
+    rank.hidden=!pathNode||Number(node.selected??1)!==1||snapshot.run.status!=='running'||!!snapshot.run.busy_since||!Number(snapshot.run.flow_version);
+    const rankStamp=JSON.stringify([selected,node.path_weight,node.model_tier]);if(rank.dataset.stamp!==rankStamp&&!rank.contains(document.activeElement)){rank.querySelector('[name=node_id]').value=node.id;rank.querySelector('[name=path_weight]').value=node.path_weight||50;rank.querySelector('[name=model_tier]').value=node.model_tier||'primary';rank.dataset.stamp=rankStamp;}
     const linked=links(node),busy=snapshot.run.busy_since!==null||snapshot.requests.some(request=>request.status==='pending');
     const capacity=root.dataset.connected!=='0'&&(!snapshot.budget||snapshot.budget.remaining>0);
-    const focusable=['dream_claim','dead_end','synthesis'].includes(node.type) && linked.length && linked.every(id=>nodes.some(claim=>claim.id===String(id)&&Number(claim.selected??1)===1)) && (node.type!=='synthesis'||node.title.toLowerCase().startsWith('open'));
+    const focusable=['dream_claim','question','dead_end','synthesis'].includes(node.type) && linked.length && linked.every(id=>nodes.some(claim=>claim.id===String(id)&&Number(claim.selected??1)===1)) && (node.type!=='synthesis'||node.title.toLowerCase().startsWith('open'));
     const canSearch=focusable&&capacity&&!busy&&snapshot.run.status==='running'&&snapshot.run.phase==='evidence';
     map.querySelector('[data-map-search]').disabled=!canSearch;
     map.querySelector('[name=focus_node_id]').value=canSearch?node.id:'';
@@ -1297,6 +1339,42 @@ body.research-map-open { overflow:hidden; }
 .matrix-relation { margin-top:.4rem; overflow-wrap:anywhere; }
 .matrix-relation blockquote { margin:.5rem 0; white-space:pre-wrap; }
 [data-claim-matrix] td > a { display:inline-block; min-height:24px; padding:4px 0; }
+.research-now { background:#f4f8fc; border:1px solid #cbd9e5; border-radius:12px; padding:18px 22px; margin-bottom:12px; }
+.research-now-heading { display:flex; justify-content:space-between; gap:16px; align-items:start; flex-wrap:wrap; }
+.research-now h2 { margin:4px 0 10px; font-size:1.25rem; }
+.research-now [data-project-spend] { color:#254b68; font-weight:600; font-size:.85rem; }
+[data-current-findings] { margin:8px 0; padding-left:22px; line-height:1.55; }
+[data-current-findings] li { margin:5px 0; overflow-wrap:anywhere; }
+.research-live { color:#244d4b; border-top:1px solid #cbd9e5; padding-top:9px; font-weight:600; }
+[data-live-clock] { color:#4a5565; display:block; font-size:.75rem; }
+.research-project-menu { border:1px solid #d8d3e4; border-radius:9px; margin-bottom:14px; padding:0 14px; }
+.research-project-menu > summary { padding:12px 0; color:#473367; font-size:.9rem; font-weight:600; min-height:44px; }
+.research-settings { display:grid; gap:9px; max-width:760px; padding:14px 0; }
+.research-settings p { color:#48546a; font-size:.85rem; }
+.research-settings .form-check { display:flex; align-items:center; gap:10px; min-height:32px; }
+.research-usage, .research-paths { padding:12px; margin-bottom:14px; border:1px solid #cbd9e5; border-radius:9px; }
+.research-usage summary, .research-paths summary { color:#473367; font-size:.85rem; font-weight:600; min-height:28px; }
+.usage-table-scroll { overflow:auto; }
+.usage-table-scroll .table { min-width:780px; }
+[data-usage-areas] { display:grid; gap:8px; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); }
+[data-usage-areas] p { padding:10px; background:#eef3f8; border-radius:8px; margin:0; }
+.map-current-findings { padding:5px 0 8px; flex-shrink:0; border-bottom:1px solid #d8d3e4; font-size:.75rem; }
+.map-current-findings ul { max-height:76px; overflow:auto; margin:2px 0 5px; }
+.map-current-findings li { margin:2px 0; }
+.map-current-findings p { margin:3px 0; }
+.map-current-findings [data-project-spend] { font-weight:600; color:#254b68; }
+.map-node[data-priority=high] { border-left:5px solid #21704e; }
+.map-node[data-priority=low] { border-left:3px solid #667487; background:#f1f3f6; }
+.map-node[data-speculative="1"] { border:2px dashed #775a9d; background:#f5effc; }
+[data-map-rank] { display:grid; gap:8px; border-block:1px solid #d8d3e4; padding:12px 0; margin:10px 0; }
+[data-research-paths] article { border-left:4px solid #617e9a; padding:10px; margin:8px 0; background:#f4f7fb; }
+[data-research-paths] article[data-speculative="1"] { border-left:4px dashed #775a9d; }
+.path-priority-form { display:flex; align-items:end; gap:8px; flex-wrap:wrap; }
+.path-priority-form input[type=number] { width:95px; }
+.project-spend { color:#254b68; font-weight:600; font-size:.85rem; margin-top:10px; }
+@media(max-width:600px) { .research-now { padding:12px; } .research-now-heading { gap:4px; } [data-usage-areas] { grid-template-columns:1fr; } .map-current-findings ul { max-height:56px; } }
+.usage-table-scroll tbody th { color:#465165; font-size:.8rem; font-weight:600; text-transform:none; }
+.research-usage a { text-decoration:underline; text-underline-offset:2px; }
 
 AICONTROL_UI_CSS;
     }

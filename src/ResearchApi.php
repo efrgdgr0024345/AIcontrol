@@ -36,6 +36,13 @@ final class ResearchApi
                 }
                 $engine->continueRun($id,$selected);
             }
+            elseif($action==='research_settings'){
+                $cap=filter_var(self::input('spend_cap_usd'),FILTER_VALIDATE_FLOAT);$growth=filter_var(self::input('growth_searches'),FILTER_VALIDATE_INT);
+                if($cap===false||$growth===false)throw new \RuntimeException('Invalid research settings.');
+                $project=(int)self::input('project_id');$engine->configureProject($project,self::input('primary_model'),(float)$cap,self::input('auto_search')==='1',(int)$growth);
+                if($json){self::json(['saved'=>true]);return;}header('Location: '.$entry.'?view=research&project='.$project,true,303);return;
+            }
+            elseif($action==='research_rank'){$engine->rankPath($id,(int)self::input('node_id'),(int)self::input('path_weight'),self::input('model_tier'));}
             elseif($action==='research_step') { if((isset($_POST['focus_node_id'])&&!is_string($_POST['focus_node_id']))||(isset($_POST['focus_note'])&&!is_string($_POST['focus_note'])))throw new \RuntimeException('Invalid focus note.');
                 $focus=self::input('focus_node_id');
                 if($focus!==''&&!preg_match('/^[1-9][0-9]{0,9}$/D',$focus))throw new \RuntimeException('Invalid focus note.');
@@ -52,7 +59,7 @@ final class ResearchApi
             header('Location: '.$entry.'?view=research&project='.$snapshot['run']['project_id'].'&run='.$id,true,303);
         } catch(Throwable $e) {
             http_response_code(422);
-            $safe=['At least six requests must remain to start a verified investigation.','Invalid focus note.','Focus requires an idle Evidence phase with a remaining search.','Choose a selected claim, open question or dead end from this run.','Select valid source cards from this run.','Select at least one valid claim.','This run is not awaiting claim review.','Connect OpenAI in Admin first.','Invalid model configuration.','Research limit reached: ten provider requests per hour.','Research is already active. Stop or resolve it before starting another request.','Research run not found.','Research project not found.','Collect source cards before using Learn.','Invalid Learn action or question.'];
+            $safe=['Project spend cap reached. Saved findings are retained; adjust the cap in Project menu to continue.','Current pricing is unavailable for this model. Choose a priced research model.','Choose a priced model, a USD cap from 0.05 to 1000, and zero to three growth searches.','Choose an idle path, weight 10–100 and a valid model tier.','At least six requests must remain to start a verified investigation.','Invalid focus note.','Focus requires an idle Evidence phase with a remaining search.','Choose a selected claim, open question or dead end from this run.','Select valid source cards from this run.','Select at least one valid claim.','This run is not awaiting claim review.','Connect OpenAI in Admin first.','Invalid model configuration.','Research hourly request limit reached.','Research is already active. Stop or resolve it before starting another request.','Research run not found.','Research project not found.','Collect source cards before using Learn.','Invalid Learn action or question.'];
             $message=in_array($e->getMessage(),$safe,true)?$e->getMessage():'Research request did not complete. Inspect its saved status before starting another request.';
             if($json) { self::json(['error'=>$message,'budget'=>isset($engine)?$engine->requestBudget():null]);return; }
             header('Content-Type: text/html; charset=utf-8');

@@ -4,7 +4,7 @@ require __DIR__.'/investigation_fixtures.php';
 use AIcontrol\InvestigationWire as Wire;
 function prior():array{return ['core_claims'=>[['claim'=>'First fixture claim','confidence'=>'medium','uncertainty'=>'Local context','verify'=>'Find measurements','priority'=>'high'],['claim'=>'Second fixture claim','confidence'=>'low','uncertainty'=>'Population','verify'=>'Compare primary sources','priority'=>'normal']],'competing_angles'=>['Alternative explanation'],'least_confident'=>'Transfer to this setting','background_assumptions'=>['Comparable populations']];}
 function rigourFixture(int $normalSearches=1):array{
- [$dir,$engine,$old,$db]=fixture();$run=$engine->createRun(1);Wire::$handler=fn($body)=>reply(json_encode(prior()));$snapshot=$engine->step($run);$engine->continueRun($run);$claims=array_values(array_filter($snapshot['nodes'],fn($n)=>$n['type']==='dream_claim'));$claim=(int)$claims[0]['id'];
+ [$dir,$engine,$old,$db]=fixture();$run=$engine->createRun(1);$db->exec("UPDATE research_runs SET flow_version=0,auto_search=0,growth_remaining=0 WHERE id=$run");Wire::$handler=fn($body)=>reply(json_encode(prior()));$snapshot=$engine->step($run);$engine->continueRun($run);$claims=array_values(array_filter($snapshot['nodes'],fn($n)=>$n['type']==='dream_claim'));$claim=(int)$claims[0]['id'];
  Wire::$handler=fn($body)=>reply(json_encode(['steps'=>array_fill(0,$normalSearches,['claim_id'=>$claim,'query'=>'Find supporting context']),'challenge'=>['claim_id'=>$claim,'query'=>'Seek counter-evidence'] ]));$snapshot=$engine->step($run);
  return [$dir,$engine,$old,$db,$run,$claim,$claims];
 }

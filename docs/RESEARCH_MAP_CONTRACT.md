@@ -85,3 +85,39 @@ completed tool event can populate them. URL-only responses stay citation-only;
 no page fetch or model-constructed quote is implied. Frozen partial interrupted
 runs remain inspectable and can supply evidence-only Learn, with verification
 skipped shown. No data or historical findings are removed by freeze or repair.
+
+## Usage and growing-question flow
+
+New snapshots add `usage` (project/run/shared/areas/phases/models/cap/pricing),
+`findings` (status/text/reason/provisional), and `server_time`. Request rows expose
+model, worker_role, claim_id, path_node_id, billing_json, estimated_usd,
+reserved_usd, cached_tokens, tool_calls, activity, heartbeat_at, output_chars and
+finished_at. Model usage is returned by the API; dollar values are dated local
+estimates, not invoice facts. Null usage/cost remains unknown.
+
+New runs set `flow_version=1`, persisted `auto_search`, `growth_remaining` and
+`explore_count`. Existing runs default to flow zero. The additional `exploration`
+phase creates bounded `question` nodes under selected claims; it does not create
+verified claims or passages. Questions carry `speculative=1`, path_weight,
+model_tier and a falsification test. Every two searches can trigger a creative
+pass, with at most two passes/twelve questions/six total searches. Challenge
+remains reserved; verification capacity is kept before optional expansion.
+
+`research_settings`: project_id, primary_model (GPT-4.1 or mini), spend_cap_usd
+(0.05–1000), auto_search, growth_searches (0–3). Settings are authenticated/CSRF
+protected; primary/pace applies to new runs and cap is immediate. It returns
+`{saved:true}` for JS, or redirects for no-JS forms.
+`research_rank`: run_id, node_id, path_weight (10–100), model_tier
+(primary/economy). Requires an idle active unfrozen selected claim/question.
+Changes record an audit row and consume no provider call. Question focus is now
+allowed, always resolving to its original selected claim. Source/ledger integrity
+rules and human initial review remain authoritative.
+
+Findings/activity/spend replace the top setup area; Project menu reveals setup
+and settings. Map has the same bulletin and menu access. Priority colours/line
+widths have text labels and are not evidence strength. Purple/dashed questions
+are explicitly untested. The usage panel separates shared overhead from path
+spend. A Responses SSE reader persists real activity, visible response-character
+counts and final usage; status polls remain session-free during provider I/O.
+The browser ignores server_time-only changes when preserving forms/details.
+No fake progress percentage/token ticker or private reasoning is exposed.

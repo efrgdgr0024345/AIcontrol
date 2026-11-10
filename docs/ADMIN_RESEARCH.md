@@ -256,3 +256,82 @@ checks include Stop during verifier I/O, repair and finish. Browser fixtures
 exercise passage/edge filters, map controls, matrix excerpts, no-JS inspection,
 actual freeze/export endpoints and mobile/accessibility. All provider traffic in
 these tests is synthetic; no live billed provider or cPanel activation is claimed.
+
+## Usage, project budgets and faster research (current release)
+
+The current default shared research ceiling is **30 calls/hour**, authorised by
+the owner. This supersedes the historical ten-call description above. Task agent
+requests keep their existing separate three-call limit. Existing runs preserve
+the old phase behavior; only newly created flow-enabled investigations autoplay
+ranked Evidence searches after human review. Start still needs six calls available.
+
+Open **Project menu** to choose the primary model, project lifetime tracked spend
+cap (default **$5 USD**), autoplay and zero to three growth searches. Stronger
+high-impact paths and verifier use GPT-4.1 by default; economy work uses mini and
+creative idea generation uses nano without search tools. Environment primary-model
+overrides remain authoritative. Every model choice is recorded on its request.
+One active specialist call remains the shared-host execution model. It does not
+start background jobs or parallel workers. Stop remains reachable in Map/List.
+
+Every two completed searches, capacity permitting, a bounded divergent pass
+proposes up to six alternative, falsifiable questions using the current findings.
+No more than two passes, twelve new question nodes and six searches occur in a
+run. Up to three new questions become additional searches, ordered by priority.
+The original Challenge slot remains mandatory and is prioritised after at most
+two normal searches. Optional expansion reserves remaining calls for extraction
+and verification. Ideas are labelled **untested / may be wrong**, purple/dashed,
+and cannot acquire claim assessments without being original selected claims.
+
+Priority is a 10–100 attention weight with textual labels, colour and connector
+width. It is separate from evidence strength and model confidence. In the map
+inspector or Research paths, change an idle active path's weight/model tier.
+Failed searches can reduce priority; verifier assessments update it with a
+recorded reason. Economy paths remain visible and can continue with mini.
+Frozen/stopped runs cannot be reranked into active research.
+
+The new UsageMeter stores returned input, cached-input, output and reasoning
+counts, completed search calls, returned model, response ID and a pricing snapshot.
+Official model prices checked **2026-11-10**, USD per million tokens:
+
+| Model | Input | Cached input | Output |
+|---|---:|---:|---:|
+| GPT-4.1 | $2.00 | $0.50 | $8.00 |
+| GPT-4.1 mini | $0.40 | $0.10 | $1.60 |
+| GPT-4.1 nano | $0.10 | $0.025 | $0.40 |
+
+Sources: https://developers.openai.com/api/docs/pricing and the corresponding
+`/api/docs/models/gpt-4.1`, `gpt-4.1-mini`, `gpt-4.1-nano` pages. The app uses the
+non-reasoning **web_search_preview** tool: **$0.025 per completed call**, with
+search-content tokens free under that tariff. The separate non-preview 8,000-token
+mini search-content block is not applied. Changing the tool requires revisiting
+the tariff. Rates are release-maintained and dated, not scraped on every call.
+Each request saves its rate snapshot so future price changes cannot reprice history.
+
+Calls explicitly request the default service tier to match the saved standard
+rates. Costs are **estimates from API usage**, not API-returned invoice amounts. Reasoning
+is already included in output; cached input is a subset of input. Neither is
+added twice. Unrecognised models/tiers, impossible cache counts, missing usage and
+failed/truncated streams remain unpriced/unknown. Old usage is not retroactively
+invented. A known subtotal is shown alongside unknown calls and reserved risk.
+
+The tracked cap reserves a conservative upper bound before dispatch (request
+bytes plus overhead, maximum output and maximum preview-tool calls). Returned
+confirmed usage replaces the reservation. Unknown outcomes retain the reservation
+to avoid hiding risk. A cap rejection is an undispatched zero-usage attempt and
+ends active research honestly; it does not retry. The cap excludes historical
+unpriced requests, actual account credits/discounts, taxes and invoice adjustments.
+
+Tokens & spend exposes project/run totals, per-claim areas, phases, models and each
+request. Search costs belong to the requested path/claim. Shared planning, question
+generation, mapping, verification and Learn remain a distinct overhead bucket;
+they are not counted once for every claim. Legacy simple chat is included in the
+project total. Coding-task projects and their runs also show returned-token
+estimates. Markdown exports retain the research request ledger and price source.
+
+The top now presents current findings/gaps, provisional recent search observations,
+project spend and activity. Setup/projects/history navigation is behind Project
+menu. Responses SSE events report accepted/searching/receiving/validating states
+and actual visible output-character counts. The UI polls authenticated saved
+state, shows elapsed request time and the age of provider activity/poll contact.
+It does not claim token counts before the final usage arrives or expose private
+reasoning. A truncated stream is uncertain and is not automatically retried.
