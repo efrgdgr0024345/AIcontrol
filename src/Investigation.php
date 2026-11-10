@@ -193,7 +193,10 @@ final class Investigation
         $nodes=$this->rows('SELECT * FROM research_nodes WHERE run_id=? ORDER BY id',[$run]);$byId=[];
         foreach($nodes as $row)$byId[(int)$row['id']]=$row;
         $target=$byId[$node]??null;
-        if(!$target||!in_array($target['type'],['dream_claim','question','dead_end','synthesis'],true)||($target['type']==='synthesis'&&!str_starts_with(strtolower($target['title']),'open')))throw new RuntimeException('Choose a selected claim, open question or dead end from this run.');
+        if(!$target||!in_array($target['type'],['dream_claim','question','dead_end','synthesis'],true))throw new RuntimeException('Choose a selected claim, open question or dead end from this run.');
+        $data=json_decode($target['data_json']??'{}',true)??[];
+        if(($target['type']==='question'&&(int)$target['selected']!==1)
+            ||($target['type']==='synthesis'&&(isset($data['verdict'])?$data['verdict']!=='open':!str_starts_with(strtolower($target['title']),'open'))))throw new RuntimeException('Choose a selected claim, open question or dead end from this run.');
         $claim=null;$ancestor=$node;$seen=[];
         while(isset($byId[$ancestor])&&!isset($seen[$ancestor])){
             $seen[$ancestor]=true;if($byId[$ancestor]['type']==='dream_claim'){$claim=$byId[$ancestor];break;}$ancestor=(int)$byId[$ancestor]['parent_id'];
@@ -352,8 +355,11 @@ final class Investigation
             $focus=null;
             if($focusNode!==null){
                 if($run['status']!=='running'||$run['phase']!=='evidence'||$run['busy']!==null)throw new RuntimeException('Focus requires an idle Evidence phase with a remaining search.');
+                if($this->rows("SELECT id FROM research_requests WHERE status='pending' LIMIT 1")
+                    ||$this->rows("SELECT id FROM research_messages WHERE role='assistant' AND status='pending' LIMIT 1"))throw new RuntimeException('Research is already active. Stop or resolve it before starting another request.');
                 $plans=$this->rows("SELECT * FROM research_nodes WHERE run_id=? AND type='plan_step' ORDER BY id",[$id]);
-                if((int)$run['evidence_index']>=min((int)$run['flow_version']?6:((int)$run['rigour_version']===1?3:2),count($plans)))throw new RuntimeException('Focus requires an idle Evidence phase with a remaining search.');
+                if((int)$run['evidence_index']>=min((int)$run['flow_version']?6:((int)$run['rigour_version']===1?3:2),count($plans))
+                    ||((int)$run['flow_version']&&!array_filter($plans,static fn(array $plan):bool=>$plan['status']==='pending')))throw new RuntimeException('Focus requires an idle Evidence phase with a remaining search.');
                 $focus=$this->focus($id,$focusNode,$note);
             }
             if ($run['status']!=='running' || $run['busy']!==null || in_array($run['phase'],['dream_review','verification_review'],true)) { return null; }

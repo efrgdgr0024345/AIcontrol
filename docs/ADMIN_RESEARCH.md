@@ -176,29 +176,35 @@ are summarized in the claim matrix; excluded claims stay visible, and dead ends
 remain in the claim's history. The full tree, source library and Markdown export
 retain the detailed record. Old runs remain readable after additive migration.
 
-### Steerable mind map
+### Steerable research Map
 
-Desktop investigations open in Map; List remains available and is the default on
-mobile or without JavaScript. Node buttons reveal full details and citation URLs
-in the inspector. Scroll to pan, zoom or Fit (with a readable minimum zoom), and
-collapse branches. Filters focus on claims, sources, dead ends or open findings.
-Map claim checkboxes mirror the list's review selection; Continue still freezes
-that selection before planning. The outcome strip jumps to a verdict and its
-claim/source path. Filters and collapse never delete saved nodes.
+Desktop investigations open in the stable Map; List remains available and is the
+default on mobile and without JavaScript. Map card buttons open saved details
+and real citation URLs in an optional inspector. Scroll to pan, zoom or Fit.
+**Fit** changes only the camera; **Reset layout** deliberately clears cached
+positions. Filters and branch collapse change the local projection and never
+delete notebook or ledger records. See the current reliability section below.
 
-Before each Evidence search, choose a selected claim or linked dead end and use
-**Search this direction**, optionally with a short note. This replaces the next
-planned slot; it does not add searches. The original plan is labelled incomplete
-when redirected so its query is not falsely reported as executed. Alternatively,
-use **Continue next phase** to run the planned search. Focus is disabled outside
-an idle Evidence phase, including completed runs and unlinked open questions.
-A completed investigation does not start another cycle from a map click.
+Map claim checkboxes mirror the List review selection; Continue still freezes
+it before planning. Before an Evidence search, choose a selected claim, its
+grown question or linked dead end/open assessment and use **Search this
+direction**, optionally with a short note. This replaces the next planned slot
+and does not add searches. The redirected plan records that its original query
+was not executed. **Continue next phase** runs the planned slot without a focus
+override; new flow-enabled runs can use their persisted autoplay preference.
 
-Select citation source nodes to Learn from those cards only, once the run is
-idle. The inspector also offers the current source's Learn and copy-link actions.
-No vault notes or Dream hypotheses are sent as Learn context. The ordinary Learn
-form continues to use all collected cards. See RESEARCH_MAP_CONTRACT.md for the
-status fields, request contracts and a separate live-host validation checklist.
+Search this direction is available only during running, idle Evidence with a
+remaining planned slot and request/project capacity. Outside that window the
+inspector explains the blocking condition. The server rejects busy/pending
+requests, foreign or synthetic IDs, excluded claims and unlinked paths. A map
+click cannot restart a completed investigation. Focused searches remain parented to the chosen real target; resulting dead
+ends are their children. Original claim attribution is retained.
+
+Select citation source cards to Learn from those sources only once eligible
+and idle. The inspector offers source selection and copy-link actions; the
+ordinary Learn form can continue to use all collected cards. No vault notes or
+Dream hypotheses become Learn context. RESEARCH_MAP_CONTRACT.md documents the
+status projection and authenticated request contracts.
 
 ## Evidence ledger and verification review
 
@@ -243,7 +249,8 @@ explanations from the auditable assessment history.
 Map/List expose typed relations, passage text/locator/hash, assessment history
 and retained verification findings. The claim matrix uses the latest assessment
 and offers expandable relations/passages; earlier versions remain in history.
-Map adds Passages / Edges filters and visible header Finish / Review gaps controls.
+Map adds Passages / Edges filters; Finish / Review gaps remain available in
+controls and the inspector at verification review.
 Challenge slots/searches have distinct titles. No-JS forms retain phase, review,
 repair, finish, Stop, Learn and export. Markdown includes ledger, source URLs,
 passages, versions, defects and arithmetic checks.
@@ -336,23 +343,58 @@ state, shows elapsed request time and the age of provider activity/poll contact.
 It does not claim token counts before the final usage arrives or expose private
 reasoning. A truncated stream is uncertain and is not automatically retried.
 
-## Compact concept map
+## Stable concept Map and reliability
 
-The map overview now shows concepts and untested questions in two dimensions.
-Technical planning/search/phase boxes have moved into the concept's saved history
-and the full List. Active concepts show a textual planning/researching/exploring/
-checking state and a gentle coloured pulse from actual pending requests. Failed
-or interrupted investigations do not pulse.
+The Map is a read-mostly projection of the durable run, notebook and ledger;
+List remains the complete chronology. The default canvas contains a root,
+selected original concepts and their untested grown questions. All original
+claims remain selectable during initial review; excluded claims remain saved
+in List/history after Continue. Technical phase, planning, search, synthesis
+and Learn records stay in List; linked planning/search/findings history is
+also available from the concept inspector. There is no Show process overlay.
+Sources/Passages/Edges/Dead ends/Open filters retain concept context and show
+an explicit empty state when matching saved evidence does not exist. Old runs
+with absent or partial ledger arrays remain readable.
 
-The top sentence is a local reading queue of concise existing public ideas and
-findings, displayed one at a time for 5–10 seconds. Click the sentence to pause or
-resume. Idea history in Map controls contains the backlog. This condensation
-creates no additional provider calls and does not promote an untested idea into
-a fact. Reduced-motion preference disables animations.
+A structural layout replaces the force simulation. In-memory position memory
+lasts for the page/run, including cards hidden by filters or collapse. New cards
+receive positions and a bounded collision pass; existing positions stay fixed.
+**Reset layout** intentionally clears that cache. **Fit**, zoom and pan change
+the camera only. Idle/token/activity polls do not lay out the graph; viewport
+resize is debounced. `?map_debug=1` enables console graph-count, timing and reuse diagnostics
+to help detect regressions. The structural renderer is the only Map engine;
+`?map=stable` reaches the same path. The performance target is below 50 ms for projection
+plus layout on representative two-to-five-claim fixtures.
 
-Hover, click, tap or keyboard-activate the small Map controls handle to reveal
-Start/Stop, filters, Fit/zoom, List, usage and project settings. Alt+S also stops
-research. Error and verification-review notices remain visible with controls
-collapsed. Selecting a concept opens an optional overlay drawer with its stage
-history, sources, ranking and applicable actions; close it to reveal the whole
-canvas. Initial claim selection stays in a compact floating review bar.
+The optional inspector shows title/status/full saved text, concept history,
+real source URLs, exact passages with locators and edge relation/rationale.
+It offers Jump to a persisted List entry when available, copy link, source
+selection, eligible Learn/focus and
+path-ranking actions. Synthetic passage/edge/source display IDs are never
+submitted as focus targets. Shared-source dashed links only identify a common
+citation; they do not add an evidence edge or imply independence.
+
+Actual pending requests produce a static stage badge on their owning concept;
+shared work can mark selected concepts. There is no continual activity pulse,
+and failed/stopped/uncertain runs never appear to be working. Text labels
+identify planning, research, discovery and checking without exposing private
+reasoning. Priority and speculative status remain separate from evidence.
+
+The compact top sentence remains a local reading queue of public ideas and
+findings for 5–10 seconds each. Click it to pause/resume; Idea history holds the
+backlog. It makes no provider request and preserves provisional/untested labels.
+Sentence fades do not resize the graph or steal keyboard/form focus. Hidden
+tabs preserve reading time; reduced-motion preference uses static transitions.
+
+Hover, click/tap or keyboard-activate Map controls for Start/Stop, filters,
+Fit/Reset/zoom, List, tokens/spend, Idea history and Project menu. Alt+S submits
+the existing Stop action. Error and verification-review notices remain visible
+with controls collapsed. Details overlays the canvas; closing it returns space
+to the data. Escape closes overlays before returning to List. Review controls
+stay synchronized with List, and no-JS keeps the complete forms and notebook.
+
+The release's stored snapshot fixtures are representative synthetic examples,
+not captured owner data. Local PHP/HTTP/browser checks and synthetic provider
+transport do not establish billed API behavior or cPanel activation. Consult
+PROJECT_STATE.md for the final validation scope and RESEARCH_MAP_RELIABILITY_PLAN.md
+for the supplied milestones and any remaining authenticated-host checks.

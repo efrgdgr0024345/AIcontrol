@@ -1,0 +1,195 @@
+{
+  "_fixture": {
+    "synthetic": true,
+    "description": "malformed old ledger",
+    "note": "Hand-authored contract fixture; no live provider request or customer data."
+  },
+  "run": {
+    "id": 105,
+    "status": "running",
+    "phase": "evidence"
+  },
+  "nodes": [
+    null,
+    {
+      "title": "Missing ID"
+    },
+    {
+      "id": 1,
+      "parent_id": null,
+      "type": "phase",
+      "title": "Dream",
+      "status": "complete"
+    },
+    {
+      "id": 2,
+      "parent_id": 1,
+      "type": "dream_claim",
+      "title": "Included claim",
+      "status": "complete",
+      "selected": 1
+    },
+    {
+      "id": 3,
+      "parent_id": 1,
+      "type": "dream_claim",
+      "title": "Excluded claim",
+      "status": "complete",
+      "selected": 0
+    },
+    {
+      "id": 4,
+      "parent_id": 999,
+      "type": "question",
+      "title": "Question with metadata lineage",
+      "status": "complete",
+      "data_json": "{\"claim_id\":2}"
+    },
+    {
+      "id": 5,
+      "parent_id": 3,
+      "type": "source",
+      "title": "Excluded source",
+      "status": "complete"
+    },
+    {
+      "id": 6,
+      "parent_id": 2,
+      "type": "source",
+      "title": "Saved source node reused in an old run",
+      "status": "complete"
+    },
+    {
+      "id": 7,
+      "parent_id": 11,
+      "type": "dead_end",
+      "title": "Cyclic process with saved claim",
+      "status": "complete",
+      "data_json": "{\"claim_id\":2}"
+    },
+    {
+      "id": 8,
+      "parent_id": 2,
+      "type": "synthesis",
+      "title": "Open misleading title",
+      "status": "complete",
+      "data_json": "{\"verdict\":\"supported\"}"
+    },
+    {
+      "id": 10,
+      "parent_id": 11,
+      "type": "phase",
+      "title": "Broken phase cycle",
+      "status": "complete"
+    },
+    {
+      "id": 11,
+      "parent_id": 10,
+      "type": "search",
+      "title": "Broken search cycle",
+      "status": "complete"
+    }
+  ],
+  "sources": [
+    null,
+    {
+      "id": 10,
+      "node_id": 2,
+      "url": "https://example.invalid/foreign-node",
+      "title": "Source incorrectly pointing at a claim",
+      "meta_json": null
+    },
+    {
+      "id": 11,
+      "node_id": 5,
+      "url": "https://example.invalid/excluded-old",
+      "title": "Excluded old source",
+      "meta_json": "bad"
+    },
+    {
+      "id": 12,
+      "node_id": 999,
+      "url": "https://example.invalid/orphan",
+      "title": "Metadata-owned source",
+      "meta_json": "{\"claim_id\":2}"
+    },
+    {
+      "id": 13,
+      "node_id": 6,
+      "url": "https://example.invalid/shared-node-a",
+      "title": "First source sharing an old node",
+      "meta_json": "{\"claim_ids\":[2,3]}"
+    },
+    {
+      "id": 14,
+      "node_id": 6,
+      "url": "https://example.invalid/shared-node-b",
+      "title": "Second source sharing an old node",
+      "meta_json": "[]"
+    }
+  ],
+  "requests": null,
+  "ledger": {
+    "claims": "invalid old field",
+    "sources": null,
+    "passages": [
+      null,
+      {
+        "id": 30,
+        "source_id": 10,
+        "exact_text": "Stored text linked by an invalid claim reference."
+      },
+      {
+        "id": 31,
+        "source_id": 11,
+        "exact_text": "Excluded stored text."
+      },
+      {
+        "id": 32,
+        "source_id": 12,
+        "exact_text": "Metadata-owned stored text."
+      },
+      {
+        "id": 33,
+        "source_id": 999,
+        "exact_text": "Stored text whose source row is missing."
+      }
+    ],
+    "edges": [
+      null,
+      {
+        "bad": "row"
+      },
+      {
+        "id": 40,
+        "claim_id": 999,
+        "source_id": 10,
+        "passage_id": 30,
+        "relation": "context",
+        "rationale": "An old unknown claim reference."
+      },
+      {
+        "id": 41,
+        "claim_id": 3,
+        "source_id": 11,
+        "passage_id": 31,
+        "relation": "context"
+      },
+      {
+        "id": 42,
+        "claim_id": 2,
+        "source_id": 12,
+        "passage_id": 32,
+        "relation": "supports",
+        "strength": "low"
+      },
+      {
+        "id": 43,
+        "claim_id": 6,
+        "source_id": 13,
+        "relation": "context",
+        "rationale": "An invalid reference to a source node, not a claim."
+      }
+    ]
+  }
+}

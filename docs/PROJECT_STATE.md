@@ -5,51 +5,73 @@ AGENTS.md and DEPLOYMENT_DEFAULTS.md. Git history and Actions identify exact cod
 revisions; do not infer a live hosting revision from the latest source commit.
 
 
-## Concept network and reading queue (current UI)
+## Stable research Map (current UI)
 
-The map is now a two-dimensional concept network, with at least 90% of viewport
-area reserved for the canvas. Its default projection contains the project,
-selected/excluded original concepts and untested question nodes. Planning, phase,
-search and synthesis records stay persisted and appear in concept details / List;
-they no longer take separate boxes on the overview. Explicit evidence filters
-can reveal source/passage/edge records. Shared citations add visual concept links;
-these links are not proof of source independence or causal relations.
+This section supersedes the historical Map layout descriptions below.
 
-A bounded force/rectangle-packing solver preserves previous positions as seeds,
-resolves overlap and adapts to viewport aspect ratio. New nodes and links gently
-rearrange neighbours; Fit reframes the network. Native scrolling/zoom remains
-available for large evidence filters, rather than discarding records or shrinking
-text indefinitely. Concept priority and speculative status remain distinct.
+The Map is a read-mostly, concept-first view of the saved run and evidence
+ledger. Its only renderer now uses a deterministic structural layout with
+in-memory position memory; it does not run the previous force/rectangle
+simulation. Existing cards keep their world coordinates when evidence or new
+questions arrive. Filter/collapse changes preserve cached positions; only
+**Reset layout** clears that memory and builds a fresh arrangement. **Fit**
+changes the camera, not node positions. Idle/status/token/activity polls update
+text and badges without re-running layout. Resize work is debounced.
 
-A single short sentence replaces the scrolling findings list. Existing public
-claim/question/findings text is shortened into a deduplicated queue: no extra API
-request, fabricated endorsement or new assessment. Each sentence remains 5–10
-seconds, then fades to the next. Click/tap it to pause/resume; hidden tabs preserve
-reading time. The controls' Idea history exposes the backlog (50 pending, 100
-history entries). Unchecked/provisional labels survive condensation. Reduced-
-motion preference disables fades, movement and pulsing.
+The default Concepts view shows the root, selected original claims and their
+grown questions. Initial review exposes all original claims and Map checkboxes
+stay synchronized with List. Excluded claims remain saved in List/history.
+Process records are available through inspector history/List, not independent
+boxes on the overview. `assets/map-view.js` owns the Map DOM, camera and cache;
+`map-engine.js` remains pure and `panel.js` wires status/actions. Source, passage, edge, dead-end and open
+filters reveal real saved records with owning concept context and clear empty
+states. Missing/partial old ledgers remain safe. Synthetic evidence IDs are
+presentation only and cannot become focus targets. Dashed shared-source links
+mean shared citations, not independent corroboration.
 
-Controls are in an on-demand overlay revealed by hover, click/tap or keyboard.
-Stop is inside it and has Alt+S; the default canvas has one small control handle.
-Failure/review states retain a compact notice, with full activity, tokens, cost
-and request outcome in the overlay. Details is an optional floating drawer, not
-a reserved column. Evidence/source selection, Learn, ranking and review continue
-to use the same authenticated forms and budget guards. Initial human claim review
-remains a reachable floating bar; no-JS retains the full List/forms.
+The full-screen canvas keeps the compact one-sentence Idea queue and on-demand
+hover/tap/keyboard controls. The sentence uses existing public text for 5–10
+seconds, preserves provisional/untested labels, and fades without affecting
+layout or keyboard focus. Click/tap pauses it; Idea history exposes its backlog.
+Actual pending requests produce static stage badges on owning concepts, with
+no continuous pulse. Reduced motion uses immediate/static changes. Failure and
+review states remain discoverable with controls collapsed; Stop is in controls
+and has Alt+S. Details remains an optional overlay, not a reserved column.
 
-Real pending request metadata maps planning/evidence/discovery/verification work
-to its original concept (or selected concepts for shared work). A gentle stage-
-coloured pulse plus stage text shows activity there. Terminal runs never pulse
-as if active. No provider output, billing, saved graph or research lifecycle is
-changed by this presentation projection.
+The inspector exposes saved history, real source URLs, literal passages with
+locators, typed-edge rationale, ranking, source selection, copy link, Jump to
+List and applicable Learn/focus actions. Search this direction submits the real
+node ID and optional note only for a selected claim/question or linked dead
+end/open assessment during idle Evidence, with a pending slot and capacity.
+Blocked actions explain the reason; the server still enforces pending-request,
+run/phase, selected ancestry, slot and budget guards. Focus replaces a slot and
+retains its target/claim relationship in both Map history and List.
 
-Fourteen pure projection/packing/queue checks are in `tests/map_engine.cjs`, run before
-the existing browser suite by `npm run test:ui`. Browser coverage includes dense
-networks, the viewport budget, no technical boxes, keyboard/hover/mobile controls,
-paused queued sentences, reduced motion and terminal activity, with 31 axe
-audits and zero violations. All provider
-fixtures remain synthetic; no live billed API operation or cPanel activation
-is established by these checks.
+Desktop defaults to the tested Map; mobile defaults to List and can opt into
+Map. Without JavaScript the complete List and phase/review/Stop/Learn/export
+forms remain available. No saved data, PIN/key, model budget, billing estimate
+or phase lifecycle is reset by this UI change. See RESEARCH_MAP_CONTRACT.md for
+the stable projection, position-memory and steering contracts, and
+RESEARCH_MAP_RELIABILITY_PLAN.md for the supplied plan and milestone checklist.
+
+Validation on 2026-11-11 AWST: PHP 8.4.24 host/syntax checks, all twelve
+application PHP suites (419 numbered assertions plus unnumbered storage, adapter
+and workspace checks), all five HTTP/installer/authentication Python suites,
+and the generated UI/manifest checks passed. `npm run test:ui` passed 27 pure
+engine checks and the complete Chromium lifecycle, including 33 axe audits with
+zero violations. Browser assertions cover exact old-card coordinates after
+usage/activity updates and question growth, filter position restoration, camera-
+only Fit, explicit Reset, inspector focus preservation, visible focus rejection,
+new List anchors, synthetic source fallback, cyclic old parent records and empty
+ledger states. Five representative snapshot fixtures are explicitly synthetic; no authenticated
+live-run captures, billed provider run or cPanel activation are established by
+local checks. `?map_debug=1` console diagnostics expose graph counts, layout timing
+and position reuse; normal usage/token updates do not create diagnostic layout
+work. The target is projection plus layout under 50 ms for typical two-to-five-
+claim fixtures, not a timing guarantee for every device or large ledger. A
+cloud microbenchmark of 1,000 samples each for two/five concept-only snapshots
+measured median 0.015/0.014 ms and maximum 3.339/0.334 ms; this excludes DOM
+rendering and is not a mid-tier device measurement.
 
 ## Current research usage, live activity and branching
 
@@ -211,7 +233,12 @@ php tests/storage.php
 php tests/updates.php
 php tests/agent.php
 php tests/agent_adapter.php
-python3 -B -m unittest -v tests/http_smoke.py tests/standalone_smoke.py tests/passwordless_smoke.py tests/pin_smoke.py
+php tests/workspace.php
+php tests/investigation.php
+php tests/rigour.php
+php tests/research_flow.php
+php tests/map_steering.php
+python3 -B -m unittest -v tests/investigation_http.py tests/http_smoke.py tests/standalone_smoke.py tests/passwordless_smoke.py tests/pin_smoke.py
 git diff --check
 npm ci --ignore-scripts
 PHP_BINARY=php npm run test:ui

@@ -1,0 +1,289 @@
+{
+  "_fixture": {
+    "synthetic": true,
+    "description": "completed ledger",
+    "note": "Hand-authored contract fixture; no live provider request or customer data."
+  },
+  "run": {
+    "id": 103,
+    "name": "Synthetic investigation",
+    "status": "complete",
+    "phase": "verification",
+    "total_tokens": 3400,
+    "estimated_cost_usd": 0.018
+  },
+  "nodes": [
+    {
+      "id": 1,
+      "parent_id": null,
+      "type": "phase",
+      "title": "Dream",
+      "status": "complete"
+    },
+    {
+      "id": 2,
+      "parent_id": 1,
+      "type": "dream_claim",
+      "title": "A reversible mechanism",
+      "status": "complete",
+      "selected": 1,
+      "path_weight": 90
+    },
+    {
+      "id": 3,
+      "parent_id": 2,
+      "type": "plan_step",
+      "title": "Test the mechanism",
+      "status": "complete"
+    },
+    {
+      "id": 4,
+      "parent_id": 3,
+      "type": "search",
+      "title": "Search for tests",
+      "status": "complete"
+    },
+    {
+      "id": 5,
+      "parent_id": 4,
+      "type": "source",
+      "title": "Shared reference",
+      "status": "complete"
+    },
+    {
+      "id": 6,
+      "parent_id": 2,
+      "type": "question",
+      "title": "Could an external controller help?",
+      "status": "complete",
+      "speculative": 1,
+      "path_weight": 65
+    },
+    {
+      "id": 7,
+      "parent_id": 1,
+      "type": "dream_claim",
+      "title": "A measurable constraint",
+      "status": "complete",
+      "selected": 1,
+      "path_weight": 70
+    },
+    {
+      "id": 8,
+      "parent_id": 2,
+      "type": "synthesis",
+      "title": "Open",
+      "status": "complete",
+      "data_json": "{\"verdict\":\"open\",\"source_ids\":[10]}"
+    },
+    {
+      "id": 9,
+      "parent_id": 1,
+      "type": "dream_claim",
+      "title": "An excluded approach",
+      "status": "complete",
+      "selected": 0
+    },
+    {
+      "id": 10,
+      "parent_id": 9,
+      "type": "question",
+      "title": "Question on excluded approach",
+      "status": "complete"
+    },
+    {
+      "id": 11,
+      "parent_id": 4,
+      "type": "dead_end",
+      "title": "No decisive measurement",
+      "status": "complete",
+      "content": "The returned source did not isolate the effect."
+    },
+    {
+      "id": 12,
+      "parent_id": 6,
+      "type": "plan_step",
+      "title": "Test the external controller",
+      "status": "complete"
+    },
+    {
+      "id": 13,
+      "parent_id": 12,
+      "type": "search",
+      "title": "Controller evidence",
+      "status": "complete"
+    },
+    {
+      "id": 14,
+      "parent_id": 13,
+      "type": "source",
+      "title": "Controller reference",
+      "status": "complete"
+    },
+    {
+      "id": 15,
+      "parent_id": 6,
+      "type": "question",
+      "title": "What about delayed feedback?",
+      "status": "complete",
+      "speculative": 1
+    },
+    {
+      "id": 16,
+      "parent_id": 999,
+      "type": "question",
+      "title": "Orphan question",
+      "status": "complete"
+    },
+    {
+      "id": 17,
+      "parent_id": 999,
+      "type": "question",
+      "title": "Question with saved lineage",
+      "status": "complete",
+      "data_json": "{\"claim_id\":7}"
+    },
+    {
+      "id": 18,
+      "parent_id": 9,
+      "type": "source",
+      "title": "Excluded reference",
+      "status": "complete"
+    },
+    {
+      "id": 19,
+      "parent_id": 2,
+      "type": "question",
+      "title": "Previously declined idea",
+      "status": "complete",
+      "selected": 0
+    },
+    {
+      "id": 20,
+      "parent_id": 2,
+      "type": "synthesis",
+      "title": "Open claim label retained from an earlier stage",
+      "status": "complete",
+      "data_json": "{\"verdict\":\"supported\",\"reason\":\"A matching source was found.\"}"
+    },
+    {
+      "id": 21,
+      "parent_id": 7,
+      "type": "synthesis",
+      "title": "Open",
+      "status": "complete",
+      "data_json": "{\"verdict\":\"open\",\"reason\":\"The constraint has not been isolated.\"}"
+    }
+  ],
+  "sources": [
+    {
+      "id": 10,
+      "node_id": 5,
+      "url": "https://example.invalid/shared",
+      "title": "Shared reference",
+      "extract": "Citation summary only.",
+      "meta_json": "{\"claim_ids\":[2,7]}"
+    },
+    {
+      "id": 11,
+      "node_id": 14,
+      "url": "https://example.invalid/controller",
+      "title": "Controller reference",
+      "extract": "A provider snippet.",
+      "meta_json": "{\"claim_id\":2,\"path_node_id\":6}"
+    },
+    {
+      "id": 12,
+      "node_id": 18,
+      "url": "https://example.invalid/excluded",
+      "title": "Excluded reference",
+      "meta_json": "{\"claim_id\":9}"
+    }
+  ],
+  "requests": [
+    {
+      "id": 100,
+      "status": "complete",
+      "kind": "evidence",
+      "path_node_id": 12,
+      "claim_id": 2,
+      "activity": "Checking the controller hypothesis",
+      "input_tokens": 1500,
+      "output_tokens": 600
+    }
+  ],
+  "ledger": {
+    "passages": [
+      {
+        "id": 30,
+        "source_id": 10,
+        "exact_text": "A stored provider quotation describes a reversible update.",
+        "locator": "Provider snippet 1",
+        "fetch_scope": "provider_snippet"
+      },
+      {
+        "id": 31,
+        "source_id": 11,
+        "exact_text": "A second stored quotation describes delayed feedback.",
+        "locator": "Abstract",
+        "fetch_scope": "abstract_only"
+      },
+      {
+        "id": 32,
+        "source_id": 12,
+        "exact_text": "This passage belongs only to the excluded approach.",
+        "fetch_scope": "provider_snippet"
+      }
+    ],
+    "edges": [
+      {
+        "id": 40,
+        "claim_id": 7,
+        "source_id": 10,
+        "passage_id": 30,
+        "relation": "context",
+        "strength": "low",
+        "rationale": "This source supplies context, not a direct measurement."
+      },
+      {
+        "id": 41,
+        "claim_id": 2,
+        "source_id": 10,
+        "passage_id": 30,
+        "relation": "supports",
+        "strength": "moderate",
+        "rationale": "The stored passage describes the proposed operation."
+      },
+      {
+        "id": 42,
+        "claim_id": 2,
+        "source_id": 11,
+        "passage_id": 31,
+        "relation": "weakens",
+        "strength": "low",
+        "rationale": "Delayed feedback limits this generalisation."
+      },
+      {
+        "id": 43,
+        "claim_id": 9,
+        "source_id": 12,
+        "passage_id": 32,
+        "relation": "context",
+        "strength": "low",
+        "rationale": "Excluded research context."
+      }
+    ],
+    "claim_versions": [
+      {
+        "id": 50,
+        "claim_id": 2,
+        "status": "supported"
+      },
+      {
+        "id": 51,
+        "claim_id": 7,
+        "status": "open"
+      }
+    ]
+  }
+}

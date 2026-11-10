@@ -1,0 +1,75 @@
+{
+  "_fixture": {
+    "synthetic": true,
+    "description": "legacy stopped",
+    "note": "Hand-authored contract fixture; no live provider request or customer data."
+  },
+  "run": {
+    "id": 104,
+    "name": "Legacy stopped investigation",
+    "status": "failed"
+  },
+  "nodes": [
+    {
+      "id": 100,
+      "parent_id": null,
+      "type": "dream_claim",
+      "title": "Older concept without a selection column",
+      "status": "complete"
+    },
+    {
+      "id": 101,
+      "parent_id": 100,
+      "type": "plan_step",
+      "title": "Older plan",
+      "status": "complete"
+    },
+    {
+      "id": 102,
+      "parent_id": 101,
+      "type": "source",
+      "title": "Older citation",
+      "status": "complete"
+    },
+    {
+      "id": 103,
+      "parent_id": 101,
+      "type": "question",
+      "title": "An older question",
+      "status": "complete"
+    },
+    {
+      "id": 104,
+      "parent_id": 100,
+      "type": "synthesis",
+      "title": "Open",
+      "status": "complete",
+      "data_json": "{broken"
+    },
+    {
+      "id": 105,
+      "parent_id": 999,
+      "type": "dead_end",
+      "title": "Legacy saved direction",
+      "status": "complete",
+      "data_json": "{\"claim_id\":100}"
+    }
+  ],
+  "sources": [
+    {
+      "id": 200,
+      "node_id": 102,
+      "url": "https://example.invalid/legacy",
+      "title": "Older citation",
+      "meta_json": "[not valid JSON"
+    },
+    {
+      "id": 201,
+      "node_id": 999,
+      "url": "https://example.invalid/legacy-orphan",
+      "title": "Citation without its saved node",
+      "meta_json": "{\"claim_id\":100}"
+    }
+  ],
+  "ledger": null
+}

@@ -1,160 +1,205 @@
-# Research map contract
+# Research Map contract
 
-`status` remains authenticated by PIN/session and CSRF. It reads existing run,
-node, source and request rows; map relationships are derived in memory. No schema
-reset, external graph service, provider request or per-node SQL occurs on polling.
-The shared budget and confirmed input/output counts remain in the snapshot.
+The Map is a read-mostly projection of a saved investigation. The run, notebook
+and evidence ledger are authoritative; projection, filters, collapse, camera
+and position memory do not write research rows or change the phase machine.
+The stable structural renderer is the only Map path. No graph service, CDN,
+physics loop, background worker or additional provider request is introduced.
 
-Each node retains `id`, `parent_id`, `type`, `status`, `title`, `content`,
-`sort_order`, `data_json`, `selected` and timestamps. Additive response fields:
-`confidence` (claim prior confidence or null), `linked_claim_ids`, `source_ids`
-and `dead_end_reason` (dead-end text or null). The synthetic map root is client
-presentation only. Types: phase, dream_claim, plan_step, search, source, dead_end,
-synthesis and learn. Unknown confidence never means evidence support.
+## Snapshot and evidence
 
-Map/List switches do not change the run. Claim map checkboxes mirror the existing
-review form. `research_continue` still locks selection before Plan. Without JS,
-the list, source links and all phase/Stop/Learn/export forms remain usable.
+Authenticated `status` returns the existing run, nodes, sources, requests,
+budget and usage. Session/CSRF checks still guard actions. Polling reads saved
+state and derives relationships in memory; it does not perform per-node SQL or
+send provider requests. Status remains available while provider I/O releases
+the session lock.
 
-`research_step` accepts optional `focus_node_id` and `focus_note` (UTF-8, at most
-1,000 bytes). Focus requires a running, idle Evidence phase and a remaining
-planned slot. A focus node must be a selected claim, its dead end or its linked
-open verdict. Unlinked questions have no inferred claim; they cannot spend a
-search. Wrong run, excluded claim, busy phase and exhausted slots are rejected.
-The next slot is replaced, never appended: new runs allow 1–2 normal searches
-plus one reserved Challenge (legacy runs retain two searches), one web tool
-call per request, 1,600 output tokens and the existing timeout/hourly cap. JS
-pauses before each Evidence slot so the owner can steer it or explicitly run
-the planned search. No-JS uses Continue next phase for the planned search.
+Nodes retain `id`, `parent_id`, `type`, `status`, `title`, `content`,
+`sort_order`, `data_json`, `selected` and timestamps. Additive fields include
+`confidence`, `linked_claim_ids`, `source_ids`, `dead_end_reason`, path weight,
+model tier and speculative status. Unknown confidence is not evidence support.
+The ledger is `{claims, sources, passages, edges, claim_versions}`. Missing or
+partial legacy ledger arrays are treated as empty; existing notebook/source
+rows remain readable. Malformed parent chains must terminate safely.
 
-Focused searches are parented to the chosen node; their `data_json` records the
-node, claim and note. The replaced plan is marked incomplete with an explanation
-that its original query was not executed. Citations still require a completed
-web-search tool event and safe HTTP(S) URLs. A late answer after Stop never
-applies evidence. Focus cannot revive a terminal run or restart Dream/Plan.
+Passages contain source/run IDs, literal `exact_text`, optional locator, scope,
+SHA-256 and timestamp. They come only from provider snippet/abstract fields
+captured in a completed search-tool event. A URL-only result is citation-only;
+the UI does not imply a full-page fetch or construct a quotation from model
+text. Typed edges retain relation, rationale and strength. The latest saved
+per-claim assessment supplies the outcome; earlier versions remain history.
+Source URLs always come from the stored source table and must be safe HTTP(S).
 
-`research_learn` optionally accepts `source_ids[]`. All IDs must belong to the
-chosen run, with no duplicates or empty selection. Its provider context contains
-only the selected frozen source cards and matching passages, project brief and
-optional question: no tools,
-Dream text, notes from the vault, other projects or keys. Existing idle/budget
-and Stop behavior applies. Source selection is recorded on the Learn node.
+The root and synthetic `source-ID`, `passage-ID` and `edge-ID` display IDs are
+client presentation only, never new `research_nodes` records or valid focus
+targets. Map projection never creates passages, edges or assessments. Empty
+evidence filters say that no matching stored evidence exists.
 
-The map offers native scrolling, zoom, Fit, collapse/expand, filters, keyboard
-node buttons and arrow navigation. The inspector exposes full text and real
-source links; clipboard access falls back to copying the displayed link. Node
-text is rendered with textContent, never model HTML. Filters/collapse are local
-views: excluded claims and dead ends remain stored and visible in All/Expand all.
-The outcome strip jumps to verdicts and highlights the original claim and cited
-sources. Desktop starts in Map; mobile and no-JS start in List. Markdown export
-contains the notebook report plus a node-to-parent outline and all citation URLs.
+## Projection and ownership
 
-Host validation remains separate: install the checked release using the current
-loader, connect a host-side key, perform one focused search, Stop mid-Evidence,
-inspect uncertain usage, Learn from one source and export the report. CI uses
-synthetic transport and does not perform billed provider calls.
+`assets/map-engine.js` is pure and DOM-free; `assets/map-view.js` owns the Map
+DOM, camera, cache and inspector, with snapshot/actions wired through `panel.js`.
+`build-ui.php` embeds these local sources into the generated UI/loader. The same snapshot, filter and collapse state produce the same
+ordered graph. The default Concepts projection contains a synthetic root,
+selected original `dream_claim` nodes and their grown `question` descendants.
+During initial claim review all original claims are available for selection.
+After Continue, excluded claims remain in the durable List/history, rather
+than reappearing as active research paths on the overview.
 
-## Rigour snapshot and actions
+Question ancestry resolves to its original selected claim. Source ownership
+uses saved node ancestry, source metadata and ledger links. Passage ownership
+uses passage-specific relation owners first, then source associations; edge
+ownership follows its saved claim. An
+unresolved or obsolete reference must not be invented as a selected claim.
+The projection normalizes absent optional collections before walking them.
 
-Status adds `ledger: {claims, sources, passages, edges, claim_versions}`; old runs
-receive empty ledger arrays except their existing claims/sources. New run fields
-are `rigour_version=1`, `normal_search_limit`, `evidence_version`,
-`evidence_frozen`, `verification_status` (pending/complete/skipped), `repair_count`.
-Edges and passages are client map nodes with `edge-ID` and `passage-ID` IDs; they
-are not new `research_nodes` types or valid focus-node IDs. Relations stay typed;
-source links always come from the stored source table. Outcome totals count the
-latest per-claim assessment; history stays visible in the branches/ledger.
+Sources, Passages, Edges, Dead ends and Open filters reveal matching saved
+records with their concept context. They change only the projected set. Phase,
+plan, search, synthesis and Learn records remain in the complete List; linked
+planning/search/findings history is also inspectable from a concept. They are
+not separate cards on the overview. There is no separate Show process overlay.
+Collapse is local to the page.
 
-`research_finish` accepts `run_id`, requires idle `verification_review`, completed
-verification and assessments, then freezes/version-bumps and completes locally.
-`research_repair` requires the same state, an original high-impact finding, no
-previous repair and one remaining request. It invokes one tool-free repair review
-and returns to review, preserving original findings. Both require session/CSRF;
-repair releases the session before I/O and uses the existing phase token/Stop
-guard. Neither can resume interrupted or uncertain runs.
+Dashed shared-source links mean that concepts cite the same stored source ID.
+They do not assert corroboration, independence, causation or evidence strength.
+Path priority controls attention/model routing and connector weight; it is
+distinct from a claim's confidence, edge strength and verification verdict.
+Grown questions remain labelled untested and possibly wrong.
 
-New phases: `extraction`, `verification`, optional `repair`, `verification_review`.
-JS pauses at verification review; visible map header controls and list/no-JS
-forms offer Finish and optional repair. During Evidence it still pauses before
-each search so user steering remains explicit. Challenge identity survives a
-focus replacement and the prompt retains the counter-evidence requirement.
+## Structural layout and camera
 
-Passages include source/run IDs, literal `exact_text`, optional locator, scope,
-SHA-256 and timestamp. Only provider snippet/abstract fields captured from a
-completed tool event can populate them. URL-only responses stay citation-only;
-no page fetch or model-constructed quote is implied. Frozen partial interrupted
-runs remain inspectable and can supply evidence-only Learn, with verification
-skipped shown. No data or historical findings are removed by freeze or repair.
+The layout places the root and concept branches structurally, with questions
+and optional evidence attached to their owning branch. There is no continuous
+force simulation. An in-memory position cache is retained for the page/run;
+only newly visible IDs receive initial coordinates and a bounded collision
+separation. Existing cached coordinates remain fixed as new nodes arrive.
+Hidden/collapsed cards retain their cached positions for later restoration.
 
-## Usage and growing-question flow
+New IDs, filter/collapse changes, a debounced viewport resize and explicit
+**Reset layout** can update the projected layout. None of those changes
+silently clears existing position memory. Reset is the deliberate action that
+clears it and builds a fresh arrangement. Idle, usage, token, request-activity,
+status-text and reading-queue updates do not trigger layout or move cards.
 
-New snapshots add `usage` (project/run/shared/areas/phases/models/cap/pricing),
-`findings` (status/text/reason/provisional), and `server_time`. Request rows expose
-model, worker_role, claim_id, path_node_id, billing_json, estimated_usd,
-reserved_usd, cached_tokens, tool_calls, activity, heartbeat_at, output_chars and
-finished_at. Model usage is returned by the API; dollar values are dated local
-estimates, not invoice facts. Null usage/cost remains unknown.
+**Fit** changes only camera scale/scroll to frame visible cards. Zoom and pan
+also preserve world coordinates. Large evidence views can exceed the viewport;
+the interface keeps readable cards and scrolling instead of deleting records
+or shrinking text indefinitely. The inspector is an overlay, not a reserved
+canvas column. The target for projection plus structural layout is under
+50 ms for a representative two-to-five-claim fixture; fixture measurements
+are not a guarantee for every device or arbitrarily large ledger.
 
-New runs set `flow_version=1`, persisted `auto_search`, `growth_remaining` and
-`explore_count`. Existing runs default to flow zero. The additional `exploration`
-phase creates bounded `question` nodes under selected claims; it does not create
-verified claims or passages. Questions carry `speculative=1`, path_weight,
-model_tier and a falsification test. Every two searches can trigger a creative
-pass, with at most two passes/twelve questions/six total searches. Challenge
-remains reserved; verification capacity is kept before optional expansion.
+The stable renderer is also reachable with `?map=stable`; it is not a second
+engine. `?map_debug=1` enables developer-only console diagnostics with projected
+node/edge counts, layout duration and position reuse. They do not reveal credentials, private reasoning or a
+provider-progress percentage.
 
-`research_settings`: project_id, primary_model (GPT-4.1 or mini), spend_cap_usd
-(0.05–1000), auto_search, growth_searches (0–3). Settings are authenticated/CSRF
-protected; primary/pace applies to new runs and cap is immediate. It returns
-`{saved:true}` for JS, or redirects for no-JS forms.
-`research_rank`: run_id, node_id, path_weight (10–100), model_tier
-(primary/economy). Requires an idle active unfrozen selected claim/question.
-Changes record an audit row and consume no provider call. Question focus is now
-allowed, always resolving to its original selected claim. Source/ledger integrity
-rules and human initial review remain authoritative.
+## Interaction and progressive enhancement
 
-Findings/activity/spend replace the top setup area; Project menu reveals setup
-and settings. Map has the same bulletin and menu access. Priority colours/line
-widths have text labels and are not evidence strength. Purple/dashed questions
-are explicitly untested. The usage panel separates shared overhead from path
-spend. A Responses SSE reader persists real activity, visible response-character
-counts and final usage; status polls remain session-free during provider I/O.
-The browser ignores server_time-only changes when preserving forms/details.
-No fake progress percentage/token ticker or private reasoning is exposed.
+Tested desktop sessions open in full-screen Map; mobile starts in List with
+Map optional. Without JavaScript, the complete List, review controls, source
+links and phase/Stop/Learn/export forms remain usable. Map/List switches do
+not change the run. Map review checkboxes mirror the existing List selection;
+`research_continue` locks it before Plan.
 
-## Concept-first projection and controls
+Cards are keyboard buttons with arrow navigation. Selecting one opens an
+optional inspector containing saved title, status, full text, concept history,
+source URLs, exact passages with locators and typed-edge relation/rationale.
+It also offers Jump to List when a persisted entry can be resolved, copy source
+link, source selection and applicable
+Learn/rank/focus actions. Text is inserted as text, never model HTML. Clipboard
+failure leaves a visible source URL that can be copied manually. Filters do
+not delete saved data. Escape closes controls, then details, then returns to
+List, with keyboard focus restored.
 
-The default canvas projects saved rows into `root`, `dream_claim`, and `question`
-nodes. Phase/plan/search/synthesis records remain in the snapshot and List; an
-on-demand concept history exposes their exact saved text/status. Evidence filters
-reveal sources/passages/edges without restoring technical stage boxes. Graph
-projection never writes the database. Shared source IDs can produce dashed links
-between concepts; they assert common citations only.
+One small handle reveals controls on hover, click/tap or keyboard activation.
+Start/Stop, Fit/Reset/zoom, filters, List, usage and Project menu are there;
+Alt+S submits the ordinary Stop action. Failure and review states retain a
+compact notice with the controls collapsed. Claim review remains reachable.
 
-`assets/map-engine.js` supplies pure ownership resolution, graph projection,
-rectangle-aware force packing and the reading queue. `build-ui.php` embeds it
-before `panel.js` in the generated UI/loader. No graph CDN or new runtime request
-is introduced. Packing uses saved screen positions as seeds, relaxes links,
-resolves rectangular collisions and fits to viewport aspect. Readable zoom/pan
-remains available beyond the dense concept overview.
+Actual pending request attribution (`path_node_id`, `claim_id` or saved node
+ancestry) supplies a static activity badge on the owning concept. Shared work
+can mark selected concepts. Planning, evidence, discovery and checking are
+textual execution states, not private reasoning. No continual activity pulse
+runs, and failed/stopped/uncertain runs never appear to be actively working.
 
-Pending request `path_node_id` / `claim_id` / node ancestry determines the working
-concept. Shared planning/discovery/verifier work highlights selected concepts.
-The displayed stage has a textual state and a colour pulse. Failed, stopped and
-uncertain runs never pulse as active. This is execution-state feedback, not
-private reasoning or fake provider progress.
+One public sentence remains in the compact Idea strip. A deduplicated local
+queue holds existing claim/question/findings excerpts for 5–10 seconds each;
+it does not call an AI to summarize them or upgrade provisional text into fact.
+Click/tap pauses or resumes, hidden tabs retain reading time, and Idea history
+exposes the backlog. Fades replace only the sentence and preserve map layout,
+form state and focus. Reduced-motion preference uses immediate/static changes.
 
-The top line contains one public idea sentence. A local FIFO holds deduplicated
-claim/question/findings excerpts for 5–10 seconds each and fades between them.
-The line toggles pause, hidden tabs retain reading time, and Idea history makes
-the backlog inspectable. It preserves untested/provisional labels, strips search
-boilerplate/Markdown/URLs and never makes another provider request to summarise.
-Reduced motion replaces animated fades/movement/pulses with immediate/static
-state changes. The main List uses the same single sentence.
+## Explicit search steering
 
-One Map controls handle reveals actions, filters, usage and history on hover,
-keyboard activation or touch. Escape closes controls, then details, then restores
-List. Alt+S submits the existing Stop action. A compact terminal/review notice
-keeps important outcomes discoverable with controls collapsed. An optional
-floating inspector leaves the canvas footprint intact; changing filters or
-returning from List closes the drawer. Source choices are also in the inspector.
+`research_step` accepts optional numeric `focus_node_id` and a UTF-8
+`focus_note` of at most 1,000 bytes. The selected real node must belong to the
+same run and resolve through persisted `parent_id` ancestry to a selected
+original claim: that claim, one of its
+questions, a linked dead end or a linked open assessment. Synthetic evidence
+display IDs, foreign IDs, excluded paths and unlinked questions cannot spend
+a search. A recorded verdict takes precedence over a legacy title prefix.
+
+Metadata-only ownership fallbacks support display and cannot make a node
+focusable. Focus requires a running, idle Evidence phase, no pending provider
+request, a remaining planned slot and available request/project budget. Flow-
+enabled runs must have an actual pending plan row. The UI enables **Search
+this direction** only in that window; otherwise it explains the blocking
+condition. Server validation is authoritative and errors remain visible.
+An optional note affects this search only. The exact real node ID and note
+are submitted through the existing authenticated/CSRF action.
+
+Focus replaces the next slot; it never adds capacity or restarts a terminal
+run. The replaced plan records that its original query was not executed.
+Focused searches are parented to the chosen target; any resulting dead end
+is a child of that search. Sources belong to the resulting search, and the
+original claim attribution is retained. The inspector/history and List expose that saved relationship.
+The reserved Challenge keeps its counter-evidence requirement when redirected.
+**Continue next phase** executes the pending plan without a focus override.
+
+New flow-enabled runs preserve human claim review, then use their persisted
+autoplay setting. They permit at most six searches, two creative passes and
+twelve untested grown questions, while preserving extraction/verification
+capacity. Older runs retain their saved flow and limits. One active specialist
+request at a time, the shared hourly ceiling, output limits, timeout and Stop
+guards remain in force. A late response after Stop cannot write evidence.
+
+## Related actions and accounting
+
+`research_learn` optionally accepts unique `source_ids[]` belonging to the run.
+Explicit selection cannot be empty. Idle/frozen-evidence and budget guards
+apply. Provider context is only those frozen source cards and matching
+passages, the project brief and optional question: no tools, Dream hypotheses,
+vault notes, other projects or keys. Source selection is recorded on Learn.
+
+`research_finish` needs idle `verification_review`, completed verification
+and assessments; it freezes/version-bumps and completes locally.
+`research_repair` needs the same state, an original high-impact finding,
+no prior repair and one remaining request; it makes one tool-free review
+before returning to review. Both retain findings/history and use existing
+session/CSRF, phase-token and Stop guards. Neither resumes an uncertain run.
+
+Usage remains API-returned token counts with dated USD estimates and saved
+pricing provenance, not invoice totals. Missing usage/unpriced models remain
+unknown. Shared overhead and per-path costs remain separate. Project cap
+reservations, unknown outcomes, routing/ranking history, model choices and
+bounded growth are described in ADMIN_RESEARCH.md; this Map update does not
+alter them. Streamed provider activity is saved public activity, not a fake
+token ticker or private reasoning trace.
+
+## Validation boundary
+
+Pure fixtures cover review/selected projection, ownership, filters, missing
+and partial ledgers, deterministic ordering, stable cached positions and
+new-node insertion. Browser checks cover review synchronization, evidence
+inspection, focus state, Reset/Fit, token-only stability, controls, mobile,
+keyboard, reduced motion and no-JS fallback. Backend/HTTP checks cover exact
+focus contracts and preserved budget/Stop behavior. See PROJECT_STATE.md for
+the final commands and measured scope of the release.
+
+The stored snapshot fixtures are explicitly synthetic and representative;
+they are not captures from the owner's live database. No hosting session,
+PIN or provider key is available in this cloud checkout. Synthetic provider
+transport and local browser checks do not establish a billed live API run
+or activation on cPanel. A checked GitHub release and its loader compatibility
+pointer must be distinguished from an authenticated host installation.

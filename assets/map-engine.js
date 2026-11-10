@@ -1,102 +1,275 @@
-/* Pure map projection, packing and reading queue; embedded by build-ui.php. */
+/* Pure, display-only map projection and stable structural layout; embedded by build-ui.php. */
 (function (scope, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
   else scope.AIcontrolMap = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
-  const data = node => { try { return JSON.parse(node.data_json || '{}'); } catch (_) { return {}; } };
-  function owner(snapshot, id) {
-    const byId = new Map(snapshot.nodes.map(n => [String(n.id),n])), seen = new Set();
-    let node = byId.get(String(id));
-    while (node && !seen.has(String(node.id))) {
-      seen.add(String(node.id));
-      if (['dream_claim','question'].includes(node.type)) return String(node.id);
-      node = byId.get(String(node.parent_id));
+  const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+  const key = value => value === null || value === undefined || String(value).trim() === '' ? null : String(value);
+  const list = value => Array.isArray(value) ? value : [];
+  const object = value => {
+    if (isObject(value)) return value;
+    try { const parsed = JSON.parse(value || '{}'); return isObject(parsed) ? parsed : {}; } catch (_) { return {}; }
+  };
+  const data = node => object(node && node.data_json);
+  const compare = (a, b) => {
+    const aa = String(a), bb = String(b), an = Number(aa), bn = Number(bb);
+    return Number.isFinite(an) && Number.isFinite(bn) && an !== bn ? an - bn : aa < bb ? -1 : aa > bb ? 1 : 0;
+  };
+  // Sort before de-duplicating so projection never relies on transport ordering.
+  const records = value => {
+    const sorted = list(value).filter(row => isObject(row) && key(row.id) !== null)
+      .slice().sort((a, b) => compare(a.id, b.id) || compare(JSON.stringify(a), JSON.stringify(b)));
+    return sorted.filter((row, i) => i === 0 || key(row.id) !== key(sorted[i - 1].id));
+  };
+  const ids = value => [...new Set(list(value).map(key).filter(id => id !== null))].sort(compare);
+  const sourceId = value => /^\d+$/.test(String(value)) && Number.isSafeInteger(Number(value)) ? Number(value) : value;
+  const isConcept = node => node && ['dream_claim', 'question'].includes(node.type);
+  function index(snapshot) {
+    const input = isObject(snapshot) ? snapshot : {}, ledger = object(input.ledger);
+    const nodes = records(input.nodes), byId = new Map(nodes.map(node => [key(node.id), node]));
+    const primarySources = records(input.sources), primaryIds = new Set(primarySources.map(source => key(source.id)));
+    const sources = records([...primarySources, ...records(ledger.sources).filter(source => !primaryIds.has(key(source.id)))]);
+    return {run: object(input.run), nodes, byId, sources, passages: records(ledger.passages), edges: records(ledger.edges), requests: list(input.requests).filter(isObject)};
+  }
+  function resolveOwner(byId, id, seen = new Set()) {
+    const node = byId.get(key(id));
+    if (!node || seen.has(key(node.id))) return 'root';
+    seen.add(key(node.id));
+    if (isConcept(node)) return key(node.id);
+    const parent = resolveOwner(byId, node.parent_id, seen);
+    if (parent !== 'root') return parent;
+    // Older records sometimes kept the path only in metadata, not parent_id.
+    const meta = data(node);
+    const candidates = [node.path_node_id, node.claim_id, meta.path_node_id, meta.claim_id, ...ids(node.linked_claim_ids), ...ids(meta.claim_ids)];
+    for (const candidate of candidates) {
+      const found = resolveOwner(byId, candidate, seen);
+      if (found !== 'root') return found;
     }
     return 'root';
   }
-  function project(snapshot, filter = 'all') {
-    const full = snapshot.nodes, core = full.filter(n => ['dream_claim','question'].includes(n.type));
-    const nodes = [{id:'root',parent_id:null,type:'root',title:snapshot.run.name || 'Research',status:snapshot.run.status,source_ids:[],path_weight:50}];
-    const sourceClaims = new Map();
-    for (const source of snapshot.sources) {
-      const meta = data({data_json:source.meta_json});
-      const claims = new Set([...(meta.claim_ids || []), ...(meta.claim_id ? [meta.claim_id] : []), ...snapshot.ledger?.edges.filter(e=>Number(e.source_id)===Number(source.id)).map(e=>e.claim_id)||[]].map(String));
-      const parent = owner(snapshot,source.node_id); if (parent!=='root') claims.add(parent);
-      sourceClaims.set(Number(source.id),claims);
-    }
-    for (const node of core) {
-      const parent = owner(snapshot,node.parent_id), id=String(node.id);
-      const sources=snapshot.sources.filter(s=>sourceClaims.get(Number(s.id))?.has(id)).map(s=>Number(s.id));
-      nodes.push({...node,id,parent_id:parent,source_ids:sources,activity:null,working:false});
-    }
-    const byId = new Map(nodes.map(n=>[n.id,n]));
-    // Work is shown on the concept; phase/plan/search rows are never canvas boxes.
-    const pending = snapshot.run.status==='running' ? snapshot.requests.filter(q=>q.status==='pending') : [];
-    for (const request of pending) {
-      const id=owner(snapshot,request.path_node_id || request.claim_id || request.node_id);
-      const targets=id!=='root' ? [byId.get(id)] : nodes.filter(n=>n.type==='dream_claim'&&Number(n.selected??1)===1);
-      const activity=['dream','exploration'].includes(request.kind)?'discovery':request.kind==='plan'?'planning':request.kind==='evidence'?'evidence':'verification';
-      for (const target of targets) if (target) {target.working=true;target.activity=activity;target.activity_text=request.activity||request.worker_role||request.kind;}
-      if(!targets.length){nodes[0].working=true;nodes[0].activity=activity;}
-    }
-    const latest=new Map();for(const node of full.filter(n=>n.type==='synthesis'))latest.set(owner(snapshot,node.id),node);
-    for(const node of nodes){const verdict=latest.get(node.id);if(verdict)node.verdict=data(verdict).verdict || verdict.title.split(' · ')[0].toLowerCase();}
-    // Explicit detail filters reveal evidence records; the overview remains concept-only.
-    if(filter==='source') for(const source of snapshot.sources)nodes.push({...full.find(n=>Number(n.id)===Number(source.node_id)),id:String(source.node_id),parent_id:owner(snapshot,source.node_id),type:'source',title:source.title,status:'complete',source_ids:[Number(source.id)]});
-    if(filter==='passage') for(const passage of snapshot.ledger?.passages||[]){const source=snapshot.sources.find(s=>Number(s.id)===Number(passage.source_id));nodes.push({id:'passage-'+passage.id,parent_id:source?owner(snapshot,source.node_id):'root',type:'passage',title:passage.exact_text,status:'complete',source_ids:[Number(passage.source_id)]});}
-    if(filter==='edge') for(const edge of snapshot.ledger?.edges||[])nodes.push({id:'edge-'+edge.id,parent_id:String(edge.claim_id),type:'edge',title:edge.relation+' · '+edge.strength,status:'complete',source_ids:[Number(edge.source_id)]});
-    if(['dead_end','open'].includes(filter))for(const node of full.filter(n=>filter==='dead_end'?n.type==='dead_end':n.type==='synthesis'&&data(n).verdict==='open'))nodes.push({...node,id:String(node.id),parent_id:owner(snapshot,node.id),source_ids:data(node).source_ids||[]});
-    let selected=nodes;
-    if(filter==='dream_claim')selected=nodes.filter(n=>n.type==='root'||n.type==='dream_claim');
-    if(filter==='question')selected=nodes.filter(n=>n.type==='root'||n.type==='question'||nodes.some(q=>q.type==='question'&&q.parent_id===n.id));
-    const ids=new Set(selected.map(n=>n.id)), edges=selected.filter(n=>n.parent_id&&ids.has(n.parent_id)).map(n=>({from:n.parent_id,to:n.id,kind:'concept',weight:Number(n.path_weight||50)}));
-    for(const [source,claims] of sourceClaims){const related=[...claims].filter(id=>ids.has(id));for(let a=0;a<related.length;a++)for(let b=a+1;b<related.length;b++)edges.push({from:related[a],to:related[b],kind:'shared_source',source_id:source,weight:25});}
-    return {nodes:selected,edges};
-  }
-  function hash(value) { let n=2166136261;for(const c of String(value))n=Math.imul(n^c.charCodeAt(0),16777619);return n>>>0; }
-  function layout(nodes, edges, width, height, previous = new Map()) {
-    if(!nodes.length)return {positions:new Map(),width,height};
-    const cx=width/2,cy=height/2;
-    const items=nodes.map((node,i)=>{
-      const old=previous.get(node.id),angle=i*2.399963+hash(node.id)%100/100;
-      return {id:node.id,w:node.w||194,h:node.h||84,x:old?old.x+(node.w||194)/2:cx+Math.cos(angle)*Math.sqrt(i)*95,y:old?old.y+(node.h||84)/2:cy+Math.sin(angle)*Math.sqrt(i)*95,vx:0,vy:0};
-    });
-    const byId=new Map(items.map(n=>[n.id,n]));
-    for(let step=0;step<180;step++){
-      for(const n of items){n.vx+=(cx-n.x)*.006*Math.max(1,height/width)**2;n.vy+=(cy-n.y)*.006*Math.max(1,width/height)**2;}
-      for(const edge of edges){const a=byId.get(edge.from),b=byId.get(edge.to);if(!a||!b)continue;let dx=b.x-a.x,dy=b.y-a.y,d=Math.max(1,Math.hypot(dx,dy));const ideal=Math.min((a.w+b.w)/2/Math.max(.01,Math.abs(dx/d)),(a.h+b.h)/2/Math.max(.01,Math.abs(dy/d)))+30,f=(d-ideal)*(edge.kind==='shared_source'?.008:.018);a.vx+=dx/d*f;a.vy+=dy/d*f;b.vx-=dx/d*f;b.vy-=dy/d*f;}
-      for(let i=0;i<items.length;i++)for(let j=i+1;j<items.length;j++){
-        const a=items[i],b=items[j];let dx=b.x-a.x,dy=b.y-a.y;if(Math.abs(dx)+Math.abs(dy)<.01){dx=1;dy=.5;}
-        const ox=(a.w+b.w)/2+22-Math.abs(dx),oy=(a.h+b.h)/2+22-Math.abs(dy),d=Math.max(25,Math.hypot(dx,dy)),f=Math.min(8,1800/(d*d));
-        a.vx-=dx/d*f;b.vx+=dx/d*f;a.vy-=dy/d*f;b.vy+=dy/d*f;
-        if(ox>0&&oy>0){if(ox*(height/width)**2<oy){const push=Math.sign(dx)*Math.min(20,ox*.3);a.vx-=push;b.vx+=push;}else{const push=Math.sign(dy)*Math.min(20,oy*.3);a.vy-=push;b.vy+=push;}}
+  function owner(snapshot, id) { return resolveOwner(index(snapshot).byId, id); }
+  function project(snapshot, requestedFilter = 'all') {
+    const aliases = {concepts: 'all', claims: 'dream_claim', questions: 'question', sources: 'source', passages: 'passage', edges: 'edge', dead_ends: 'dead_end'};
+    const supported = ['all', 'dream_claim', 'question', 'source', 'passage', 'edge', 'dead_end', 'open'];
+    const named = aliases[requestedFilter] || requestedFilter;
+    const filter = supported.includes(named) ? named : 'all';
+    const state = index(snapshot), {run, nodes: full, byId, sources, passages} = state;
+    const nearest = id => resolveOwner(byId, id);
+    const review = run.phase === 'dream_review';
+    const claims = full.filter(node => node.type === 'dream_claim' && (review || ![0, '0', false].includes(node.selected)));
+    const selectedClaims = new Set(claims.map(node => key(node.id)));
+    const allConcepts = new Map(full.filter(isConcept).map(node => [key(node.id), node]));
+    const edgeOwners = edge => allConcepts.has(key(edge.claim_id)) ? [key(edge.claim_id)] : [];
+    function claimAncestor(id, seen = new Set()) {
+      const node = byId.get(key(id));
+      if (!node || seen.has(key(node.id))) return null;
+      seen.add(key(node.id));
+      if (node.type === 'dream_claim') return key(node.id);
+      const parent = claimAncestor(node.parent_id, seen);
+      if (parent) return parent;
+      const meta = data(node);
+      for (const candidate of [node.claim_id, meta.claim_id, ...ids(node.linked_claim_ids), ...ids(meta.claim_ids)]) {
+        const found = claimAncestor(candidate, seen);
+        if (found) return found;
       }
-      for(const n of items){n.vx*=.62;n.vy*=.62;n.x+=n.vx;n.y+=n.vy;}
+      return null;
     }
-    // Resolve the last few pixels deterministically, including very long concept cards.
-    for(let step=0;step<100;step++){
-      let collisions=0;for(let i=0;i<items.length;i++)for(let j=i+1;j<items.length;j++){
-        const a=items[i],b=items[j],dx=b.x-a.x||.01,dy=b.y-a.y||.01,ox=(a.w+b.w)/2+18-Math.abs(dx),oy=(a.h+b.h)/2+18-Math.abs(dy);
-        if(ox>0&&oy>0){collisions++;if(ox*(height/width)**2<oy){const d=Math.sign(dx)*(ox/2+.1);a.x-=d;b.x+=d;}else{const d=Math.sign(dy)*(oy/2+.1);a.y-=d;b.y+=d;}}
-      }if(!collisions)break;
+    const questions = full.filter(node => node.type === 'question' && selectedClaims.has(claimAncestor(node.id)));
+    const visibleIds = new Set([...claims, ...questions].map(node => key(node.id)));
+    function parentFor(node) {
+      const parent = nearest(node.parent_id);
+      if (visibleIds.has(parent) && parent !== key(node.id)) return parent;
+      const ancestor = claimAncestor(node.id);
+      return ancestor && ancestor !== key(node.id) && visibleIds.has(ancestor) ? ancestor : 'root';
     }
-    const left=Math.min(...items.map(n=>n.x-n.w/2)),top=Math.min(...items.map(n=>n.y-n.h/2));
-    const boxW=Math.max(...items.map(n=>n.x+n.w/2))-left+48,boxH=Math.max(...items.map(n=>n.y+n.h/2))-top+48;
-    const worldW=Math.max(width,boxW),worldH=Math.max(height,boxH),offsetX=(worldW-boxW)/2+24-left,offsetY=(worldH-boxH)/2+24-top;
-    return {width:worldW,height:worldH,positions:new Map(items.map(n=>[n.id,{x:n.x-n.w/2+offsetX,y:n.y-n.h/2+offsetY,w:n.w,h:n.h}]))};
+    const root = {id: 'root', parent_id: null, type: 'root', title: run.name || 'Research', status: run.status || 'pending', source_ids: [], path_weight: 50, display_only: true};
+    const concepts = [...claims, ...questions].map(node => ({...node, id: key(node.id), parent_id: parentFor(node), source_ids: [], activity: null, working: false}));
+    const conceptsById = new Map(concepts.map(node => [node.id, node]));
+    // A broken question cycle must not leave a disconnected/cyclic display graph.
+    for (const node of concepts) {
+      const seen = new Set([node.id]); let parent = node.parent_id;
+      while (conceptsById.has(parent)) {
+        if (seen.has(parent)) { node.parent_id = claimAncestor(node.id) || 'root'; if (node.parent_id === node.id) node.parent_id = 'root'; break; }
+        seen.add(parent); parent = conceptsById.get(parent).parent_id;
+      }
+    }
+    const owned = candidates => ids(candidates).map(nearest).filter(id => id !== 'root');
+    const unique = values => [...new Set(values)].sort(compare);
+    const sourceOwners = new Map();
+    for (const source of sources) {
+      const meta = object(source.meta_json);
+      const linked = owned([source.node_id, meta.path_node_id, source.claim_id, meta.claim_id, ...list(meta.claim_ids), ...list(source.linked_claim_ids)]);
+      for (const edge of state.edges) if (key(edge.source_id) === key(source.id)) linked.push(...edgeOwners(edge));
+      sourceOwners.set(key(source.id), unique(linked));
+    }
+    const sourceById = new Map(sources.map(source => [key(source.id), source]));
+    for (const node of concepts) node.source_ids = sources.filter(source => sourceOwners.get(key(source.id)).includes(node.id)).map(source => sourceId(source.id));
+    const pending = run.status === 'running' ? state.requests.filter(request => request.status === 'pending').slice().sort((a, b) => compare(a.id || '', b.id || '')) : [];
+    for (const request of pending) {
+      const targetId = [request.path_node_id, request.claim_id, request.node_id].map(nearest).find(id => id !== 'root') || 'root';
+      const targets = targetId === 'root' ? concepts.filter(node => node.type === 'dream_claim' && ![0, '0', false].includes(node.selected)) : [conceptsById.get(targetId)].filter(Boolean);
+      const activity = ['dream', 'exploration'].includes(request.kind) ? 'discovery' : request.kind === 'plan' ? 'planning' : request.kind === 'evidence' ? 'evidence' : 'verification';
+      for (const node of targets) Object.assign(node, {working: true, activity, activity_text: request.activity || request.worker_role || request.kind});
+      if (targetId === 'root' && !targets.length) Object.assign(root, {working: true, activity, activity_text: request.activity || request.worker_role || request.kind});
+    }
+    const verdicts = new Map();
+    for (const node of full.filter(node => node.type === 'synthesis')) verdicts.set(nearest(node.id), node);
+    for (const node of concepts) {
+      const verdict = verdicts.get(node.id);
+      if (verdict) node.verdict = data(verdict).verdict || String(verdict.title || '').split(' · ')[0].toLowerCase();
+    }
+    const details = [];
+    const permitted = owners => !owners.length || owners.some(id => visibleIds.has(id));
+    function detail(row, owners) {
+      const visibleOwners = unique(owners.filter(id => visibleIds.has(id)));
+      if (!permitted(owners)) return;
+      const actual = nearest(row.parent_id);
+      details.push({...row, parent_id: visibleOwners.includes(actual) ? actual : visibleOwners[0] || 'root', owner_ids: visibleOwners, linked_claim_ids: unique(visibleOwners.map(id => claimAncestor(id)).filter(Boolean)).map(sourceId)});
+    }
+    if (filter === 'source') {
+      const used = new Set(visibleIds);
+      for (const source of sources) {
+        const persisted = byId.get(key(source.node_id));
+        const persistedId = persisted && persisted.type === 'source' && !used.has(key(persisted.id)) ? key(persisted.id) : null;
+        const id = persistedId || 'source-' + source.id; used.add(id);
+        detail({...persisted, ...source, id, parent_id: source.node_id, type: 'source', title: source.title || source.url || 'Untitled source', content: source.extract || persisted && persisted.content || '', status: 'complete', source_ids: [sourceId(source.id)], display_only: !persistedId}, sourceOwners.get(key(source.id)));
+      }
+    }
+    if (filter === 'passage') for (const passage of passages) {
+      const linkedEdges = state.edges.filter(edge => key(edge.passage_id) === key(passage.id));
+      const linked = unique(linkedEdges.flatMap(edgeOwners));
+      const owners = linked.length ? linked : sourceOwners.get(key(passage.source_id)) || [];
+      const source = sourceById.get(key(passage.source_id));
+      detail({...passage, id: 'passage-' + passage.id, passage_id: passage.id, parent_id: source && source.node_id, type: 'passage', title: passage.exact_text || 'Stored passage with no text', content: passage.exact_text || '', status: 'complete', source_ids: source ? [sourceId(source.id)] : [], display_only: true}, owners);
+    }
+    if (filter === 'edge') for (const edge of state.edges) {
+      // Do not turn an invalid claim reference into a relation on a different claim.
+      const owners = edgeOwners(edge);
+      const passage = passages.find(row => key(row.id) === key(edge.passage_id));
+      const source = sourceById.get(key(edge.source_id)) || sourceById.get(key(passage && passage.source_id));
+      detail({...edge, id: 'edge-' + edge.id, edge_id: edge.id, parent_id: edge.claim_id, type: 'edge', title: (edge.relation || 'Unspecified relation') + ' · ' + (edge.strength || 'unrated'), content: edge.rationale || '', status: 'complete', source_ids: source ? [sourceId(source.id)] : [], display_only: true}, owners);
+    }
+    if (['dead_end', 'open'].includes(filter)) for (const node of full) {
+      const savedVerdict = data(node).verdict;
+      const open = savedVerdict ? savedVerdict === 'open' : /^open(?:\s|$)/i.test(node.title || '');
+      const latest = nearest(node.id) === 'root' || verdicts.get(nearest(node.id)) === node;
+      if (!(filter === 'dead_end' ? node.type === 'dead_end' : node.type === 'synthesis' && latest && open)) continue;
+      const sourceIds = unique([...list(node.source_ids), ...list(data(node).source_ids)].map(key).filter(id => sourceById.has(id))).map(sourceId);
+      detail({...node, id: key(node.id), type: node.type, source_ids: sourceIds, display_only: false}, owned([node.id]));
+    }
+    let selectedConcepts = concepts;
+    if (filter === 'dream_claim') selectedConcepts = concepts.filter(node => node.type === 'dream_claim');
+    if (filter === 'question' || !['all', 'dream_claim'].includes(filter)) {
+      const keep = new Set(filter === 'question' ? questions.map(node => key(node.id)) : details.flatMap(node => node.owner_ids));
+      for (const id of [...keep]) { let node = conceptsById.get(id); const seen = new Set(); while (node && !seen.has(node.id)) { seen.add(node.id); keep.add(node.id); node = conceptsById.get(node.parent_id); } }
+      selectedConcepts = concepts.filter(node => keep.has(node.id));
+    }
+    // Parent before child, siblings by durable ID, independent of snapshot row order.
+    function ordered(rows) {
+      const result = [], pendingRows = rows.slice().sort((a, b) => compare(a.id, b.id)), added = new Set(['root']);
+      while (pendingRows.length) {
+        const at = pendingRows.findIndex(node => added.has(node.parent_id));
+        const node = pendingRows.splice(at < 0 ? 0 : at, 1)[0];
+        if (at < 0) node.parent_id = 'root';
+        result.push(node); added.add(node.id);
+      }
+      return result;
+    }
+    const projected = [root, ...ordered(selectedConcepts), ...details.sort((a, b) => compare(a.id, b.id))];
+    const projectedIds = new Set(projected.map(node => node.id));
+    const edges = projected.filter(node => node.parent_id && projectedIds.has(node.parent_id)).map(node => ({from: node.parent_id, to: node.id, kind: 'concept', weight: Number(node.path_weight) || 50}));
+    for (const source of sources) {
+      const related = sourceOwners.get(key(source.id)).filter(id => projectedIds.has(id) && allConcepts.get(id)?.type === 'dream_claim');
+      for (let a = 0; a < related.length; a++) for (let b = a + 1; b < related.length; b++) edges.push({from: related[a], to: related[b], kind: 'shared_source', source_id: sourceId(source.id), weight: 25});
+    }
+    edges.sort((a, b) => compare(a.from, b.from) || compare(a.to, b.to) || compare(a.kind, b.kind) || compare(a.source_id || '', b.source_id || ''));
+    const detailCount = filter === 'question' ? selectedConcepts.filter(node => node.type === 'question').length : filter === 'dream_claim' ? selectedConcepts.length : filter === 'all' ? selectedConcepts.length : details.length;
+    const reasons = {all: review ? 'No concepts have been proposed for review yet.' : 'No selected concepts are available for this run yet.', dream_claim: 'No selected claims are available for this run yet.', question: 'No questions have grown from the selected concepts yet.', source: 'No sources are stored for the selected concepts yet.', passage: 'No passages are stored for the selected concepts yet.', edge: 'No evidence relations are stored for the selected concepts yet.', dead_end: 'No dead ends are stored for the selected concepts yet.', open: 'No open verdicts are stored for the selected concepts yet.'};
+    return {nodes: projected, edges, filter, empty: detailCount === 0, empty_reason: detailCount === 0 ? reasons[filter] : '', detail_count: detailCount, concept_count: selectedConcepts.length};
+  }
+  function layout(nodes, edges, width, height, previous = new Map()) {
+    const viewportW = Math.max(1, Number(width) || 1), viewportH = Math.max(1, Number(height) || 1), margin = 24, gapX = 24, gapY = 28;
+    const rows = records(nodes).map(node => ({...node, id: key(node.id), w: Math.max(1, Number(node.w) || 194), h: Math.max(1, Number(node.h) || 84)}));
+    if (!rows.length) return {positions: new Map(), width: viewportW, height: viewportH, reused: 0, new_count: 0};
+    const memory = previous instanceof Map ? previous : new Map();
+    const byId = new Map(rows.map(node => [node.id, node])), parents = new Map();
+    for (const node of rows) if (byId.has(key(node.parent_id)) && key(node.parent_id) !== node.id) parents.set(node.id, key(node.parent_id));
+    for (const edge of list(edges)) if (edge && edge.kind !== 'shared_source' && byId.has(key(edge.from)) && byId.has(key(edge.to)) && key(edge.from) !== key(edge.to) && !parents.has(key(edge.to))) parents.set(key(edge.to), key(edge.from));
+    const root = rows.find(node => node.id === 'root' || node.type === 'root') || rows.find(node => !parents.has(node.id)) || rows[0];
+    parents.delete(root.id);
+    const levels = new Map([[root.id, 0]]);
+    function level(id, seen = new Set()) {
+      if (levels.has(id)) return levels.get(id);
+      if (seen.has(id)) return 1;
+      seen.add(id); const parent = parents.get(id);
+      const depth = parent ? level(parent, seen) + 1 : 1;
+      levels.set(id, depth); return depth;
+    }
+    rows.forEach(node => level(node.id));
+    const maxW = Math.max(...rows.map(node => node.w));
+    const initialWidth = Math.max(viewportW, maxW + margin * 2);
+    const columns = Math.max(1, Math.floor((initialWidth - margin * 2 + gapX) / (maxW + gapX)));
+    const positions = new Map(), obstacles = [], fresh = [];
+    for (const [id, old] of memory) if (old && [old.x, old.y, old.w, old.h].every(Number.isFinite)) obstacles.push({...old, id: String(id)});
+    for (const node of rows) {
+      const old = memory.get(node.id);
+      if (old && Number.isFinite(old.x) && Number.isFinite(old.y)) {
+        const position = {x: old.x, y: old.y, w: node.w, h: node.h}; positions.set(node.id, position);
+        const at = obstacles.findIndex(item => item.id === node.id); if (at >= 0) obstacles[at] = {...position, id: node.id}; else obstacles.push({...position, id: node.id});
+      } else fresh.push(node);
+    }
+    const reused = positions.size;
+    if (!reused) {
+      let y = margin;
+      const depths = [...new Set(rows.map(node => levels.get(node.id)))].sort((a, b) => a - b);
+      for (const depth of depths) {
+        const layer = rows.filter(node => levels.get(node.id) === depth).sort((a, b) => {
+          const ap = positions.get(parents.get(a.id)), bp = positions.get(parents.get(b.id));
+          return (ap && bp ? ap.x - bp.x : 0) || compare(parents.get(a.id) || '', parents.get(b.id) || '') || compare(a.id, b.id);
+        });
+        for (let start = 0; start < layer.length; start += columns) {
+          const band = layer.slice(start, start + columns), bandWidth = band.length * maxW + (band.length - 1) * gapX;
+          const left = (initialWidth - bandWidth) / 2, bandHeight = Math.max(...band.map(node => node.h));
+          band.forEach((node, i) => positions.set(node.id, {x: left + i * (maxW + gapX) + (maxW - node.w) / 2, y, w: node.w, h: node.h}));
+          y += bandHeight + gapY;
+        }
+      }
+    } else {
+      // Only new IDs are placed. Hidden remembered cards also reserve their space.
+      const collides = rect => obstacles.some(other => rect.x < other.x + other.w + gapX && rect.x + rect.w + gapX > other.x && rect.y < other.y + other.h + gapY && rect.y + rect.h + gapY > other.y);
+      const usableWidth = Math.max(initialWidth, ...obstacles.map(node => node.x + node.w + margin));
+      fresh.sort((a, b) => levels.get(a.id) - levels.get(b.id) || compare(parents.get(a.id) || '', parents.get(b.id) || '') || compare(a.id, b.id));
+      for (const node of fresh) {
+        const parent = positions.get(parents.get(node.id)) || memory.get(parents.get(node.id)) || positions.get(root.id);
+        const desiredX = Math.max(margin, Math.min(usableWidth - margin - node.w, parent ? parent.x + (parent.w - node.w) / 2 : (usableWidth - node.w) / 2));
+        const desiredY = parent ? parent.y + parent.h + gapY : margin;
+        let chosen = null;
+        const xSlots = [desiredX];
+        for (let x = margin; x + node.w <= usableWidth - margin + 0.01; x += node.w + gapX) xSlots.push(x);
+        const orderedX = [...new Set(xSlots)].sort((a, b) => Math.abs(a - desiredX) - Math.abs(b - desiredX) || a - b);
+        // A finite scan always ends below all previous cards, without moving them.
+        const bottom = Math.max(desiredY, ...obstacles.map(other => other.y + other.h + gapY));
+        for (let y = desiredY; y <= bottom + node.h + gapY && !chosen; y += node.h + gapY) {
+          for (const x of orderedX) { const rect = {x, y, w: node.w, h: node.h}; if (!collides(rect)) { chosen = rect; break; } }
+        }
+        if (!chosen) chosen = {x: desiredX, y: bottom, w: node.w, h: node.h};
+        positions.set(node.id, chosen); obstacles.push({...chosen, id: node.id});
+      }
+    }
+    return {positions, width: Math.max(viewportW, ...[...positions.values()].map(node => node.x + node.w + margin)), height: Math.max(viewportH, ...[...positions.values()].map(node => node.y + node.h + margin)), reused, new_count: fresh.length};
   }
   function sentence(text) {
-    const clean=String(text||'').replace(/https?:\/\/\S+/g,'').replace(/[*_#`]/g,'').replace(/\b(?:Completed search\.|No completed search reported\.)\s*/g,'').replace(/\s+/g,' ').trim();
-    const first=clean.match(/^.*?[.!?](?=\s+[A-Z]|$)/)?.[0]||clean;
-    if(first.length<=190)return first;
-    return first.slice(0,187).replace(/\s+\S*$/,'')+'…';
+    const clean = String(text || '').replace(/https?:\/\/\S+/g, '').replace(/[*_#`]/g, '').replace(/\b(?:Completed search\.|No completed search reported\.)\s*/g, '').replace(/\s+/g, ' ').trim();
+    const first = clean.match(/^.*?[.!?](?=\s+[A-Z]|$)/)?.[0] || clean;
+    if (first.length <= 190) return first;
+    return first.slice(0, 187).replace(/\s+\S*$/, '') + '…';
   }
   class ReadingQueue {
-    constructor(){this.items=[];this.seen=new Set();this.history=[];this.current=null;this.until=0;this.last=0;this.paused=false;}
-    add(text){text=sentence(text);if(!text||this.seen.has(text))return;this.seen.add(text);this.items.push(text);this.history.push(text);if(this.items.length>50)this.items.shift();if(this.history.length>100)this.history.shift();}
-    tick(now,visible=true){const elapsed=this.last?now-this.last:0;this.last=now;if(!visible||this.paused){this.until+=elapsed;return null;}if(!this.items.length||this.current&&now<this.until)return null;this.current=this.items.shift();this.until=now+Math.max(5000,Math.min(10000,this.current.split(/\s+/).length*260+2000));return this.current;}
+    constructor() { this.items = []; this.seen = new Set(); this.history = []; this.current = null; this.until = 0; this.last = 0; this.paused = false; }
+    add(text) { text = sentence(text); if (!text || this.seen.has(text)) return; this.seen.add(text); this.items.push(text); this.history.push(text); if (this.items.length > 50) this.items.shift(); if (this.history.length > 100) this.history.shift(); }
+    tick(now, visible = true) { const elapsed = this.last ? now - this.last : 0; this.last = now; if (!visible || this.paused) { this.until += elapsed; return null; } if (!this.items.length || this.current && now < this.until) return null; this.current = this.items.shift(); this.until = now + Math.max(5000, Math.min(10000, this.current.split(/\s+/).length * 260 + 2000)); return this.current; }
   }
-  return {owner,project,layout,sentence,ReadingQueue};
+  return {owner, project, layout, sentence, ReadingQueue};
 });

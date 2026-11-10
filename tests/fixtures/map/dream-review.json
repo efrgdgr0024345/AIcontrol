@@ -1,0 +1,60 @@
+{
+  "_fixture": {
+    "synthetic": true,
+    "description": "dream review",
+    "note": "Hand-authored contract fixture; no live provider request or customer data."
+  },
+  "run": {
+    "id": 101,
+    "name": "Synthetic review",
+    "status": "running",
+    "phase": "dream_review"
+  },
+  "nodes": [
+    {
+      "id": 1,
+      "parent_id": null,
+      "type": "phase",
+      "title": "Dream",
+      "status": "complete"
+    },
+    {
+      "id": 2,
+      "parent_id": 1,
+      "type": "dream_claim",
+      "title": "A reversible mechanism",
+      "status": "complete",
+      "selected": 1
+    },
+    {
+      "id": 3,
+      "parent_id": 1,
+      "type": "dream_claim",
+      "title": "An alternative mechanism",
+      "status": "complete",
+      "selected": 0
+    },
+    {
+      "id": 4,
+      "parent_id": 1,
+      "type": "dream_claim",
+      "title": "A measurable constraint",
+      "status": "complete",
+      "selected": 1
+    },
+    {
+      "id": 5,
+      "parent_id": 3,
+      "type": "question",
+      "title": "Could the alternative generalise?",
+      "status": "complete",
+      "speculative": 1
+    }
+  ],
+  "sources": [],
+  "requests": [],
+  "ledger": {
+    "passages": [],
+    "edges": []
+  }
+}
