@@ -164,7 +164,7 @@ document.addEventListener('submit', event => {
     if (node) node.textContent = message;
   }
   function budgetLabel(budget) {
-    return `${budget.remaining} of 10 requests remaining this hour · max 2 searches per investigation` +
+    return `${budget.remaining} of 10 requests remaining this hour · shared across search, verification and Learn` +
       (budget.remaining === 0 ? ` · Next request available in about ${Math.ceil(budget.retry_after_seconds / 60)} minutes` : '');
   }
   function showBudget(budget) {
@@ -185,6 +185,7 @@ document.addEventListener('submit', event => {
   function claimSources(snapshot, claim) {
     const parents = new Map(snapshot.nodes.map(node => [Number(node.id), Number(node.parent_id)]));
     return snapshot.sources.filter(source => {
+      if(snapshot.ledger?.edges.some(edge=>Number(edge.claim_id)===Number(claim)&&Number(edge.source_id)===Number(source.id)))return true;
       try { if ((JSON.parse(source.meta_json || '{}').claim_ids || []).map(Number).includes(Number(claim))) return true; } catch (_) { /* Legacy ancestor lookup. */ }
       let id = Number(source.node_id); const seen = new Set();
       while (id && !seen.has(id)) { if (id === Number(claim)) return true; seen.add(id); id = parents.get(id); }
@@ -206,7 +207,7 @@ document.addEventListener('submit', event => {
       let card = cards.querySelector(`[data-claim-id="${Number(claim.id)}"]`);
       if (!card) { card = element('article', undefined, 'dream-card'); card.dataset.claimId = claim.id; cards.append(card); }
       // Review polling must not recreate checkboxes or steal focus/selection.
-      const serial = JSON.stringify([claim, snapshot.nodes.filter(node => node.type !== 'learn'), snapshot.sources]);
+      const serial = JSON.stringify([claim, snapshot.nodes.filter(node => node.type !== 'learn'), snapshot.sources,snapshot.ledger]);
       if (card.dataset.serial !== serial) {
         const old = card.querySelector('input'); const checked = old ? old.checked : Number(claim.selected ?? 1) === 1;
         const focused = old === document.activeElement;
@@ -247,13 +248,14 @@ document.addEventListener('submit', event => {
     }
     const rows = root.querySelector('[data-matrix-rows]'); rows.replaceChildren();
     for (const claim of claims) {
-      const verdict = snapshot.nodes.find(node => node.type === 'synthesis' && Number(node.parent_id) === Number(claim.id));
+      const verdict = snapshot.nodes.filter(node => node.type === 'synthesis' && Number(node.parent_id) === Number(claim.id)).at(-1);
       let data = {}; try { data = JSON.parse(verdict?.data_json || '{}'); } catch (_) { /* Legacy title. */ }
       const outcome = Number(claim.selected ?? 1) === 0 ? 'Excluded from verification' : (data.verdict || verdict?.title.split(' · ')[0] || 'open');
       const tr = element('tr'), th = element('th', claimData(claim).claim); th.scope = 'row';
       const sources = claimSources(snapshot, claim.id).filter(source => safeUrl(source.url) && (!data.source_ids || data.source_ids.includes(Number(source.id))));
       const td = element('td', sources.length ? '' : 'No useful source');
       for (const source of sources) { const link = element('a', source.title); link.href = source.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; td.append(link, document.createTextNode(' ')); }
+      for(const edge of snapshot.ledger?.edges||[])if(Number(edge.claim_id)===Number(claim.id)){const relation=element('details',undefined,'matrix-relation');relation.append(element('summary',edge.relation+' · '+(edge.strength||'unrated')),element('p',edge.rationale));const passage=snapshot.ledger.passages.find(p=>Number(p.id)===Number(edge.passage_id));relation.append(element('blockquote',passage?passage.exact_text:'Citation-only relation; no captured passage.'));if(passage)relation.append(element('small',passage.locator||'No locator supplied'));td.append(relation);}
       tr.append(th, element('td', outcome), td); rows.append(tr);
     }
     root.querySelector('[data-claim-matrix]').hidden = snapshot.run.status !== 'complete';
@@ -263,7 +265,7 @@ document.addEventListener('submit', event => {
     root.querySelector('[data-dream-skeleton]').hidden = !generating || claims.length > 0;
     const plans = snapshot.nodes.filter(node => node.type === 'plan_step');
     root.querySelector('[data-live-progress]').textContent = snapshot.run.phase === 'evidence' ? `Verification search ${Math.min(Number(snapshot.run.evidence_index || 0) + 1, plans.length)} of ${plans.length} · ${snapshot.run.busy_since ? 'request in progress' : 'ready for the next step'}` : (review ? 'Dream complete — choose what to verify before continuing.' : '');
-    const stages = ['dream', 'dream_review', 'plan', 'evidence', 'reconciliation'];
+    const stages = ['dream', 'dream_review', 'plan', 'evidence', Number(snapshot.run.rigour_version)===1?'verification':'reconciliation'];
     root.querySelectorAll('[data-phase-rail] li').forEach((item, index) => {
       item.removeAttribute('aria-current');
       if (stages[index] === snapshot.run.phase) item.setAttribute('aria-current', 'step');
@@ -279,17 +281,37 @@ document.addEventListener('submit', event => {
     if (!root) return;
     const review = root.dataset.review === '1';
     const total = root.querySelectorAll('[data-dream-cards] input:checked').length;
-    root.querySelector('[data-selection-count]').textContent = review ? `${total} of ${root.querySelectorAll('[data-dream-cards] input').length} claims selected · will use up to 2 searches` : '';
+    root.querySelector('[data-selection-count]').textContent = review ? `${total} of ${root.querySelectorAll('[data-dream-cards] input').length} claims selected · ${root.dataset.rigour === '1' ? 'up to ' + root.dataset.searchLimit + ' normal searches + 1 challenge' : 'will use up to 2 searches'}` : '';
     root.querySelector('[data-continue-claims]').disabled = review && total === 0;
     root.querySelector('[data-review-shortcuts]').hidden = !review;
   }
   root?.addEventListener('change', event => { if (event.target.matches('[name="claim_ids[]"]')) updateSelection(); });
+  function renderLedger(snapshot) {
+    const ledger=snapshot.ledger||{edges:[],passages:[],claim_versions:[],sources:[]};
+    const panel=root.querySelector('[data-evidence-ledger]');panel.hidden=!Number(snapshot.run.rigour_version)&&!ledger.edges.length;
+    const entries=panel.querySelector('[data-ledger-entries]');entries.replaceChildren();
+    const passageView=passage=>{const details=element('details',undefined,'evidence-passage');details.append(element('summary',`Passage #${passage.id} · ${passage.fetch_scope}`),element('blockquote',passage.exact_text),element('small',`${passage.locator||'No locator supplied'} · SHA-256 ${passage.content_hash}`));return details;};
+    for(const edge of ledger.edges){
+      const card=element('article',undefined,'ledger-edge');card.append(element('h4',`Claim #${edge.claim_id} · ${edge.relation}`),element('p',edge.rationale),element('small',`${edge.strength||'Unrated'} strength · edge #${edge.id}`));
+      const passage=ledger.passages.find(p=>Number(p.id)===Number(edge.passage_id));if(passage)card.append(passageView(passage));else card.append(element('p','Citation-only relation — no captured source passage.'));
+      const source=ledger.sources.find(s=>Number(s.id)===Number(edge.source_id));if(source&&safeUrl(source.url)){const link=element('a',source.title);link.href=source.url;link.target='_blank';link.rel='noopener noreferrer';card.append(link,element('p',source.shared_origin||'Independence not assessed.'));}entries.append(card);
+    }
+    const history=panel.querySelector('[data-ledger-history]');history.replaceChildren();for(const version of ledger.claim_versions)history.append(element('p',`Claim #${version.claim_id} · ${version.status} · ${version.created_by} · ${version.rationale}`));
+    const results=panel.querySelector('[data-verification-results]');results.replaceChildren();let high=false;
+    for(const node of snapshot.nodes.filter(n=>n.type==='phase'&&['Verification','Repair'].includes(n.title))){let data={};try{data=JSON.parse(node.data_json||'{}');}catch(_){}results.append(element('h4',`${node.title} · ${node.status}`));for(const defect of data.defects||[]){results.append(element('p',`${defect.severity} · ${defect.kind} · ${defect.description}`));if(defect.severity==='high')high=true;}for(const check of data.calculations||[])results.append(element('p',`Arithmetic ${check.operation} (${check.a}, ${check.b}): reported ${check.reported}; expected ${check.expected??'undefined'} · ${check.arithmetic_correct?'passed':'failed'}. Operands still require source validation.`));if(node.status==='complete'&&!(data.defects||[]).length)results.append(element('p','No defects reported by the grouped model check. This is not independent source verification.'));}
+    panel.querySelector('[data-ledger-freeze]').textContent=Number(snapshot.run.evidence_frozen)?`Frozen evidence version ${snapshot.run.evidence_version} · verification ${snapshot.run.verification_status}`:'Evidence is still provisional.';
+    const reviewing=snapshot.run.status==='running'&&snapshot.run.phase==='verification_review';panel.querySelector('[data-verification-controls]').hidden=!reviewing;
+    panel.querySelector('[data-research-action=research_repair] button').disabled=!reviewing||!high||Number(snapshot.run.repair_count)>0||snapshot.budget?.remaining===0;
+    // Source library passages remain available without requiring a supporting edge.
+    root.querySelectorAll('[data-source-id]').forEach(card=>{card.querySelector('[data-source-passages]')?.remove();const group=element('section');group.dataset.sourcePassages='1';group.append(element('h5','Captured passages'));const passages=ledger.passages.filter(p=>Number(p.source_id)===Number(card.dataset.sourceId));for(const passage of passages)group.append(passageView(passage));const source=ledger.sources.find(s=>Number(s.id)===Number(card.dataset.sourceId));if(source?.shared_origin)group.append(element('p',source.shared_origin));if(!passages.length)group.append(element('p','No exact source passage was returned.'));card.append(group);});
+  }
   function render(snapshot) {
     if (!root || !snapshot.run) return;
     const serial = JSON.stringify(snapshot);
     if (serial === lastSnapshot) return;
     lastSnapshot = serial;
     const run = snapshot.run;
+    root.dataset.rigour = String(run.rigour_version || 0); root.dataset.searchLimit = String(run.normal_search_limit || 2);
     showBudget(snapshot.budget);
     const active = ['pending', 'running'].includes(run.status);
     const review = active && run.phase === 'dream_review';
@@ -304,7 +326,7 @@ document.addEventListener('submit', event => {
     root.querySelector('[data-research-summary]').textContent = `${run.status} · ${review ? 'Dream complete — review claims' : run.phase} · ${run.token_input} input / ${run.token_output} output tokens confirmed${run.usage_unknown ? ' · some usage unknown' : ''}`;
     root.querySelector('[data-research-reason]').textContent = run.stop_reason;
     root.querySelector('[data-stop-control]').hidden = !(active || pending);
-    root.querySelector('[data-step-control]').hidden = !active || !!run.busy_since || review;
+    root.querySelector('[data-step-control]').hidden = !active || !!run.busy_since || review || run.phase === 'verification_review';
     const tree = root.querySelector('[data-research-tree]');
     const existing = new Map([...tree.querySelectorAll('[data-node-id]')].map(node => [Number(node.dataset.nodeId), node]));
     const parents = new Map();
@@ -345,12 +367,13 @@ document.addEventListener('submit', event => {
     root.querySelector('[data-learn-link]').hidden = !hasSources;
     root.querySelector('[data-learn-panel]').hidden = !hasSources || root.dataset.selectedTab !== 'learn';
     root.querySelector('[data-source-empty]').hidden = hasSources;
-    root.querySelector('[data-learn-submit]').disabled = active || pending;
+    root.querySelector('[data-learn-submit]').disabled = active || pending || (Number(run.rigour_version)===1&&!Number(run.evidence_frozen));
     document.querySelectorAll('[data-research-action=research_start] button').forEach(button => button.disabled = active || pending);
     root.querySelector('[data-recovery]').hidden = !['interrupted','uncertain','incomplete','failed'].includes(run.status);
     root.querySelector('[data-learn-followups]').hidden = !snapshot.nodes.some(node => node.type === 'learn' && node.status === 'complete');
     root.querySelectorAll('[data-learn-followup]').forEach(button => button.disabled = active || pending || !hasSources);
     if (!active && !pending) { stepping = false; }
+    renderLedger(snapshot);
     root.dispatchEvent(new CustomEvent('research:snapshot', {detail:snapshot}));
   }
   async function send(form) {
@@ -367,7 +390,7 @@ document.addEventListener('submit', event => {
     return data;
   }
   async function advance(manual = false) {
-    if (!root || stepping || halted || root.dataset.status !== 'running' || root.dataset.busy === '1' || root.dataset.review === '1') return;
+    if (!root || stepping || halted || root.dataset.status !== 'running' || root.dataset.busy === '1' || root.dataset.review === '1' || root.dataset.phase === 'verification_review') return;
     if (!manual && root.dataset.phase === 'evidence') return;
     const form = root.querySelector('[data-research-action=research_step]');
     stepping = true;
@@ -468,7 +491,7 @@ document.addEventListener('submit', event => {
   const projectName=document.querySelector('.research-project-brief h2')?.textContent || 'Research map';
   const actions = el('div',undefined,'map-screen-actions');
   const screenButton = (label,action,style='btn-outline-secondary') => {const button=el('button',label,'btn '+style);button.type='button';button.dataset.mapScreenAction=action;return button;};
-  actions.append(screenButton('▶ Start research','start','btn-primary'),screenButton('■ Stop research','stop','btn-outline-danger'),screenButton('Continue planned search','step'),screenButton('Details','details'),screenButton('List','list'));
+  actions.append(screenButton('▶ Start research','start','btn-primary'),screenButton('■ Stop research','stop','btn-outline-danger'),screenButton('Continue planned search','step'),screenButton('Finish and freeze','finish','btn-primary'),screenButton('Review gaps once','repair'),screenButton('Details','details'),screenButton('List','list'));
   actions.children[0].setAttribute('aria-label','Start research'); actions.children[1].setAttribute('aria-label','Stop research');
   header.append(heading,actions);map.prepend(header);
   const side=map.querySelector('[data-map-inspector]');side.hidden=true;
@@ -491,11 +514,14 @@ document.addEventListener('submit', event => {
   function screenControls(){
     if(!snapshot)return;
     const active=['pending','running'].includes(snapshot.run.status),pending=snapshot.requests.some(request=>request.status==='pending');
-    actions.querySelector('[data-map-screen-action=start]').disabled=active||pending||root.dataset.connected==='0'||snapshot.budget?.remaining===0;
+    actions.querySelector('[data-map-screen-action=start]').disabled=active||pending||root.dataset.connected==='0'||(snapshot.budget&&snapshot.budget.remaining<6);
     actions.querySelector('[data-map-screen-action=stop]').disabled=!(active||pending);
     actions.querySelector('[data-map-screen-action=step]').hidden=!active||!!snapshot.run.busy_since||snapshot.run.phase!=='evidence';
+    const verificationReview=active&&snapshot.run.phase==='verification_review';
+    for(const action of ['finish','repair']){const button=actions.querySelector(`[data-map-screen-action=${action}]`);button.hidden=!verificationReview;button.disabled=root.querySelector(`[data-research-action=research_${action}] button`).disabled||pending;}
+    map.querySelector('[data-map-evidence-help]').textContent=Number(snapshot.run.rigour_version)===1?'Choose a direction or continue the planned search. The reserved Challenge always seeks counter-evidence, including when redirected.':'Choose a direction or continue the planned search. Each uses a remaining slot; at most two searches per run.';
     heading.querySelector('strong').textContent=`${projectName} · #${snapshot.run.id}`;
-    heading.querySelector('span').textContent=`${reviewing()?'Review claims to continue':snapshot.run.status+' · '+snapshot.run.phase} · ${snapshot.run.token_input} in / ${snapshot.run.token_output} out tokens${snapshot.run.usage_unknown?' · some usage unknown':''}${snapshot.budget?' · '+snapshot.budget.remaining+'/10 requests remaining':''}`;
+    heading.querySelector('span').textContent=`${reviewing()?'Review claims to continue':verificationReview?'Review verification findings · finish or review gaps':snapshot.run.status+' · '+snapshot.run.phase} · ${snapshot.run.token_input} in / ${snapshot.run.token_output} out tokens${snapshot.run.usage_unknown?' · some usage unknown':''}${snapshot.budget?' · '+snapshot.budget.remaining+'/10 requests remaining':''}`;
   }
   function details(open){side.hidden=!open;map.classList.toggle('map-details-open',open);actions.querySelector('[data-map-screen-action=details]').setAttribute('aria-expanded',String(open));}
   header.addEventListener('click',event=>{
@@ -523,6 +549,8 @@ document.addEventListener('submit', event => {
       if (!nodes.some(node => node.id === String(source.node_id))) nodes.push({id:`source-${source.id}`,parent_id:'root',type:'source',title:source.title,content:source.extract,status:'complete',source_ids:[Number(source.id)]});
     }
     for (const node of nodes) if(node.type==='dream_claim')node.confidence ??= data(node).confidence || 'unknown';
+    for(const passage of snapshot.ledger?.passages||[]){const source=snapshot.sources.find(s=>Number(s.id)===Number(passage.source_id));nodes.push({id:`passage-${passage.id}`,parent_id:source?String(source.node_id):'root',type:'passage',status:'complete',title:`Passage #${passage.id} · ${passage.fetch_scope}`,content:passage.exact_text+'\nLocator: '+(passage.locator||'not supplied')+'\nSHA-256: '+passage.content_hash,source_ids:[Number(passage.source_id)]});}
+    for(const edge of snapshot.ledger?.edges||[])nodes.push({id:`edge-${edge.id}`,parent_id:String(edge.claim_id),type:'edge',status:'complete',title:edge.relation+' · '+(edge.strength||'unrated')+' model assessment',content:edge.rationale,source_ids:[Number(edge.source_id)],linked_claim_ids:[Number(edge.claim_id)]});
     const ids = new Set(nodes.map(node => node.id));
     for (const node of nodes) if (node.id !== 'root' && !ids.has(node.parent_id)) node.parent_id = 'root';
   }
@@ -558,7 +586,7 @@ document.addEventListener('submit', event => {
       card.dataset.excluded = String(node.type === 'dream_claim' && !(reviewing() ? checked.has(node.id) : Number(node.selected ?? 1) === 1));
     }
     map.querySelector('[data-map-review]').hidden = !reviewing();
-    map.querySelector('[data-map-selection-count]').textContent = `${checked.size} of ${inputs.length} claims selected · up to two searches`;
+    map.querySelector('[data-map-selection-count]').textContent = `${checked.size} of ${inputs.length} claims selected · ${Number(snapshot.run.rigour_version)===1?'up to '+snapshot.run.normal_search_limit+' normal searches + 1 challenge':'up to two searches'}`;
     map.querySelector('[data-map-continue]').disabled = !reviewing() || !checked.size;
   }
   function draw() {
@@ -610,17 +638,21 @@ document.addEventListener('submit', event => {
   }
   function updateInspector() {
     const node=nodes.find(node=>node.id===selected)||nodes[0];
-    const stamp=JSON.stringify([node,snapshot.sources,selectedSources.size,snapshot.run.status,snapshot.run.phase,snapshot.run.busy_since,snapshot.budget]);
+    const stamp=JSON.stringify([node,snapshot.sources,snapshot.ledger,selectedSources.size,snapshot.run.status,snapshot.run.phase,snapshot.run.busy_since,snapshot.budget]);
     if (inspector.dataset.stamp!==stamp) {
       const title=el('h3',node.title),detail=el('p',`${node.type.replaceAll('_',' ')} · ${node.status}`,'map-inspector-status');
       inspector.replaceChildren(title,detail,el('p',node.dead_end_reason||node.content||'No details saved yet.','map-inspector-text'));
       const linked=links(node);if(linked.length)inspector.append(el('p',`Linked claims: ${linked.map(id=>'#'+id).join(', ')}`));
       for(const source of snapshot.sources.filter(source=>sourceIds(node).includes(Number(source.id))&&safe(source.url))){
         const card=el('article',undefined,'research-source'),link=el('a',source.url);link.href=source.url;link.target='_blank';link.rel='noopener noreferrer';
+        for(const passage of snapshot.ledger?.passages||[])if(Number(passage.source_id)===Number(source.id))card.append(el('h5',`Passage #${passage.id} · ${passage.fetch_scope}`),el('blockquote',passage.exact_text),el('small',passage.locator||'No locator supplied'));
         card.append(el('h4',source.title),link,el('p',source.extract),el('small',`${source.domain} · captured ${new Date(source.retrieved_at*1000).toISOString()}`));inspector.append(card);
       }
       inspector.dataset.stamp=stamp;
     }
+    const mapLedger=map.querySelector('[data-map-ledger]');mapLedger.replaceChildren();
+    for(const saved of snapshot.nodes.filter(n=>n.type==='phase'&&['Verification','Repair'].includes(n.title))){const record=data(saved);const block=el('details');block.append(el('summary',saved.title+' findings'));for(const defect of record.defects||[])block.append(el('p',defect.severity+' · '+defect.kind+' · '+defect.description));for(const check of record.calculations||[])block.append(el('p',`Arithmetic ${check.operation}: ${check.arithmetic_correct?'passed':'failed'} on supplied operands; source accuracy remains unverified.`));if(saved.status==='complete'&&!(record.defects||[]).length)block.append(el('p','No defects reported by this grouped model check. This is not independent source verification.'));mapLedger.append(block);}
+    if(snapshot.run.phase==='verification_review'&&snapshot.run.status==='running'){for(const [action,label] of [['research_finish','Finish and freeze evidence'],['research_repair','Review high-impact gaps once']]){const button=el('button',label,'btn btn-primary');button.type='button';const original=root.querySelector(`[data-research-action=${action}] button`);button.disabled=original.disabled;button.addEventListener('click',()=>original.form.requestSubmit());mapLedger.append(button);}}
     const linked=links(node),busy=snapshot.run.busy_since!==null||snapshot.requests.some(request=>request.status==='pending');
     const capacity=root.dataset.connected!=='0'&&(!snapshot.budget||snapshot.budget.remaining>0);
     const focusable=['dream_claim','dead_end','synthesis'].includes(node.type) && linked.length && linked.every(id=>nodes.some(claim=>claim.id===String(id)&&Number(claim.selected??1)===1)) && (node.type!=='synthesis'||node.title.toLowerCase().startsWith('open'));
@@ -630,7 +662,7 @@ document.addEventListener('submit', event => {
     const learnIds=selectedSources.size?[...selectedSources]:sourceIds(node);
     const inputs=map.querySelector('[data-map-source-inputs]');inputs.replaceChildren();
     for(const id of learnIds){const input=el('input');input.type='hidden';input.name='source_ids[]';input.value=id;inputs.append(input);}
-    const learn=map.querySelector('[data-map-learn-button]');learn.disabled=!learnIds.length||busy||!capacity||['pending','running'].includes(snapshot.run.status);
+    const learn=map.querySelector('[data-map-learn-button]');learn.disabled=!learnIds.length||busy||!capacity||['pending','running'].includes(snapshot.run.status)||(Number(snapshot.run.rigour_version)===1&&!Number(snapshot.run.evidence_frozen));
     learn.textContent=selectedSources.size?`Learn from ${selectedSources.size} selected source${selectedSources.size===1?'':'s'}`:'Learn from this source';
     const toggle=map.querySelector('[data-map-toggle-branch]');toggle.disabled=!nodes.some(child=>child.parent_id===node.id);toggle.textContent=collapsed.has(node.id)?'Expand branch':'Collapse branch';
     map.querySelector('[data-map-copy]').hidden=!snapshot.sources.some(source=>sourceIds(node).includes(Number(source.id))&&safe(source.url));
@@ -669,13 +701,14 @@ document.addEventListener('submit', event => {
   });
   root.addEventListener('research:snapshot',event=>{
     snapshot=event.detail;normalize();screenControls();
-    const next=JSON.stringify([snapshot.nodes,snapshot.sources]);
+    const next=JSON.stringify([snapshot.nodes,snapshot.sources,snapshot.ledger]);
     if(signature!==next){signature=next;draw();if(!manualViewport)requestAnimationFrame(fit);if(count!==nodes.length){count=nodes.length;map.querySelector('[data-map-announcement]').textContent=`${snapshot.nodes.length} saved nodes · ${snapshot.sources.length} citation sources. ${snapshot.run.phase==='evidence'?'Choose the direction for your next search.':''}`;}}
     else {syncSelection();updateInspector();}
     map.querySelector('[data-map-evidence-help]').hidden=snapshot.run.status!=='running'||snapshot.run.phase!=='evidence';
     const strip=map.querySelector('[data-map-outcomes]');strip.replaceChildren();
     for(const verdict of ['supported','weakened','contradicted','open']){
-      const outcomes=nodes.filter(node=>node.type==='synthesis'&&(data(node).verdict===verdict||node.title.toLowerCase().startsWith(verdict+' ·')));
+      const latest=new Map();for(const node of nodes.filter(n=>n.type==='synthesis'&&n.parent_id&&nodes.some(c=>c.id===n.parent_id&&c.type==='dream_claim')))latest.set(node.parent_id,node);
+      const outcomes=[...latest.values()].filter(node=>data(node).verdict===verdict||node.title.toLowerCase().startsWith(verdict+' ·'));
       const button=el('button',`${verdict}: ${outcomes.length}`,'map-outcome');button.type='button';button.disabled=!outcomes.length;if(outcomes.length)button.dataset.mapJump=outcomes[0].id;strip.append(button);
     }
   });

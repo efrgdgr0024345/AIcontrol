@@ -1,3 +1,34 @@
+# Implementation status: research rigour layer
+
+The original plan below is retained as historical scope. The subsequent uploaded
+Research Rigour Upgrade is implemented on the current implementation/release
+branch, `main`, with these completed milestones:
+
+- Additive SQLite passage/edge/version tables, source dependence fields and run
+  verification/freeze metadata; idempotence and old-run compatibility.
+- Exact provider-snippet capture, hashes/locators, source/run binding, typed
+  relations and non-open assessment guards. No generated text becomes a quote.
+- Reserved Challenge search, including when redirected; provisional assessments
+  and append-only history; missing evidence/dead ends retained.
+- Grouped verifier merged with final reconciliation, high-impact defects, bounded
+  optional repair, deterministic arithmetic on supplied operands and local freeze.
+- Stop/late-reply guards, shared budget accounting, frozen selected-source Learn,
+  Map/List passage/edge filters, matrix excerpts, verification panels and export.
+- Synthetic PHP, concurrent HTTP and browser/accessibility regression coverage.
+
+Implementation choices: capture source snippets during Evidence; extraction only
+interprets existing passage IDs. Provider URL citations alone are not passages.
+No full fetch or invented source text is allowed. Verification enforces a stricter
+passage requirement for final non-open verdicts than provisional source-only
+edges. Finish/freezing is local; final synthesis is merged into verification.
+Learn preserves source-only privacy and does not send unchecked Dream claims or
+edge interpretations. Unresolved high-impact defects remain open. Full document
+fetch, multi-agent work and live billed validation remain outside this release.
+
+See ADMIN_RESEARCH.md for call counts, scope, provider limitations and tests.
+
+---
+
 AIcontrol Research Tab — Implementation Plan
 
 (Hand-over document for OpenAI Codex / coding agent)Goal

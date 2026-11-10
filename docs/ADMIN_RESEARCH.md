@@ -63,18 +63,29 @@ expandable Investigate tree, **Learn**, history and **Export Markdown**. Earlier
 project-scoped chats remain under Simple chat. Existing tables and conversations
 are preserved. New runs/nodes/sources/requests tables are added without resets.
 
-The phase machine runs Dream → Plan → Evidence → Reconciliation. Dream returns
-up to four concise unchecked hypotheses, uncertainty/confidence and verification
-angles (not private internal reasoning). Plan derives up to two verification
-steps linked to saved claim IDs. Each Evidence step allows one web-search tool
-call, one branch at a time. Reconciliation must cover every saved claim with
-supported/weakened/contradicted/open and valid collected source IDs. Non-open
-verdicts require source references; they remain model assessments, not proof.
+New investigations run Dream → claim review → Plan → Evidence → extraction /
+provisional reconciliation → grouped verification → verification review / freeze.
+Dream retains 2–5 unchecked hypotheses and human selection. Plan reserves 1–2
+normal searches and one distinct Challenge search targeting a strong or
+high-priority selected claim. A redirected Challenge still seeks counter-evidence.
+Each search uses one web tool call. Unattempted challenge slots retain a skipped
+reason after Stop/failure; searches without usable citations retain dead ends.
+Old investigations keep their saved phase machine and remain readable.
+
+Extraction creates typed relations and provisional assessments against existing
+source/passage IDs. Grouped verification also performs final reconciliation;
+it requires one assessment per selected claim and reports wording, citation,
+scope, dependence and arithmetic issues. Every non-open assessment requires a
+matching, same-run edge. Final non-open assessments additionally need a matching
+passage-backed edge and no reported high-impact defect. These are model
+assessments, not independent proof. Deterministic arithmetic checks validate the
+reported calculation on supplied operands, not the operands' source accuracy.
 
 Only HTTP(S) citation URLs from a **completed web-search tool event** create
 source cards. URLs merely written in generated prose cannot become cards.
-Cards preserve provider title, URL/domain, capture time, model summary and linked
-claim/search metadata. They are provider citations, not independent server-side
+Cards preserve provider title, URL/domain, capture time and linked claim/search
+metadata. Search summaries stay on search nodes; new cards do not duplicate that
+summary as if it were a source-specific extract. They are provider citations, not independent server-side
 page verification. Summaries are labelled as paraphrases, never verified extracts.
 Missing tools, absent/invalid citations and empty searches leave visible dead-end
 branches. Later synthesis does not remove them. Source URLs open safely as links;
@@ -115,8 +126,12 @@ saved progress. Automatic advancement requires the page to remain open.
 
 The existing ten-provider-requests/hour research limit now covers legacy chat,
 all investigation phases and Learn together. Start validates capacity but does
-not consume a provider request. A normal two-search investigation consumes five
-requests (Dream, Plan, two Evidence, Reconciliation); every request permits at
+not consume a provider request. A one-normal-search plus Challenge run consumes six calls; two normal searches
+plus Challenge consume seven (Dream, Plan, three searches, extraction, verifier).
+Start requires at least six remaining calls, reducing normal search capacity to
+one if only six remain. Review/freeze costs no provider request. One optional
+repair review and an on-demand Learn bring the normal maximum to nine; every
+request permits at
 most 1600 output tokens and has a sixty-second transport timeout. One running
 investigation or pending research/Learn request is allowed per workspace. Budget
 exhaustion mid-run leaves an incomplete saved tree rather than silently retrying.
@@ -124,8 +139,8 @@ Key/model presence and input/source/output size caps are checked server-side.
 
 Learn appears only once source cards exist and is available after active work
 stops. Explain, caveats, compare, go deeper and check-understanding actions send
-only the selected run's collected cards, its project brief and the optional
-user question. No web tool, other project's chat, unchecked Dream content or
+only the selected run's frozen collected cards/passages, its project brief and
+the optional user question. No web tool, other project's chat, unchecked Dream content or
 shared Admin notes is sent. Learn replies are saved separately in the Learn
 section. Opted-in Admin notes remain available to Dream/Plan/Evidence and legacy
 chat, while credential keys never enter prompts.
@@ -150,7 +165,7 @@ model's own confidence, not a measure of source support. Each card shows the
 hypothesis, uncertainty and verification angle; competing angles, assumptions and
 the weakest area appear separately. Select at least one claim and choose
 **Continue with selected claims**. Plan receives only those selected IDs. Up to
-two searches follow, so selected claims without useful evidence can remain open.
+two normal searches and one Challenge follow; claims without useful evidence remain open.
 With JavaScript unavailable, Continue uses all claims. Stop works during review
 and never resumes a stopped run. An active review still blocks another run.
 
@@ -184,3 +199,60 @@ idle. The inspector also offers the current source's Learn and copy-link actions
 No vault notes or Dream hypotheses are sent as Learn context. The ordinary Learn
 form continues to use all collected cards. See RESEARCH_MAP_CONTRACT.md for the
 status fields, request contracts and a separate live-host validation checklist.
+
+## Evidence ledger and verification review
+
+Additive, idempotent migrations create `research_passages`, `research_edges` and
+`research_claim_versions`, plus source `shared_origin` / `dependence_flag` and run
+`rigour_version`, `normal_search_limit`, `repair_count`, `evidence_version`,
+`evidence_frozen`, `verification_status`. Existing rows default to the legacy
+workflow. No PIN, key, chat, source or run is reset.
+
+Passages contain only literal source `snippet` or `abstract` strings returned in
+a completed provider search's source metadata and matching a cited source URL.
+They are capped at 2,000 characters / 6,000 bytes and retain supplied locator,
+fetch scope and SHA-256. A hash identifies stored bytes; it does not verify the
+page. No full-page fetch or generated-quote extraction is implemented. Some
+provider responses expose URLs only: those remain honestly citation-only, with
+no invented passage, and cannot establish a final non-open verdict. Context
+before/after is empty when not supplied. This provider capability needs live
+host validation; synthetic fixtures do not establish snippet availability.
+
+Edges store supports / weakens / contradicts / context, source and optional
+passage, rationale, strength and version. Helpers reject unknown, excluded or
+cross-run IDs and passage/source mismatches. Citation-only edges are low strength
+at most. Shared hostname produces a possible-dependence note, not a claim that
+two publications share a study. Assessment versions are appended, never replaced.
+
+At verification review, **Finish and freeze evidence** ends the run locally and
+increments the evidence version. **Review high-impact gaps once** is available
+only for high-impact findings, once, with remaining shared budget. It rechecks
+existing evidence without tools and receives the original findings. Unresolved
+issues stay open; original findings remain visible after repair. An unknown
+repair outcome is not retried. Stop/failure freezes the partial ledger and marks
+verification skipped unless already completed. Partial frozen evidence remains
+available to Learn with its unverified status visible. Late replies can update
+confirmed usage but cannot write ledger records or revive the run.
+
+Learn preserves the stricter existing privacy boundary: selected frozen source
+cards and their passages only, plus brief/question; no unchecked prior claims,
+edge interpretations, vault notes or live tools. The final claim reconciliation
+happens in the ledger-based verifier before freeze. This separates evidence-only
+explanations from the auditable assessment history.
+
+Map/List expose typed relations, passage text/locator/hash, assessment history
+and retained verification findings. The claim matrix uses the latest assessment
+and offers expandable relations/passages; earlier versions remain in history.
+Map adds Passages / Edges filters and visible header Finish / Review gaps controls.
+Challenge slots/searches have distinct titles. No-JS forms retain phase, review,
+repair, finish, Stop, Learn and export. Markdown includes ledger, source URLs,
+passages, versions, defects and arithmetic checks.
+
+Run `php tests/rigour.php` alongside the existing investigation, HTTP and browser
+suites. It covers real captured-string matching, fabricated text/locator refusal,
+foreign run IDs, transactional rollback, bounded challenge/repair, frozen writes,
+citation-only final-open rules, deterministic arithmetic and Stop races. HTTP
+checks include Stop during verifier I/O, repair and finish. Browser fixtures
+exercise passage/edge filters, map controls, matrix excerpts, no-JS inspection,
+actual freeze/export endpoints and mobile/accessibility. All provider traffic in
+these tests is synthetic; no live billed provider or cPanel activation is claimed.

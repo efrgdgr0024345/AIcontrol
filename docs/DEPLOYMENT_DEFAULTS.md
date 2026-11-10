@@ -22,7 +22,9 @@ private records persist on the hosting server.
 | Signing | Server-generated Ed25519; domain `AIcontrol/receipt/v1` plus zero byte |
 | Model | `gpt-4.1-mini`, overridden only by server `AICONTROL_OPENAI_MODEL` |
 | AI key | Server `AICONTROL_OPENAI_API_KEY`; never browser/source/chat |
-| AI testing bounds | One active run, three requests/hour, 1,000 output tokens/call |
+| Task agent bounds | One active run, three requests/hour, 1,000 output tokens/call |
+| Research bounds | One active investigation/pending request; ten calls/hour shared with chat/Learn; 1,600 output tokens, 60 seconds per call |
+| Verified investigation | Start needs six calls remaining; 1–2 normal searches + one Challenge, extraction, grouped verifier; one optional repair |
 
 ## Automatic storage policy v1
 

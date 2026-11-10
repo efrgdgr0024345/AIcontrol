@@ -40,6 +40,8 @@ final class ResearchApi
                 $focus=self::input('focus_node_id');
                 if($focus!==''&&!preg_match('/^[1-9][0-9]{0,9}$/D',$focus))throw new \RuntimeException('Invalid focus note.');
                 $engine->step($id,$focus===''?null:(int)$focus,self::input('focus_note')); }
+            elseif($action==='research_finish') { $engine->finishVerification($id); }
+            elseif($action==='research_repair') { $engine->requestRepair($id); }
             elseif($action==='research_stop') { $engine->stop($id); }
             elseif($action==='research_learn') { $ids=self::ids('source_ids');if(self::input('source_selection_explicit')==='1'&&$ids===null)$ids=[];$engine->learn($id,self::input('learn_action'),self::input('question'),$ids); }
             elseif($action==='research_export') {
@@ -50,7 +52,7 @@ final class ResearchApi
             header('Location: '.$entry.'?view=research&project='.$snapshot['run']['project_id'].'&run='.$id,true,303);
         } catch(Throwable $e) {
             http_response_code(422);
-            $safe=['Invalid focus note.','Focus requires an idle Evidence phase with a remaining search.','Choose a selected claim, open question or dead end from this run.','Select valid source cards from this run.','Select at least one valid claim.','This run is not awaiting claim review.','Connect OpenAI in Admin first.','Invalid model configuration.','Research limit reached: ten provider requests per hour.','Research is already active. Stop or resolve it before starting another request.','Research run not found.','Research project not found.','Collect source cards before using Learn.','Invalid Learn action or question.'];
+            $safe=['At least six requests must remain to start a verified investigation.','Invalid focus note.','Focus requires an idle Evidence phase with a remaining search.','Choose a selected claim, open question or dead end from this run.','Select valid source cards from this run.','Select at least one valid claim.','This run is not awaiting claim review.','Connect OpenAI in Admin first.','Invalid model configuration.','Research limit reached: ten provider requests per hour.','Research is already active. Stop or resolve it before starting another request.','Research run not found.','Research project not found.','Collect source cards before using Learn.','Invalid Learn action or question.'];
             $message=in_array($e->getMessage(),$safe,true)?$e->getMessage():'Research request did not complete. Inspect its saved status before starting another request.';
             if($json) { self::json(['error'=>$message,'budget'=>isset($engine)?$engine->requestBudget():null]);return; }
             header('Content-Type: text/html; charset=utf-8');

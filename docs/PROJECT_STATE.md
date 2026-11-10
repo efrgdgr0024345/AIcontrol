@@ -4,6 +4,35 @@ This file is the repository handover for new chat sessions. Read it together wit
 AGENTS.md and DEPLOYMENT_DEFAULTS.md. Git history and Actions identify exact code
 revisions; do not infer a live hosting revision from the latest source commit.
 
+
+## Current research rigour upgrade
+
+New runs use an additive passage/typed-edge/assessment-version ledger. The flow
+is Dream → human claim review → Plan (1–2 normal searches + reserved Challenge)
+→ Evidence → extraction/provisional reconciliation → grouped verification/final
+reconciliation → review/freeze. Optional high-impact repair is one tool-free call.
+The minimum six-call capacity is checked at Start; all phases and Learn share the
+existing ten-call/hour ceiling. Old runs retain the legacy workflow.
+
+Passages are literal provider source snippets/abstracts with locator/scope/hash,
+never generated quotes. URL-only provider results remain citation-only, with
+final unsupported claims left open. No full document fetch exists; actual source
+snippet availability needs host-side provider validation. Frozen selected-source
+Learn retains the existing privacy boundary and excludes Dream and vault notes.
+
+Stop/error freezes partial evidence with verification skipped; late replies cannot
+write passages, edges or assessments. Assessment versions and verifier findings
+survive repair. Map/List, relation/passages matrix, filters, no-JS forms and export
+expose the record. Map header includes Finish/Review gaps at verification review.
+See ADMIN_RESEARCH.md and RESEARCH_MAP_CONTRACT.md for exact behavior and limits.
+
+Validation: all ten PHP suites, including 105 legacy investigation checks and
+58 new rigour checks; five HTTP suites (including concurrent verifier Stop,
+repair/freeze); desktop/mobile Chromium with 27 axe audits and zero violations. Tests use synthetic provider transport;
+no live billed provider run or authenticated cPanel activation is established.
+Earlier implementation sections below describe the evolution; this section
+supersedes their older two-search/five-call descriptions for new runs.
+
 ## Where the implementation lives
 
 - Repository: `efrgdgr0024345/AIcontrol` on GitHub.

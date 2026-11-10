@@ -42,8 +42,12 @@ namespace AIcontrol {
    $text=json_encode(['core_claims'=>$claims,'competing_angles'=>['Export value may be small'],'least_confident'=>'Local costs','background_assumptions'=>['Suitable roof']]);
    if(str_contains($body['instructions'],'Plan phase')){
     $nodes=json_decode(explode('Dream nodes: ',$body['input'])[1],true);
-    $text=json_encode(['steps'=>[['claim_id'=>(int)$nodes[0]['id'],'query'=>'Verify only the selected claim']]]);
+    $text=json_encode(['steps'=>[['claim_id'=>(int)$nodes[0]['id'],'query'=>'Verify only the selected claim']],'challenge'=>['claim_id'=>(int)$nodes[0]['id'],'query'=>'Seek counter evidence']]);
    }
+  }
+  if(str_contains($body['instructions'],'Grouped verification')){
+   $ledger=json_decode(explode('Evidence ledger: ',$body['input'])[1],true);
+   $text=json_encode(['assessments'=>array_map(fn($claim)=>['claim_id'=>(int)$claim['id'],'status'=>'open','rationale'=>'No passage-backed relation','strength'=>null],$ledger['claims']),'defects'=>[],'calculations'=>[]]);
   }
   $data=json_encode(['status'=>'completed','usage'=>['input_tokens'=>12,'output_tokens'=>18],'output'=>[['type'=>'message','content'=>[['type'=>'output_text','text'=>$text]]]]]);
   ($GLOBALS['investigation_options'][CURLOPT_WRITEFUNCTION])($h,$data);return true;
@@ -139,7 +143,8 @@ namespace { $_SERVER['SCRIPT_NAME']='/aiadmin/loader.php';require getenv('TEST_A
                 snapshot = json.loads(body)
                 self.assertEqual(snapshot['run']['phase'], 'evidence')
                 steps = [n for n in snapshot['nodes'] if n['type']=='plan_step']
-                self.assertEqual([n['parent_id'] for n in steps], [chosen])
+                self.assertEqual([n['parent_id'] for n in steps], [chosen, chosen])
+                self.assertTrue(json.loads(steps[-1]['data_json'])['challenge'])
                 plan_body = json.loads((Path(directory)/'body.json').read_text())
                 sent_claims = json.loads(plan_body['input'].split('Dream nodes: ')[1])
                 self.assertEqual([n['id'] for n in sent_claims], [chosen])
@@ -186,12 +191,60 @@ namespace { $_SERVER['SCRIPT_NAME']='/aiadmin/loader.php';require getenv('TEST_A
                 status, _, body=request('?research_api=1',dict(csrf=csrf,action='research_learn',run_id=reviewed_run,learn_action='explain',source_selection_explicit='1',**{'source_ids[]':[source_ids[0]]}))
                 self.assertEqual(status,200,body)
                 learned=json.loads((Path(directory)/'body.json').read_text())
-                cards=json.loads(learned['input'].split('Collected evidence: ')[1].split('\nUser question/understanding: ')[0])
+                cards=json.loads(learned['input'].split('Collected evidence: ')[1].split('\nUser question/understanding: ')[0].split('\nFrozen passage material: ')[0])
                 self.assertEqual([card['url'] for card in cards],['https://example.com/chosen-http'])
                 self.assertNotIn('tools',learned)
                 status, _, body = request('?research_api=1', dict(csrf=csrf, action='research_start', project_id='999'))
                 self.assertEqual(status, 422)
                 self.assertNotIn('synthetic-http-only', body)
+                # Verification I/O must release the session and reject late ledger writes after Stop.
+                self.assertEqual(request('?research_api=1',dict(csrf='bad',action='research_finish',run_id=fallback_run))[0],403)
+                self.assertEqual(request('?research_api=1',dict(csrf=csrf,action='research_finish',run_id=fallback_run))[0],422)
+                with sqlite3.connect(private/'research.sqlite') as db:
+                    db.execute("UPDATE research_runs SET status='running',phase='verification',evidence_frozen=0,verification_status='pending',busy=NULL,busy_since=NULL WHERE id=?",(fallback_run,))
+                    claim_ids=[row[0] for row in db.execute("SELECT id FROM research_nodes WHERE run_id=? AND type='dream_claim' AND selected=1",(fallback_run,))]
+                    for claim_id in claim_ids:
+                        db.execute("INSERT INTO research_claim_versions(claim_id,run_id,status,rationale,created_at,created_by) VALUES(?,?,'open','Provisional fixture',?,'system')",(claim_id,fallback_run,int(time.time())))
+                _, _, body=request(f'?research_api=status&run_id={fallback_run}',headers={'X-CSRF-Token':csrf})
+                before=json.loads(body)['ledger']
+                (Path(directory)/'fast').unlink()
+                ready.unlink(missing_ok=True)
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    verifying=pool.submit(request,'?research_api=1',dict(csrf=csrf,action='research_step',run_id=fallback_run),None,cookie)
+                    deadline=time.monotonic()+6
+                    while not ready.exists() and time.monotonic()<deadline:
+                        time.sleep(.02)
+                    self.assertTrue(ready.exists(),'Verifier did not enter provider I/O')
+                    started=time.monotonic()
+                    status, _, body=request(f'?research_api=status&run_id={fallback_run}',headers={'X-CSRF-Token':csrf},cookie=cookie)
+                    self.assertEqual(status,200)
+                    self.assertLess(time.monotonic()-started,1.5,'Verifier blocked status polling')
+                    started=time.monotonic()
+                    status, _, body=request('?research_api=1',dict(csrf=csrf,action='research_stop',run_id=fallback_run),cookie=cookie)
+                    self.assertEqual(status,200)
+                    self.assertLess(time.monotonic()-started,1.5,'Verifier blocked Stop')
+                    snapshot=json.loads(verifying.result()[2])
+                    self.assertEqual(snapshot['run']['status'],'interrupted')
+                    self.assertEqual(snapshot['run']['verification_status'],'skipped')
+                    self.assertEqual(snapshot['ledger'],before,'Late verification changed the ledger')
+                # Seed an eligible review fixture, then exercise bounded repair and freeze through HTTP.
+                (Path(directory)/'fast').touch()
+                with sqlite3.connect(private/'research.sqlite') as db:
+                    db.execute("UPDATE research_runs SET status='running',phase='verification_review',evidence_frozen=0,verification_status='complete',repair_count=0 WHERE id=?",(fallback_run,))
+                    db.execute("UPDATE research_nodes SET status='complete',data_json=? WHERE run_id=? AND type='phase' AND title='Verification'",(json.dumps({'defects':[{'claim_id':claim_ids[0],'severity':'high','kind':'missing_passage','description':'Missing captured passage'}]}),fallback_run))
+                status, _, body=request('?research_api=1',dict(csrf=csrf,action='research_repair',run_id=fallback_run))
+                self.assertEqual(status,200,body)
+                snapshot=json.loads(body)
+                self.assertEqual(snapshot['run']['repair_count'],1)
+                self.assertEqual(snapshot['run']['phase'],'verification_review')
+                self.assertEqual(request('?research_api=1',dict(csrf=csrf,action='research_repair',run_id=fallback_run))[0],422)
+                status, _, body=request('?research_api=1',dict(csrf=csrf,action='research_finish',run_id=fallback_run))
+                self.assertEqual(status,200,body)
+                snapshot=json.loads(body)
+                self.assertEqual(snapshot['run']['status'],'complete')
+                self.assertEqual(snapshot['run']['evidence_frozen'],1)
+                self.assertTrue(any(n['title']=='Verification' and 'Missing captured passage' in n['data_json'] for n in snapshot['nodes']),'Earlier findings disappeared')
+
             finally:
                 os.killpg(server.pid, signal.SIGTERM)
                 server.wait(timeout=5)

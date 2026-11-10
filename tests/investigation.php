@@ -1,44 +1,13 @@
 <?php
 declare(strict_types=1);
-namespace AIcontrol {
-    final class InvestigationWire {
-        public static array $bodies=[];
-        public static array $options=[];
-        public static mixed $handler=null;
-        public static int $status=200;
-        public static bool $ok=true;
-    }
-    function curl_init(string $url):object { if($url!=='https://api.openai.com/v1/responses')throw new \RuntimeException('Wrong provider');return new \stdClass(); }
-    function curl_setopt_array(object $c,array $options):bool { InvestigationWire::$options=$options;return true; }
-    function curl_exec(object $c):bool {
-        $body=json_decode(InvestigationWire::$options[CURLOPT_POSTFIELDS],true);InvestigationWire::$bodies[]=$body;
-        $reply=(InvestigationWire::$handler)($body);
-        (InvestigationWire::$options[CURLOPT_WRITEFUNCTION])($c,json_encode($reply,JSON_THROW_ON_ERROR));return InvestigationWire::$ok;
-    }
-    function curl_getinfo(object $c,int $option):int{return InvestigationWire::$status;}
-    function curl_close(object $c):void{}
-}
-namespace {
-require dirname(__DIR__).'/src/Vault.php';require dirname(__DIR__).'/src/AgentRunner.php';require dirname(__DIR__).'/src/Research.php';
-umask(0077);$checks=0;$dirs=[];$failures=[];
-function verify(bool $condition,string $message):void{global $checks,$failures;if(!$condition){$failures[]=$message;throw new \RuntimeException($message);}$checks++;}
-function denied(callable $work,string $label):void{$denied=false;try{$work();}catch(\RuntimeException){$denied=true;}verify($denied,$label);}
-function evidenceCards(array $body):array{return json_decode(explode("\nUser question/understanding: ",explode('Collected evidence: ',$body['input'])[1])[0],true,32,JSON_THROW_ON_ERROR);}
-function fixture():array {
- global $dirs;$dir=sys_get_temp_dir().'/aicontrol-investigate-'.bin2hex(random_bytes(7));mkdir($dir,0700);$dirs[]=$dir;
- putenv('AICONTROL_PRIVATE_DIR='.$dir);putenv('AICONTROL_OPENAI_API_KEY=synthetic-test-only');
- $old=new \AIcontrol\Research($dir);$old->create('Research fixture','Check household solar claims');
- $vault=new \AIcontrol\Vault($dir);$vault->change('shared','note','OPTED-IN-CONTEXT',true);$vault->change('hidden','note','NEVER-SEND-THIS',false);
- return [$dir,new \AIcontrol\Investigation($dir),$old,new \PDO('sqlite:'.$dir.'/research.sqlite')];
-}
-function reply(string $text,array $extra=[]):array{return ['status'=>'completed','usage'=>['input_tokens'=>10,'output_tokens'=>20],'output'=>array_merge($extra,[['type'=>'message','content'=>[['type'=>'output_text','text'=>$text]]]])];}
+require __DIR__.'/investigation_fixtures.php';
 try {
  [$dir,$engine,$old,$db]=fixture();
  verify(count($old->snapshot()['projects'])===1,'Legacy project lost');
  $db->exec("INSERT INTO research_messages(project_id,role,text,status,created_at)VALUES(1,'user','Old conversation','saved',1)");
  new \AIcontrol\Research($dir);verify(count($old->snapshot()['messages'])===1,'Migration lost conversation');
- putenv('AICONTROL_OPENAI_API_KEY=');denied(fn()=>$engine->createRun(1),'Missing key accepted');putenv('AICONTROL_OPENAI_API_KEY=synthetic-test-only');
- $run=$engine->createRun(1);denied(fn()=>$engine->createRun(1),'Concurrent run accepted');denied(fn()=>$old->chat(1,'Legacy must wait',false),'Legacy bypassed active run');
+ putenv('AICONTROL_OPENAI_API_KEY=');denied(fn()=>legacyRun($engine,$db),'Missing key accepted');putenv('AICONTROL_OPENAI_API_KEY=synthetic-test-only');
+ $run=legacyRun($engine,$db);denied(fn()=>legacyRun($engine,$db),'Concurrent run accepted');denied(fn()=>$old->chat(1,'Legacy must wait',false),'Legacy bypassed active run');
  \AIcontrol\InvestigationWire::$handler=function(array $body)use($engine,$run):array {
   verify($body['store']===false&&$body['max_output_tokens']===1600,'Request caps');verify(!str_contains(json_encode($body),'synthetic-test-only')&&!str_contains(json_encode($body),'NEVER-SEND-THIS'),'Secret leaked');
   $snapshot=$engine->getRunSnapshot($run);$phase=$snapshot['run']['phase'];
@@ -69,19 +38,19 @@ try {
  $snapshot=$engine->learn($run,'compare','What differs?');verify(end($snapshot['nodes'])['type']==='learn','Learn not persisted');
  $requests=(int)$db->query('SELECT COUNT(*) FROM research_requests')->fetchColumn();
  for($i=$requests;$i<10;$i++)$db->exec("INSERT INTO research_requests(run_id,node_id,kind,status,created_at) VALUES($run,1,'learn','complete',".time().")");
- denied(fn()=>$engine->createRun(1),'Hourly provider cap bypassed');denied(fn()=>$old->chat(1,'Legacy cap',false),'Legacy bypassed shared cap');
- [$dir,$engine,$old,$db]=fixture();$run=$engine->createRun(1);
+ denied(fn()=>legacyRun($engine,$db),'Hourly provider cap bypassed');denied(fn()=>$old->chat(1,'Legacy cap',false),'Legacy bypassed shared cap');
+ [$dir,$engine,$old,$db]=fixture();$run=legacyRun($engine,$db);
  \AIcontrol\InvestigationWire::$handler=function(array $body)use($dir,$run):array{(new \AIcontrol\Investigation($dir))->stop($run);return reply('{"claims":[{"claim":"late","uncertainty":"unknown","confidence":"low","verify":"search"}]}');};
  $snapshot=$engine->step($run);verify($snapshot['run']['status']==='interrupted','Stop lost to late result');verify(!array_filter($snapshot['nodes'],fn($n)=>$n['type']==='dream_claim'),'Late answer applied');verify($snapshot['requests'][0]['status']==='uncertain'&&(int)$snapshot['run']['usage_unknown']===1,'Stopped outcome not uncertain');
  $calls=count(\AIcontrol\InvestigationWire::$bodies);$engine->step($run);verify(count(\AIcontrol\InvestigationWire::$bodies)===$calls,'Stopped run retried');
- [$dir,$engine,$old,$db]=fixture();$run=$engine->createRun(1);$engine->stop($run);verify($engine->getRunSnapshot($run)['run']['status']==='interrupted','Idle Stop failed');
+ [$dir,$engine,$old,$db]=fixture();$run=legacyRun($engine,$db);$engine->stop($run);verify($engine->getRunSnapshot($run)['run']['status']==='interrupted','Idle Stop failed');
  denied(fn()=>$engine->learn($run,'explain',''),'Learn accepted missing evidence');
- [$dir,$engine,$old,$db]=fixture();$run=$engine->createRun(1);\AIcontrol\InvestigationWire::$ok=false;\AIcontrol\InvestigationWire::$handler=fn($body)=>reply('Unknown outcome');
+ [$dir,$engine,$old,$db]=fixture();$run=legacyRun($engine,$db);\AIcontrol\InvestigationWire::$ok=false;\AIcontrol\InvestigationWire::$handler=fn($body)=>reply('Unknown outcome');
  $snapshot=$engine->step($run);verify($snapshot['run']['status']==='uncertain','Transport uncertainty claimed success');$engine->step($run);verify(count($engine->getRunSnapshot($run)['requests'])===1,'Uncertain phase retried');\AIcontrol\InvestigationWire::$ok=true;
- [$dir,$engine,$old,$db]=fixture();$run=$engine->createRun(1);\AIcontrol\InvestigationWire::$handler=fn($body)=>reply('{"claims":[]}');verify($engine->step($run)['run']['status']==='incomplete','Malformed output complete');
- [$dir,$engine,$old,$db]=fixture();$run=$engine->createRun(1);$db->exec("UPDATE research_runs SET busy='orphan',busy_since=".(time()-130)." WHERE id=$run");verify($engine->getRunSnapshot($run)['run']['status']==='uncertain','Stale worker not surfaced');
- [$dir,$engine,$old,$db]=fixture();$run=$engine->createRun(1);\AIcontrol\InvestigationWire::$status=429;\AIcontrol\InvestigationWire::$handler=fn($body)=>reply('No response');verify($engine->step($run)['run']['status']==='failed','HTTP refusal claimed success');\AIcontrol\InvestigationWire::$status=200;
- [$dir,$engine,$old,$db]=fixture();$run=$engine->createRun(1);\AIcontrol\InvestigationWire::$handler=function($body){$r=reply('Partial output');$r['status']='incomplete';return $r;};verify($engine->step($run)['run']['status']==='incomplete','Truncated provider result claimed success');
+ [$dir,$engine,$old,$db]=fixture();$run=legacyRun($engine,$db);\AIcontrol\InvestigationWire::$handler=fn($body)=>reply('{"claims":[]}');verify($engine->step($run)['run']['status']==='incomplete','Malformed output complete');
+ [$dir,$engine,$old,$db]=fixture();$run=legacyRun($engine,$db);$db->exec("UPDATE research_runs SET busy='orphan',busy_since=".(time()-130)." WHERE id=$run");verify($engine->getRunSnapshot($run)['run']['status']==='uncertain','Stale worker not surfaced');
+ [$dir,$engine,$old,$db]=fixture();$run=legacyRun($engine,$db);\AIcontrol\InvestigationWire::$status=429;\AIcontrol\InvestigationWire::$handler=fn($body)=>reply('No response');verify($engine->step($run)['run']['status']==='failed','HTTP refusal claimed success');\AIcontrol\InvestigationWire::$status=200;
+ [$dir,$engine,$old,$db]=fixture();$run=legacyRun($engine,$db);\AIcontrol\InvestigationWire::$handler=function($body){$r=reply('Partial output');$r['status']='incomplete';return $r;};verify($engine->step($run)['run']['status']==='incomplete','Truncated provider result claimed success');
  verify(!\AIcontrol\Investigation::sourceUrl('https://user:pass@example.com')&&!\AIcontrol\Investigation::sourceUrl('data:text/html,test'),'Unsafe source URL');
  // Strict rich prior validation must not leave partially accepted claim nodes.
  $valid=['core_claims'=>[['claim'=>'Concrete first claim','confidence'=>'medium','uncertainty'=>'Scope','verify'=>'Find measured evidence','priority'=>'high'],['claim'=>'Competing second claim','confidence'=>'low','uncertainty'=>'Cost','verify'=>'Compare independent costs','priority'=>'normal']],'competing_angles'=>['Alternative explanation'],'least_confident'=>'Local applicability','background_assumptions'=>['Comparable setting']];
@@ -92,12 +61,12 @@ try {
  $bad=$valid;$bad['competing_angles']=array_fill(0,4,'angle');$invalid[]=$bad;
  $bad=$valid;$bad['least_confident']=str_repeat('x',3001);$invalid[]=$bad;
  foreach($invalid as $bad){
-  [$dir,$engine,$old,$db]=fixture();$run=$engine->createRun(1);
+  [$dir,$engine,$old,$db]=fixture();$run=legacyRun($engine,$db);
   \AIcontrol\InvestigationWire::$handler=fn($body)=>reply(json_encode($bad));
   $snapshot=$engine->step($run);verify($snapshot['run']['status']==='incomplete','Invalid rich dream accepted');
   verify(!array_filter($snapshot['nodes'],fn($n)=>$n['type']==='dream_claim'),'Partial invalid prior persisted');
  }
- [$dir,$engine,$old,$db]=fixture();$run=$engine->createRun(1);
+ [$dir,$engine,$old,$db]=fixture();$run=legacyRun($engine,$db);
  \AIcontrol\InvestigationWire::$handler=fn($body)=>reply(json_encode($valid));
  $snapshot=$engine->step($run);$claims=array_values(array_filter($snapshot['nodes'],fn($n)=>$n['type']==='dream_claim'));
  verify(count($claims)===2&&\AIcontrol\Investigation::claimData($claims[0])['priority']==='high','Rich claim metadata lost');
@@ -113,11 +82,11 @@ try {
   return reply(json_encode(['steps'=>[['claim_id'=>$excluded,'query'=>'Must reject excluded claim']]]));
  };
  verify($engine->step($run)['run']['status']==='incomplete','Plan accepted excluded claim');
- [$dir,$engine,$old,$db]=fixture();$run=$engine->createRun(1);\AIcontrol\InvestigationWire::$handler=fn($body)=>reply(json_encode($valid));$engine->step($run);$engine->stop($run);
+ [$dir,$engine,$old,$db]=fixture();$run=legacyRun($engine,$db);\AIcontrol\InvestigationWire::$handler=fn($body)=>reply(json_encode($valid));$engine->step($run);$engine->stop($run);
  denied(fn()=>$engine->continueRun($run),'Continue revived stopped review');
  verify($engine->getRunSnapshot($run)['run']['status']==='interrupted','Review Stop lost');
  // Selected claims retain their ancestry through a complete no-source investigation.
- [$dir,$engine,$old,$db]=fixture();$run=$engine->createRun(1);\AIcontrol\InvestigationWire::$handler=fn($body)=>reply(json_encode($valid));
+ [$dir,$engine,$old,$db]=fixture();$run=legacyRun($engine,$db);\AIcontrol\InvestigationWire::$handler=fn($body)=>reply(json_encode($valid));
  $snapshot=$engine->step($run);$claims=array_values(array_filter($snapshot['nodes'],fn($n)=>$n['type']==='dream_claim'));$chosen=(int)$claims[1]['id'];
  $engine->continueRun($run,[$chosen]);
  \AIcontrol\InvestigationWire::$handler=function($body)use($chosen){
@@ -142,14 +111,14 @@ try {
  verify($engine->requestBudget()['remaining']===10,'Fresh budget incorrect');
  $db->exec("INSERT INTO research_messages(project_id,role,text,status,created_at)VALUES(1,'assistant','Fixture','complete',".(time()-30).")");
  verify($engine->requestBudget()['remaining']===9,'Legacy chat absent from visible budget');
- $run=$engine->createRun(1);$node=$engine->appendNode($run,null,'phase','complete','Dream');
+ $run=legacyRun($engine,$db);$node=$engine->appendNode($run,null,'phase','complete','Dream');
  for($i=0;$i<9;$i++)$db->exec("INSERT INTO research_requests(run_id,node_id,kind,status,created_at) VALUES($run,$node,'dream','complete',".time().")");
  $budget=$engine->requestBudget();verify($budget['remaining']===0&&$budget['retry_after_seconds']>3500,'Exhausted budget/recovery time incorrect');
  $db->exec('UPDATE research_requests SET created_at='.(time()-3601));
  verify($engine->requestBudget()['remaining']===9,'Expired requests still consume visible budget');
  $report=$engine->export($run);verify(str_contains($report,'Claims, evidence and outcomes')&&str_contains($report,'Open questions and learning notes'),'Notebook report headings missing');
  // Focus consumes an existing Evidence slot and preserves attribution, bounds and Stop.
- [$dir,$engine,$old,$db]=fixture();$run=$engine->createRun(1);\AIcontrol\InvestigationWire::$handler=fn($body)=>reply(json_encode($valid));
+ [$dir,$engine,$old,$db]=fixture();$run=legacyRun($engine,$db);\AIcontrol\InvestigationWire::$handler=fn($body)=>reply(json_encode($valid));
  $snapshot=$engine->step($run);$claims=array_values(array_filter($snapshot['nodes'],fn($n)=>$n['type']==='dream_claim'));
  foreach(['confidence','linked_claim_ids','source_ids','dead_end_reason','sort_order'] as $key)verify(array_key_exists($key,$claims[0]),'Map contract missing '.$key);
  $first=(int)$claims[0]['id'];$second=(int)$claims[1]['id'];
@@ -179,7 +148,7 @@ try {
  $snapshot=$engine->learn($run,'explain','',[$source]);verify(end($snapshot['nodes'])['status']==='complete','Selected Learn not complete');verify(end($snapshot['nodes'])['source_ids']===[$source],'Selected Learn attribution lost');
  verify(str_contains($engine->export($run),'Map outline (node → parent)'),'Map outline missing from export');
  // No focus may bypass a locked worker, excluded claim, spent slot or hourly cap.
- [$dir,$engine,$old,$db]=fixture();$run=$engine->createRun(1);\AIcontrol\InvestigationWire::$handler=fn($body)=>reply(json_encode($valid));
+ [$dir,$engine,$old,$db]=fixture();$run=legacyRun($engine,$db);\AIcontrol\InvestigationWire::$handler=fn($body)=>reply(json_encode($valid));
  $snapshot=$engine->step($run);$claims=array_values(array_filter($snapshot['nodes'],fn($n)=>$n['type']==='dream_claim'));$first=(int)$claims[0]['id'];$second=(int)$claims[1]['id'];$engine->continueRun($run,[$first]);
  \AIcontrol\InvestigationWire::$handler=fn($body)=>reply(json_encode(['steps'=>[['claim_id'=>$first,'query'=>'One bounded query']]]));$engine->step($run);
  denied(fn()=>$engine->step($run,$second),'Excluded focus accepted');
@@ -191,4 +160,3 @@ try {
  if($failures)throw new \RuntimeException("Fixture assertion failures: ".implode("; ",$failures));
  echo "PASS: $checks investigation migration, phase, budget, evidence, Learn, Stop race and uncertainty checks (synthetic transport only)\n";
 } finally {foreach($dirs as $dir){foreach(glob($dir.'/*') as $file)unlink($file);rmdir($dir);}}
-}

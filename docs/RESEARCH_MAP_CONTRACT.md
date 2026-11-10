@@ -21,7 +21,8 @@ the list, source links and all phase/Stop/Learn/export forms remain usable.
 planned slot. A focus node must be a selected claim, its dead end or its linked
 open verdict. Unlinked questions have no inferred claim; they cannot spend a
 search. Wrong run, excluded claim, busy phase and exhausted slots are rejected.
-The next slot is replaced, never appended: at most two searches, one web tool
+The next slot is replaced, never appended: new runs allow 1–2 normal searches
+plus one reserved Challenge (legacy runs retain two searches), one web tool
 call per request, 1,600 output tokens and the existing timeout/hourly cap. JS
 pauses before each Evidence slot so the owner can steer it or explicitly run
 the planned search. No-JS uses Continue next phase for the planned search.
@@ -34,7 +35,8 @@ applies evidence. Focus cannot revive a terminal run or restart Dream/Plan.
 
 `research_learn` optionally accepts `source_ids[]`. All IDs must belong to the
 chosen run, with no duplicates or empty selection. Its provider context contains
-only the selected source cards, project brief and optional question: no tools,
+only the selected frozen source cards and matching passages, project brief and
+optional question: no tools,
 Dream text, notes from the vault, other projects or keys. Existing idle/budget
 and Stop behavior applies. Source selection is recorded on the Learn node.
 
@@ -51,3 +53,35 @@ Host validation remains separate: install the checked release using the current
 loader, connect a host-side key, perform one focused search, Stop mid-Evidence,
 inspect uncertain usage, Learn from one source and export the report. CI uses
 synthetic transport and does not perform billed provider calls.
+
+## Rigour snapshot and actions
+
+Status adds `ledger: {claims, sources, passages, edges, claim_versions}`; old runs
+receive empty ledger arrays except their existing claims/sources. New run fields
+are `rigour_version=1`, `normal_search_limit`, `evidence_version`,
+`evidence_frozen`, `verification_status` (pending/complete/skipped), `repair_count`.
+Edges and passages are client map nodes with `edge-ID` and `passage-ID` IDs; they
+are not new `research_nodes` types or valid focus-node IDs. Relations stay typed;
+source links always come from the stored source table. Outcome totals count the
+latest per-claim assessment; history stays visible in the branches/ledger.
+
+`research_finish` accepts `run_id`, requires idle `verification_review`, completed
+verification and assessments, then freezes/version-bumps and completes locally.
+`research_repair` requires the same state, an original high-impact finding, no
+previous repair and one remaining request. It invokes one tool-free repair review
+and returns to review, preserving original findings. Both require session/CSRF;
+repair releases the session before I/O and uses the existing phase token/Stop
+guard. Neither can resume interrupted or uncertain runs.
+
+New phases: `extraction`, `verification`, optional `repair`, `verification_review`.
+JS pauses at verification review; visible map header controls and list/no-JS
+forms offer Finish and optional repair. During Evidence it still pauses before
+each search so user steering remains explicit. Challenge identity survives a
+focus replacement and the prompt retains the counter-evidence requirement.
+
+Passages include source/run IDs, literal `exact_text`, optional locator, scope,
+SHA-256 and timestamp. Only provider snippet/abstract fields captured from a
+completed tool event can populate them. URL-only responses stay citation-only;
+no page fetch or model-constructed quote is implied. Frozen partial interrupted
+runs remain inspectable and can supply evidence-only Learn, with verification
+skipped shown. No data or historical findings are removed by freeze or repair.

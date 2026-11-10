@@ -109,12 +109,13 @@ const {spawn,spawnSync}=require('child_process');
   const researchSeed=spawnSync(php,['-r',`require 'src/Vault.php'; (new \\AIcontrol\\Vault(getenv('TEST_RESEARCH_HOME')))->change('openai_api_key','key','synthetic-browser-fixture',false);`],{env:{...process.env,TEST_RESEARCH_HOME:privateDir},encoding:'utf8'});
   if(researchSeed.status!==0)throw new Error(researchSeed.stderr||researchSeed.stdout);
   let investigation={budget:{remaining:9,retry_after_seconds:0},run:{id:1,project_id:1,status:'running',phase:'dream',busy_since:null,token_input:0,token_output:0,usage_unknown:0,stop_reason:''},nodes:[],sources:[],requests:[]};
-  let stepCalls=0,stopped=false,pollCalls=0,reviewMode=false,continued=false,focusedMode=false,focusedCalls=0;
+  let stepCalls=0,stopped=false,pollCalls=0,reviewMode=false,continued=false,focusedMode=false,focusedCalls=0,rigourMode=false;
   const clone=()=>JSON.parse(JSON.stringify(investigation));
   await page.route('**/loader.php?research_api=status*',route=>{pollCalls++;return route.fulfill({contentType:'application/json',body:JSON.stringify(clone())});});
   await page.route('**/loader.php?view=research&research_api=1',async route=>{
     const body=route.request().postData()||'';
     if(body.includes('research_start'))return route.continue();
+    if(rigourMode&&body.includes('research_finish')){const response=await route.fetch();const result=await response.json();if(response.ok())investigation=result;return route.fulfill({response,json:result});}
     if(body.includes('research_stop')){stopped=true;investigation.run.status='interrupted';investigation.run.busy_since=null;investigation.run.usage_unknown=1;investigation.run.stop_reason='Stopped fixture; provider outcome unknown.';investigation.requests.forEach(request=>request.status='uncertain');investigation.nodes.forEach(node=>{if(node.status==='running')node.status='interrupted';});}
     else if(body.includes('research_continue')){
       const ids=[...body.matchAll(/name="claim_ids\[\]"\r?\n\r?\n(\d+)/g)].map(match=>Number(match[1]));
@@ -140,6 +141,7 @@ const {spawn,spawnSync}=require('child_process');
       setTimeout(()=>{if(!stopped)investigation.nodes.push({id:2,parent_id:1,type:'dream_claim',status:'complete',title:'Fixture unchecked claim',content:'Uncertainty: needs evidence.'});},600);
       await new Promise(resolve=>setTimeout(resolve,4000));
     } else if(body.includes('research_learn')){
+      if(rigourMode){if(!investigation.run.evidence_frozen||!body.includes('source_ids[]'))throw new Error('Rigour Learn omitted frozen source scope');}
       if(focusedMode){const ids=[...body.matchAll(/name="source_ids\[\]"\r?\n\r?\n(\d+)/g)].map(match=>Number(match[1]));if(ids.length!==1||ids[0]!==2)throw new Error('Map Learn sent incorrect source scope');}
       investigation.nodes.push({id:8,parent_id:null,type:'learn',status:'complete',title:'Learn: compare',content:'Fixture explanation uses collected evidence only.'});
     } else return route.abort();
@@ -296,6 +298,50 @@ const {spawn,spawnSync}=require('child_process');
   await fallback.goto(appUrl+'/loader.php?view=research');
   if(!await fallback.locator('[data-investigate-list]').isVisible()||await fallback.locator('[data-mindmap]').isVisible())throw new Error('No-JS list fallback unavailable');
   if(!await fallback.getByRole('button',{name:'Continue next phase',exact:true}).isVisible())throw new Error('No-JS phase form unavailable');
+  // Persist a synthetic verified ledger, then exercise actual finish/export endpoints and both UI paths.
+  const rigourRun=Number(await page.locator('[data-investigation]').getAttribute('data-run-id'));
+  rigourMode=true;focusedMode=false;reviewMode=false;
+  const now=Math.floor(Date.now()/1000),exact='Captured provider snippet: results apply to the studied population only.';
+  const node=(id,parent_id,type,title,content,data={})=>({id,run_id:rigourRun,parent_id,type,title,content,status:'complete',data_json:JSON.stringify(data),created_at:now,updated_at:now,selected:1});
+  const rigourNodes=[node(100,null,'dream_claim','Rigour fixture claim','Unchecked prior',{claim:'Rigour fixture claim',confidence:'medium',priority:'high',uncertainty:'Population',verify:'Check source scope'}),node(101,100,'plan_step','Challenge · claim #100','Seek counter-evidence',{challenge:true}),node(102,101,'search','Challenge search','Completed synthetic challenge',{challenge:true}),node(103,102,'source','Rigour source','Citation captured'),node(104,null,'phase','Verification','Grouped check',{defects:[{claim_id:100,severity:'high',kind:'scope',description:'Population qualification remains unresolved.'}],calculations:[]}),node(105,100,'synthesis','Open · claim #100','Scope remains open',{verdict:'open',reason:'Scope remains open',source_ids:[100]})];
+  const rigourSource={id:100,run_id:rigourRun,node_id:103,url:'https://example.com/rigour-fixture',title:'Rigour source',extract:'Citation captured',domain:'example.com',retrieved_at:now,meta_json:JSON.stringify({claim_ids:[100]})};
+  const rigourPassage={id:100,run_id:rigourRun,source_id:100,exact_text:exact,locator:'Results section',fetch_scope:'provider_snippet',content_hash:crypto.createHash('sha256').update(exact).digest('hex'),created_at:now};
+  const rigourEdge={id:100,run_id:rigourRun,claim_id:100,source_id:100,passage_id:100,relation:'supports',rationale:'Limited population support',strength:'moderate',created_at:now,version:1};
+  const versions=[{id:100,run_id:rigourRun,claim_id:100,status:'supported',rationale:'Provisional support',evidence_strength:'moderate',created_at:now,created_by:'system'},{id:101,run_id:rigourRun,claim_id:100,status:'open',rationale:'Scope remains open',evidence_strength:null,created_at:now,created_by:'verifier'}];
+  const seedLedger=spawnSync(php,['-r',`$db=new PDO('sqlite:'.getenv('TEST_LEDGER_DB')); $data=json_decode(getenv('TEST_LEDGER_ROWS'),true); $db->beginTransaction(); foreach($data as $table=>$rows){foreach($rows as $row){$keys=array_keys($row);$query=$db->prepare('INSERT INTO '.$table.'('.implode(',',$keys).') VALUES('.implode(',',array_fill(0,count($keys),'?')).')');$query->execute(array_values($row));}} $query=$db->prepare("UPDATE research_runs SET status='running',phase='verification_review',rigour_version=1,verification_status='complete',evidence_frozen=0,evidence_version=1,busy=NULL,busy_since=NULL WHERE id=?");$query->execute([(int)getenv('TEST_LEDGER_RUN')]); $db->commit();`],{cwd:root,env:{...process.env,TEST_LEDGER_DB:path.join(privateDir,'research.sqlite'),TEST_LEDGER_RUN:String(rigourRun),TEST_LEDGER_ROWS:JSON.stringify({research_nodes:rigourNodes,research_sources:[rigourSource],research_passages:[rigourPassage],research_edges:[rigourEdge],research_claim_versions:versions})},encoding:'utf8'});
+  if(seedLedger.status!==0)throw new Error(seedLedger.stderr||seedLedger.stdout);
+  investigation={budget:{remaining:8,retry_after_seconds:0},run:{id:rigourRun,project_id:1,status:'running',phase:'verification_review',rigour_version:1,verification_status:'complete',evidence_version:1,evidence_frozen:0,repair_count:0,normal_search_limit:2,busy_since:null,token_input:0,token_output:0,usage_unknown:0,stop_reason:''},nodes:rigourNodes,sources:[rigourSource],requests:[],ledger:{claims:[rigourNodes[0]],sources:[rigourSource],passages:[rigourPassage],edges:[rigourEdge],claim_versions:versions}};
+  await fallback.reload();
+  await fallback.getByRole('button',{name:'Finish and freeze evidence',exact:true}).waitFor();
+  await fallback.locator('[data-evidence-ledger] summary').filter({hasText:'Passage #100'}).click();
+  await fallback.locator('[data-evidence-ledger] blockquote').filter({hasText:exact}).waitFor();
+  await page.setViewportSize({width:1440,height:1000});await page.reload();
+  await page.locator('.map-screen-header').getByRole('button',{name:'Finish and freeze',exact:true}).waitFor();
+  await page.locator('[data-map-node="101"]').getByText('Challenge · claim #100',{exact:true}).waitFor();
+  await page.locator('[data-map-filter=passage]').click();await page.locator('[data-map-node="passage-100"] .map-node-button').click();
+  await page.getByRole('complementary',{name:'Node inspector'}).getByText(exact,{exact:true}).waitFor();
+  await page.locator('[data-map-filter=edge]').click();await page.locator('[data-map-node="edge-100"] .map-node-button').click();
+  await page.locator('[data-map-ledger] summary').filter({hasText:'Verification findings'}).click();
+  await page.locator('[data-map-ledger]').getByText('high · scope · Population qualification remains unresolved.',{exact:true}).waitFor();
+  if(!await page.locator('[data-map-learn-button]').isDisabled())throw new Error('Learn enabled before evidence freeze');
+  if(await page.locator('.map-screen-header').getByRole('button',{name:'Review gaps once',exact:true}).isDisabled())throw new Error('High-impact review unavailable');
+  await audit('Rigour map verification');await page.screenshot({path:path.join(artifacts,'ui-rigour-map.png'),fullPage:false});
+  await page.locator('.map-screen-header').getByRole('button',{name:'Finish and freeze',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('[data-investigation]').dataset.status==='complete');
+  if(investigation.run.evidence_frozen!==1||investigation.run.evidence_version!==2)throw new Error('Finish endpoint did not freeze evidence');
+  await page.getByRole('button',{name:'List',exact:true}).click();
+  await page.locator('[data-ledger-freeze]').filter({hasText:'Frozen evidence version 2'}).waitFor();
+  await page.locator('[data-matrix-rows] summary').filter({hasText:'supports · moderate'}).click();
+  await page.locator('[data-matrix-rows] blockquote').filter({hasText:exact}).waitFor();
+  await page.locator('.verification-panel > summary').click();
+  await audit('Rigour ledger frozen');await page.screenshot({path:path.join(artifacts,'ui-rigour-ledger.png'),fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw new Error('Rigour ledger overflows mobile');
+  await audit('Rigour ledger mobile');
+  const exportResponse=await page.request.post(appUrl+'/loader.php?view=research',{form:{csrf:csrfForRestart,action:'research_export',run_id:String(rigourRun)}});const markdown=await exportResponse.text();
+  if(!exportResponse.ok()||!markdown.includes(exact)||!markdown.includes(rigourSource.url)||!markdown.includes('Verification findings')||!markdown.includes('open'))throw new Error('Actual export omitted ledger provenance');
+  await page.getByRole('button',{name:'Map',exact:true}).click();await page.locator('[data-map-filter=source]').click();await page.locator('[data-map-node="103"] .map-node-button').click();await page.locator('[data-map-source="100"]').check();
+  await page.getByRole('button',{name:'Learn from 1 selected source',exact:true}).click();
   await noJs.close();
   fs.writeFileSync(path.join(artifacts,'ui-accessibility.json'),JSON.stringify({tool:'axe-core',version:require('axe-core/package.json').version,views:auditedViews,violations:accessibility},null,2));if(accessibility.length)throw new Error('Accessibility checks failed; inspect test-artifacts/ui-accessibility.json.');
   if(errors.length)throw new Error(errors.join('\n'));
@@ -305,4 +351,4 @@ const {spawn,spawnSync}=require('child_process');
   const marker=path.join(publicDir,'.aicontrol-pin.php');if(fs.existsSync(marker)){const d=JSON.parse(fs.readFileSync(marker,'utf8').split('\n').slice(1).join('\n')).directory;if(d.startsWith('/tmp/aicontrol-pin-'))fs.rmSync(d,{recursive:true,force:true});}
   fs.rmSync(temporary,{recursive:true,force:true});
  }
-})().catch(error=>{console.error(error.message);process.exitCode=1});
+})().catch(error=>{console.error(error.stack||error.message);process.exitCode=1});
