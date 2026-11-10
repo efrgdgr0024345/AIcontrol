@@ -137,6 +137,16 @@ try {
  // Old plain-text claims remain readable after the additive migration.
  $legacy=\AIcontrol\Investigation::claimData(['title'=>'Legacy prior','content'=>"Confidence: low\nUncertainty: Scope\nVerify: Check sources"]);
  verify($legacy['confidence']==='low'&&$legacy['verify']==='Check sources','Legacy claim rendering lost');
+ [$dir,$engine,$old,$db]=fixture();
+ verify($engine->requestBudget()['remaining']===10,'Fresh budget incorrect');
+ $db->exec("INSERT INTO research_messages(project_id,role,text,status,created_at)VALUES(1,'assistant','Fixture','complete',".(time()-30).")");
+ verify($engine->requestBudget()['remaining']===9,'Legacy chat absent from visible budget');
+ $run=$engine->createRun(1);$node=$engine->appendNode($run,null,'phase','complete','Dream');
+ for($i=0;$i<9;$i++)$db->exec("INSERT INTO research_requests(run_id,node_id,kind,status,created_at) VALUES($run,$node,'dream','complete',".time().")");
+ $budget=$engine->requestBudget();verify($budget['remaining']===0&&$budget['retry_after_seconds']>3500,'Exhausted budget/recovery time incorrect');
+ $db->exec('UPDATE research_requests SET created_at='.(time()-3601));
+ verify($engine->requestBudget()['remaining']===9,'Expired requests still consume visible budget');
+ $report=$engine->export($run);verify(str_contains($report,'Claims, evidence and outcomes')&&str_contains($report,'Open questions and learning notes'),'Notebook report headings missing');
  echo "PASS: $checks investigation migration, phase, budget, evidence, Learn, Stop race and uncertainty checks (synthetic transport only)\n";
 } finally {foreach($dirs as $dir){foreach(glob($dir.'/*') as $file)unlink($file);rmdir($dir);}}
 }

@@ -163,3 +163,21 @@ retain their existing behavior.
 Validation for this change uses synthetic provider transport, HTTP requests,
 and desktop/mobile Chromium with accessibility checks. It does not establish
 live provider quality, a checked GitHub release, or deployment to cPanel.
+
+## Research notebook flow polish
+
+The next UI pass adds first-project guidance, review selection shortcuts, explicit
+irreversible-selection copy, Dream loading placeholders, search progress, completed
+phase navigation, source-domain markers, visible dead-end labels and a completion
+matrix ahead of the board. Mobile uses a compact current-stage rail and reachable
+Stop controls. Interrupted/uncertain runs retain their evidence and offer a new
+investigation on the same project without retrying an unknown request.
+
+The visible rolling-hour budget counts both investigation requests and legacy
+assistant chat, including pending/failed calls; it shows the next availability
+estimate when exhausted. Existing enforcement remains authoritative. Learn
+follow-ups reuse the bounded evidence-only actions. Markdown export now groups
+claims, verification/evidence, outcomes and open questions, with every collected
+source URL retained. Optional mid-run brief editing, previous-question seeding
+and SSE are deferred. Validation uses synthetic transport and local browsers;
+no new live provider, hosting deployment or publication is implied.

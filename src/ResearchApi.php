@@ -43,7 +43,7 @@ final class ResearchApi
             http_response_code(422);
             $safe=['Select at least one valid claim.','This run is not awaiting claim review.','Connect OpenAI in Admin first.','Invalid model configuration.','Research limit reached: ten provider requests per hour.','Research is already active. Stop or resolve it before starting another request.','Research run not found.','Research project not found.','Collect source cards before using Learn.','Invalid Learn action or question.'];
             $message=in_array($e->getMessage(),$safe,true)?$e->getMessage():'Research request did not complete. Inspect its saved status before starting another request.';
-            if($json) { self::json(['error'=>$message]);return; }
+            if($json) { self::json(['error'=>$message,'budget'=>isset($engine)?$engine->requestBudget():null]);return; }
             header('Content-Type: text/html; charset=utf-8');
             \AIcontrolWorkspaceUi::begin('Research request stopped',$entry);
             echo '<h1>Research request stopped</h1><p>'.\AIcontrolWorkspaceUi::e($message).'</p><a class="btn btn-primary" href="'.\AIcontrolWorkspaceUi::e($entry.'?view=research').'">Return to research</a>';

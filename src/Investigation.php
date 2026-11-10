@@ -65,6 +65,13 @@ final class Investigation
         if (!preg_match('/^[A-Za-z0-9._-]{1,100}$/D', $model)) { throw new RuntimeException('Invalid model configuration.'); }
         return $model;
     }
+    public function requestBudget(): array
+    {
+        $now=time();
+        $times=array_map('intval',array_column($this->rows("SELECT created_at FROM research_requests WHERE created_at>? UNION ALL SELECT created_at FROM research_messages WHERE role='assistant' AND created_at>? ORDER BY created_at",[$now-3600,$now-3600]),'created_at'));
+        $used=count($times);
+        return ['limit'=>10,'used'=>$used,'remaining'=>max(0,10-$used),'retry_after_seconds'=>$used>=10?max(1,$times[$used-10]+3600-$now):0];
+    }
     private function budget(): void
     {
         $count = $this->rows("SELECT (SELECT COUNT(*) FROM research_requests WHERE created_at>?) + (SELECT COUNT(*) FROM research_messages WHERE role='assistant' AND created_at>?) AS n", [time()-3600,time()-3600])[0]['n'];
@@ -154,7 +161,7 @@ final class Investigation
             }
         });
         $run = $this->run($id); unset($run['busy']);
-        return ['run'=>$run,'nodes'=>$this->rows('SELECT * FROM research_nodes WHERE run_id=? ORDER BY id',[$id]),'sources'=>$this->rows('SELECT * FROM research_sources WHERE run_id=? ORDER BY id',[$id]),
+        return ['budget'=>$this->requestBudget(),'run'=>$run,'nodes'=>$this->rows('SELECT * FROM research_nodes WHERE run_id=? ORDER BY id',[$id]),'sources'=>$this->rows('SELECT * FROM research_sources WHERE run_id=? ORDER BY id',[$id]),
             'requests'=>$this->rows('SELECT id,kind,status,token_input,token_output FROM research_requests WHERE run_id=? ORDER BY id',[$id])];
     }
     public function projectRuns(int $project): array { return $this->rows('SELECT * FROM research_runs WHERE project_id=? ORDER BY id DESC LIMIT 20',[$project]); }
@@ -395,18 +402,40 @@ final class Investigation
         $selected=null;
         foreach($projects as $p)if((int)$p['id']===$project)$selected=$p;
         $selected ??= $projects[0]??null;
-        if (!$selected) { return ['project'=>null,'runs'=>[],'snapshot'=>null]; }
+        if (!$selected) { return ['budget'=>$this->requestBudget(),'project'=>null,'runs'=>[],'snapshot'=>null]; }
         $runs=$this->projectRuns((int)$selected['id']);$chosen=null;
         foreach($runs as $r)if((int)$r['id']===$run)$chosen=$r;
         $chosen ??= $runs[0]??null;
-        return ['project'=>$selected,'runs'=>$runs,'snapshot'=>$chosen?$this->getRunSnapshot((int)$chosen['id']):null];
+        return ['budget'=>$this->requestBudget(),'project'=>$selected,'runs'=>$runs,'snapshot'=>$chosen?$this->getRunSnapshot((int)$chosen['id']):null];
     }
     public function export(int $id): string
     {
         $s=$this->getRunSnapshot($id);$r=$s['run'];
         $out='# Research: '.$r['name']."\n\n".$r['brief']."\n\nRun #".$id.' · '.$r['status'].' · '.$r['phase']."\n".$r['stop_reason']."\n\nConfirmed tokens: ".$r['token_input'].' input / '.$r['token_output'].' output'.($r['usage_unknown']?' (some usage unknown)':'')."\n";
-        foreach($s['nodes'] as $n)$out.="\n## #".$n['id'].' '.$n['title'].' ['.$n['type'].' / '.$n['status']."]\n\n".$n['content']."\n";
-        $out.="\n## Collected source cards\n";
+        $out.="\n## Unchecked prior context\n";
+        foreach($s['nodes'] as $node){$context=json_decode($node['data_json']??'{}',true);if(isset($context['least_confident']))$out.="\nCompeting angles: ".implode('; ',$context['competing_angles'])."\nLeast confident: ".$context['least_confident']."\nBackground assumptions: ".implode('; ',$context['background_assumptions'])."\n";}
+        $out.="\n## Claims, evidence and outcomes\n";
+        $parents=[];foreach($s['nodes'] as $node)$parents[(int)$node['id']]=$node['parent_id'];
+        foreach($s['nodes'] as $claim)if($claim['type']==='dream_claim'){
+            $data=self::claimData($claim);$id=(int)$claim['id'];
+            $out.="\n### Claim #".$id.': '.$data['claim']."\n\nUnchecked prior · ".$data['confidence']." confidence · ".$data['priority']." priority\n";
+            $out.="\nUncertainty: ".$data['uncertainty']."\nVerification angle: ".$data['verify']."\n";
+            if(!(int)($claim['selected']??1))$out.="\nExcluded from this run's verification.\n";
+            $descendants=[$id];
+            foreach($s['nodes'] as $node)if(in_array((int)$node['parent_id'],$descendants,true)){
+                $descendants[]=(int)$node['id'];
+                if(in_array($node['type'],['plan_step','dead_end'],true))$out.="\n**".$node['title'].' ['.$node['status']."]**\n\n".$node['content']."\n";
+            }
+            foreach($s['sources'] as $source){
+                $meta=json_decode($source['meta_json'],true)??[];$linked=array_map('intval',$meta['claim_ids']??(isset($meta['claim_id'])?[$meta['claim_id']]:[]));
+                if(!in_array($id,$linked,true)&&!in_array((int)$source['node_id'],$descendants,true))continue;
+                $out.="\nSource #".$source['id'].': '.$source['title']."\n".$source['url']."\n".$source['extract']."\n";
+            }
+            foreach($s['nodes'] as $outcome)if($outcome['type']==='synthesis'&&(int)$outcome['parent_id']===$id)$out.="\n**Outcome: ".$outcome['title']."**\n\n".$outcome['content']."\n";
+        }
+        $out.="\n## Open questions and learning notes\n";
+        foreach($s['nodes'] as $node)if($node['type']==='learn'||($node['type']==='synthesis'&&$node['title']==='Open question'))$out.="\n### ".$node['title']."\n".$node['content']."\n";
+        $out.="\n## All collected source cards\n\nProvider summaries are paraphrases, not independently verified quotations.\n";
         foreach($s['sources'] as $c)$out.="\n### Source #".$c['id'].' '.$c['title']."\n".$c['url']."\nCaptured: ".gmdate('c',(int)$c['retrieved_at'])."\n".$c['extract']."\n";
         return $out;
     }

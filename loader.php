@@ -177,8 +177,16 @@ document.addEventListener('submit', event => {
     return node;
   };
   function error(message) {
-    const node = root?.querySelector('[data-research-error]');
+    const node = root?.querySelector('[data-research-error]') || document.querySelector('[data-request-error]');
     if (node) node.textContent = message;
+  }
+  function budgetLabel(budget) {
+    return `${budget.remaining} of 10 requests remaining this hour · max 2 searches per investigation` +
+      (budget.remaining === 0 ? ` · Next request available in about ${Math.ceil(budget.retry_after_seconds / 60)} minutes` : '');
+  }
+  function showBudget(budget) {
+    if (!budget) return;
+    document.querySelector('[data-request-budget]').textContent = budgetLabel(budget);
   }
   function safeUrl(value) {
     try { const url = new URL(value); return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password; } catch (_) { return false; }
@@ -204,7 +212,8 @@ document.addEventListener('submit', event => {
     const card = element('article', undefined, 'research-source'); card.dataset.sourceId = source.id;
     const link = element('a', source.url); link.href = source.url; link.target = '_blank'; link.rel = 'noopener noreferrer';
     const captured = new Intl.DateTimeFormat('en-AU', {timeZone: 'Australia/Perth', dateStyle: 'medium', timeStyle: 'short'}).format(new Date(source.retrieved_at * 1000));
-    card.append(element('h4', `Source #${source.id} · ${source.title}`), link, element('p', source.extract), element('small', `${source.domain} · Citation captured ${captured} AWST`));
+    const domain = element('div', undefined, 'source-domain'), mark = element('span', source.domain.slice(0,1).toUpperCase(), 'source-monogram'); mark.setAttribute('aria-hidden', 'true'); domain.append(mark, document.createTextNode(source.domain + ' · Cited source'));
+    card.append(domain, element('h4', `Source #${source.id} · ${source.title}`), link, element('p', source.extract), element('small', `${source.domain} · Citation captured ${captured} AWST`));
     return card;
   }
   function renderClaims(snapshot, review) {
@@ -221,7 +230,7 @@ document.addEventListener('submit', event => {
         const data = claimData(claim), label = element('label', undefined, 'claim-selection');
         const checkbox = element('input'); checkbox.type = 'checkbox'; checkbox.name = 'claim_ids[]'; checkbox.value = claim.id; checkbox.checked = checked;
         label.append(checkbox, element('span', `Include claim #${claim.id}`));
-        const badges = element('p', undefined, 'claim-badges'); badges.append(element('span', `${data.confidence} prior confidence`, 'claim-badge'));
+        const badges = element('p', undefined, 'claim-badges'), confidence = element('span', `${data.confidence} prior confidence`, 'claim-badge'); confidence.dataset.confidence = data.confidence; badges.append(confidence);
         if (data.priority === 'high') badges.append(element('span', 'High priority', 'claim-badge'));
         const uncertainty = element('p'); uncertainty.append(element('strong', 'Uncertainty: '), document.createTextNode(data.uncertainty));
         const verify = element('p'); verify.append(element('strong', 'Verify: '), document.createTextNode(data.verify));
@@ -234,7 +243,7 @@ document.addEventListener('submit', event => {
             const event = element('article', undefined, 'claim-event'); event.dataset.status = node.status;
             let content = node.content;
             if (node.type === 'synthesis') { try { content = JSON.parse(node.data_json || '{}').reason || content; } catch (_) { /* Legacy text. */ } }
-            event.append(element('h5', node.title), element('p', content)); trail.append(event);
+            event.append(element('h5', (node.type === 'dead_end' ? '⚑ Dead end · ' : '') + node.title), element('p', content)); trail.append(event);
           }
         }
         for (const source of claimSources(snapshot, claim.id).filter(source => safeUrl(source.url))) {
@@ -266,10 +275,18 @@ document.addEventListener('submit', event => {
     }
     root.querySelector('[data-claim-matrix]').hidden = snapshot.run.status !== 'complete';
     root.querySelector('[data-dream-empty]').hidden = claims.length > 0;
+    const generating = snapshot.run.status === 'running' && snapshot.run.phase === 'dream';
+    root.querySelector('[data-dream-empty]').textContent = generating ? 'Generating prior hypotheses… Claims will appear as they are saved. No evidence has been established yet.' : 'No prior claims were saved for this run. Inspect the saved status before starting again.';
+    root.querySelector('[data-dream-skeleton]').hidden = !generating || claims.length > 0;
+    const plans = snapshot.nodes.filter(node => node.type === 'plan_step');
+    root.querySelector('[data-live-progress]').textContent = snapshot.run.phase === 'evidence' ? `Verification search ${Math.min(Number(snapshot.run.evidence_index || 0) + 1, plans.length)} of ${plans.length} · ${snapshot.run.busy_since ? 'request in progress' : 'ready for the next step'}` : (review ? 'Dream complete — choose what to verify before continuing.' : '');
     const stages = ['dream', 'dream_review', 'plan', 'evidence', 'reconciliation'];
     root.querySelectorAll('[data-phase-rail] li').forEach((item, index) => {
       item.removeAttribute('aria-current');
       if (stages[index] === snapshot.run.phase) item.setAttribute('aria-current', 'step');
+      const done = snapshot.nodes.some(node => node.type === 'phase' && node.title.toLowerCase() === stages[index] && node.status === 'complete') || (stages[index] === 'dream_review' && stages.indexOf(snapshot.run.phase) > index);
+      item.dataset.done = done ? '1' : '0';
+      const link = item.querySelector('a'); link.setAttribute('aria-disabled', String(!done)); link.tabIndex = done ? 0 : -1;
     });
     const metrics = root.querySelector('[data-research-metrics]');
     metrics.querySelectorAll('strong').forEach((item, index) => item.textContent = [claims.length, snapshot.sources.length, snapshot.run.status][index]);
@@ -279,8 +296,9 @@ document.addEventListener('submit', event => {
     if (!root) return;
     const review = root.dataset.review === '1';
     const total = root.querySelectorAll('[data-dream-cards] input:checked').length;
-    root.querySelector('[data-selection-count]').textContent = review ? `${total} selected for verification` : '';
+    root.querySelector('[data-selection-count]').textContent = review ? `${total} of ${root.querySelectorAll('[data-dream-cards] input').length} claims selected · will use up to 2 searches` : '';
     root.querySelector('[data-continue-claims]').disabled = review && total === 0;
+    root.querySelector('[data-review-shortcuts]').hidden = !review;
   }
   root?.addEventListener('change', event => { if (event.target.matches('[name="claim_ids[]"]')) updateSelection(); });
   function render(snapshot) {
@@ -289,6 +307,7 @@ document.addEventListener('submit', event => {
     if (serial === lastSnapshot) return;
     lastSnapshot = serial;
     const run = snapshot.run;
+    showBudget(snapshot.budget);
     const active = ['pending', 'running'].includes(run.status);
     const review = active && run.phase === 'dream_review';
     root.dataset.review = review ? '1' : '0';
@@ -312,6 +331,7 @@ document.addEventListener('submit', event => {
         const summary = element('summary'); summary.append(element('span'), document.createTextNode(' '), element('small'));
         node.append(summary, element('div', '', 'node-content'), element('div', undefined, 'node-children'));
       }
+      if (item.status === 'running' || item.status === 'pending') node.open = true;
       node.dataset.status = item.status;
       node.querySelector('summary > span').textContent = item.title;
       node.querySelector('summary > small').textContent = `${item.type} · ${item.status}`;
@@ -328,10 +348,7 @@ document.addEventListener('submit', event => {
     const saved = new Set([...cards.querySelectorAll('[data-source-id]')].map(card => Number(card.dataset.sourceId)));
     for (const source of snapshot.sources) {
       if (saved.has(Number(source.id)) || !safeUrl(source.url)) continue;
-      const card = element('article', undefined, 'research-source'); card.dataset.sourceId = source.id;
-      const link = element('a', source.url); link.href = source.url; link.target = '_blank'; link.rel = 'noopener noreferrer';
-      const captured = new Intl.DateTimeFormat('en-AU', {timeZone: 'Australia/Perth', dateStyle: 'medium', timeStyle: 'short'}).format(new Date(source.retrieved_at * 1000));
-      card.append(element('h4', `Source #${source.id} · ${source.title}`), link, element('p', source.extract), element('small', `${source.domain} · Citation captured ${captured} AWST`)); cards.append(card);
+      cards.append(sourceCard(source));
     }
     const learning = root.querySelector('[data-learn-results]');
     for (const item of snapshot.nodes.filter(item => item.type === 'learn')) {
@@ -345,7 +362,10 @@ document.addEventListener('submit', event => {
     root.querySelector('[data-learn-panel]').hidden = !hasSources || root.dataset.selectedTab !== 'learn';
     root.querySelector('[data-source-empty]').hidden = hasSources;
     root.querySelector('[data-learn-submit]').disabled = active || pending;
-    document.querySelector('[data-research-action=research_start] button').disabled = active || pending;
+    document.querySelectorAll('[data-research-action=research_start] button').forEach(button => button.disabled = active || pending);
+    root.querySelector('[data-recovery]').hidden = !['interrupted','uncertain','incomplete','failed'].includes(run.status);
+    root.querySelector('[data-learn-followups]').hidden = !snapshot.nodes.some(node => node.type === 'learn' && node.status === 'complete');
+    root.querySelectorAll('[data-learn-followup]').forEach(button => button.disabled = active || pending || !hasSources);
     if (!active && !pending) { stepping = false; }
   }
   async function send(form) {
@@ -356,6 +376,7 @@ document.addEventListener('submit', event => {
     const response = await fetch(destination, {method: 'POST', body: payload, credentials: 'same-origin', headers: {'Accept': 'application/json'}});
     if (!(response.headers.get('content-type') || '').includes('application/json')) throw new Error('Research session expired. Sign in again and inspect the saved run before continuing.');
     const data = await response.json();
+    showBudget(data.budget);
     if (!response.ok || data.error) throw new Error(data.error || 'Research request failed. Inspect the saved state before continuing.');
     return data;
   }
@@ -388,10 +409,10 @@ document.addEventListener('submit', event => {
     if (!(form instanceof HTMLFormElement) || !form.dataset.researchAction || form.dataset.researchAction === 'research_export') return;
     event.preventDefault();
     const action = form.dataset.researchAction;
-    const button = form.querySelector('button'); button.disabled = true;
+    const button = event.submitter || form.querySelector('button:not([type=button])'); button.disabled = true;
     if (action === 'research_stop') halted = true;
     if (action === 'research_step') { halted = false; advance(); button.disabled = false; return; }
-    if (action === 'research_learn') { error('Explaining collected evidence… No web search.'); root.querySelector('[data-stop-control]').hidden = false; }
+    if (action === 'research_learn') { root.querySelectorAll('[data-learn-followup], [data-learn-submit]').forEach(button => button.disabled = true); error('Explaining collected evidence… No web search.'); root.querySelector('[data-stop-control]').hidden = false; }
     try {
       const snapshot = await send(form);
       if (action === 'research_start') {
@@ -399,8 +420,27 @@ document.addEventListener('submit', event => {
       }
       render(snapshot); error('');
       if (action === 'research_continue') { halted = false; advance(); }
-    } catch (failure) { error(failure.message); if (!root) alert(failure.message); }
+    } catch (failure) { error(failure.message);  }
     finally { button.disabled = false; }
+  });
+  root?.addEventListener('click', event => {
+    const quick = event.target.closest('[data-keep]');
+    if (quick && root.dataset.review === '1') {
+      root.querySelectorAll('[data-dream-cards] input').forEach(input => {
+        const card = input.closest('[data-claim-id]');
+        const priority = !![...card.querySelectorAll('.claim-badge')].find(badge => badge.textContent === 'High priority');
+        const confidence = card.querySelector('[data-confidence]')?.dataset.confidence;
+        input.checked = quick.dataset.keep === 'all' || (quick.dataset.keep === 'priority' ? priority : confidence !== 'low');
+      });
+      updateSelection();
+    }
+    const stage = event.target.closest('[data-phase-rail] a');
+    if (stage) {
+      event.preventDefault(); if (stage.getAttribute('aria-disabled') === 'true') return;
+      root.querySelector('section[id^=investigate-]').hidden = false; root.querySelector('[data-learn-panel]').hidden = true; root.dataset.selectedTab = 'investigate';
+      const target = document.querySelector(stage.getAttribute('href')); if (target.tagName === 'DETAILS') target.open = true;
+      target.tabIndex = -1; target.focus(); target.scrollIntoView({block:'start'});
+    }
   });
   if (root) {
     root.dataset.selectedTab = 'investigate';
@@ -844,6 +884,48 @@ details[open] summary { margin-bottom: 14px; }
  .research-project-brief .card-body { display: block; }
  .research-project-brief form { margin-top: 1rem; }
 }
+
+/* The notebook keeps the review decision and its budget within reach. */
+.research-budget-notice { padding: .8rem 1rem; margin-bottom: 1rem; background: #edf5f1; color: #315644; border: 1px solid #c8dfd1; border-radius: .65rem; font-weight: 600; font-size: .85rem; }
+.research-welcome { background: linear-gradient(120deg,#f7f3ff,#fff); }
+.research-welcome .card-body { padding: 2rem; max-width: 52rem; }
+.brief-guidance, .brief-help { color: #54596a; font-size: .85rem; }
+.brief-help { grid-column: 1; }
+.review-shortcuts { display: flex; flex-wrap: wrap; gap: .5rem; margin: 1rem 0; }
+[data-selection-count] { color: #403557; font-weight: 600; }
+.claim-badge[data-confidence=high] { background: #e2f1e8; color: #275b3c; }
+.claim-badge[data-confidence=medium] { background: #eee8fa; color: #4b3683; }
+.claim-badge[data-confidence=low] { background: #fff1d9; color: #725019; }
+.dream-skeleton { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; }
+.dream-skeleton span { height: 9rem; border: 1px solid #e2dced; border-radius: .75rem; background: linear-gradient(110deg,#f3f0f8 30%,#fcfbfe 50%,#f3f0f8 70%); background-size: 200% 100%; animation: prior-loading 2s linear infinite; }
+@keyframes prior-loading { to { background-position: -200% 0; } }
+@media(prefers-reduced-motion:reduce) { .dream-skeleton span { animation: none; } }
+.research-live-progress { color: #4b3683; font-weight: 600; }
+.research-recovery { padding: .9rem; background: #fff7e8; border: 1px solid #e2cb9d; border-radius: .6rem; max-width: 35rem; }
+.research-recovery p { color: #694c21; }
+.learn-followups { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 1rem; }
+.learn-followups h4 { flex-basis: 100%; font-size: 1rem; }
+[data-phase-rail] a { color: inherit; text-decoration: none; display: block; }
+[data-phase-rail] a[aria-disabled=true] { cursor: default; }
+[data-phase-rail] li[data-done="1"] { background: #eaf3ee; border-color: #7fa68e; color: #315644; }
+[data-phase-rail] li[aria-current] { background: #f3effa; border-color: #6950b6; color: #4c358b; }
+[data-claim-matrix] { background: #f7f9fc; border: 1px solid #dce1eb; padding: 1rem; border-radius: .75rem; margin: 1.2rem 0; }
+@media(max-width:600px) {
+ .dream-skeleton { grid-template-columns: 1fr; }
+ .research-phase-rail { display: flex; gap: 0; background: #f3effa; border-radius: .5rem; }
+ .research-phase-rail li { display: none; border: 0; }
+ .research-phase-rail li[aria-current] { display: block; width: 100%; padding: .75rem; }
+ .research-controls:has([data-stop-control]:not([hidden])) { position: fixed; left: 18px; right: 18px; bottom: .75rem; z-index: 5; padding: .65rem; background: #fff; box-shadow: 0 3px 18px #29203f22; border-radius: .6rem; }
+ body:has([data-stop-control]:not([hidden])) { padding-bottom: 100px; }
+ .learn-followups form, .learn-followups button { width: 100%; }
+}
+
+.source-domain { display:flex; align-items:center; gap:.5rem; font-size:.75rem; color:#466050; margin-bottom:.75rem; }
+.source-monogram { display:inline-grid; place-items:center; width:1.6rem; height:1.6rem; border-radius:.35rem; background:#e1eee6; color:#275b3c; font-weight:700; }
+.source-relevance { display:inline-block; padding:.3rem .5rem; border-radius:.4rem; background:#eaf3ee; }
+.research-budget-notice { position:sticky; top:0; z-index:3; }
+
+#research-board, #research-outcomes, #research-tree { scroll-margin-top: 5rem; }
 
 AICONTROL_UI_CSS;
     }
