@@ -6,10 +6,9 @@ final class ResearchView
 {
     private static function dashboard(array $project,?array $snapshot): void
     {
-        $usage=$snapshot['usage']['project']??$project['usage'];
-        echo '<section class="research-now" data-research-now><div class="research-now-heading"><div><div class="research-eyebrow">CURRENT FINDINGS</div><h2>'.Ui::e($project['name']).' · current findings</h2></div><p data-project-spend>'.Ui::e(UsageMeter::label($usage)).' · '.number_format($usage['total_tokens']).' tokens'.($usage['reserved_usd']>0?' · $'.number_format($usage['reserved_usd'],4).' reserved':'').'</p></div><ul data-current-findings>';
-        foreach($snapshot['findings']??[['text'=>'Start an investigation to collect evidence.','status'=>'not started','reason'=>'No findings yet.','provisional'=>true]] as $finding)echo '<li><strong>'.Ui::e(ucfirst($finding['status']).($finding['provisional']?' · provisional':'')).': </strong>'.Ui::e($finding['text'].' '.$finding['reason']).'</li>';
-        echo '</ul><div class="research-live" data-live-activity role="status">'.($snapshot?'Saved state: '.Ui::e($snapshot['run']['status'].' · '.$snapshot['run']['phase']).'. Reload to refresh without JavaScript.':'Ready when you are.').'</div><small data-live-clock aria-live="off"></small></section>';
+        $usage=$snapshot['usage']['project']??$project['usage'];$findings=$snapshot['findings']??[];$idea='Research ideas will appear here as the project develops.';
+        foreach($findings as $finding)if($finding['status']!=='collecting'){$idea=($finding['provisional']?'Provisional: ':ucfirst($finding['status']).': ').$finding['text'];break;}
+        echo '<section class="research-now" data-research-now><div class="research-now-heading"><div><div class="research-eyebrow">CURRENT IDEA</div><h2>'.Ui::e($project['name']).' · current idea</h2></div></div><div data-current-findings data-sentence-host><button type="button" class="research-idea-sentence" data-idea-sentence aria-label="Pause idea rotation" aria-pressed="false"><span role="status">'.Ui::e($idea).'</span></button></div><details class="research-now-metadata"><summary>Activity &amp; spend</summary><p data-project-spend>'.Ui::e(UsageMeter::label($usage)).' · '.number_format($usage['total_tokens']).' tokens</p><div class="research-live" data-live-activity role="status">'.($snapshot?'Saved state: '.Ui::e($snapshot['run']['status'].' · '.$snapshot['run']['phase']).'. Reload to refresh without JavaScript.':'Ready when you are.').'</div><small data-live-clock aria-live="off"></small></details></section>';
     }
     private static function settings(array $project,string $csrf): void
     {

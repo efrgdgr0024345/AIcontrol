@@ -121,3 +121,40 @@ spend. A Responses SSE reader persists real activity, visible response-character
 counts and final usage; status polls remain session-free during provider I/O.
 The browser ignores server_time-only changes when preserving forms/details.
 No fake progress percentage/token ticker or private reasoning is exposed.
+
+## Concept-first projection and controls
+
+The default canvas projects saved rows into `root`, `dream_claim`, and `question`
+nodes. Phase/plan/search/synthesis records remain in the snapshot and List; an
+on-demand concept history exposes their exact saved text/status. Evidence filters
+reveal sources/passages/edges without restoring technical stage boxes. Graph
+projection never writes the database. Shared source IDs can produce dashed links
+between concepts; they assert common citations only.
+
+`assets/map-engine.js` supplies pure ownership resolution, graph projection,
+rectangle-aware force packing and the reading queue. `build-ui.php` embeds it
+before `panel.js` in the generated UI/loader. No graph CDN or new runtime request
+is introduced. Packing uses saved screen positions as seeds, relaxes links,
+resolves rectangular collisions and fits to viewport aspect. Readable zoom/pan
+remains available beyond the dense concept overview.
+
+Pending request `path_node_id` / `claim_id` / node ancestry determines the working
+concept. Shared planning/discovery/verifier work highlights selected concepts.
+The displayed stage has a textual state and a colour pulse. Failed, stopped and
+uncertain runs never pulse as active. This is execution-state feedback, not
+private reasoning or fake provider progress.
+
+The top line contains one public idea sentence. A local FIFO holds deduplicated
+claim/question/findings excerpts for 5–10 seconds each and fades between them.
+The line toggles pause, hidden tabs retain reading time, and Idea history makes
+the backlog inspectable. It preserves untested/provisional labels, strips search
+boilerplate/Markdown/URLs and never makes another provider request to summarise.
+Reduced motion replaces animated fades/movement/pulses with immediate/static
+state changes. The main List uses the same single sentence.
+
+One Map controls handle reveals actions, filters, usage and history on hover,
+keyboard activation or touch. Escape closes controls, then details, then restores
+List. Alt+S submits the existing Stop action. A compact terminal/review notice
+keeps important outcomes discoverable with controls collapsed. An optional
+floating inspector leaves the canvas footprint intact; changing filters or
+returning from List closes the drawer. Source choices are also in the inspector.

@@ -335,3 +335,24 @@ and actual visible output-character counts. The UI polls authenticated saved
 state, shows elapsed request time and the age of provider activity/poll contact.
 It does not claim token counts before the final usage arrives or expose private
 reasoning. A truncated stream is uncertain and is not automatically retried.
+
+## Compact concept map
+
+The map overview now shows concepts and untested questions in two dimensions.
+Technical planning/search/phase boxes have moved into the concept's saved history
+and the full List. Active concepts show a textual planning/researching/exploring/
+checking state and a gentle coloured pulse from actual pending requests. Failed
+or interrupted investigations do not pulse.
+
+The top sentence is a local reading queue of concise existing public ideas and
+findings, displayed one at a time for 5–10 seconds. Click the sentence to pause or
+resume. Idea history in Map controls contains the backlog. This condensation
+creates no additional provider calls and does not promote an untested idea into
+a fact. Reduced-motion preference disables animations.
+
+Hover, click, tap or keyboard-activate the small Map controls handle to reveal
+Start/Stop, filters, Fit/zoom, List, usage and project settings. Alt+S also stops
+research. Error and verification-review notices remain visible with controls
+collapsed. Selecting a concept opens an optional overlay drawer with its stage
+history, sources, ranking and applicable actions; close it to reveal the whole
+canvas. Initial claim selection stays in a compact floating review bar.

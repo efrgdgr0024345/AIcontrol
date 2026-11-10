@@ -25,6 +25,7 @@ private records persist on the hosting server.
 | Task agent bounds | One active run, three requests/hour, 1,000 output tokens/call |
 | Research bounds | One active investigation/pending request; 30 calls/hour shared with chat/Learn; 3,200 output tokens for new specialist flows, 1,600 for legacy/Learn; 60 seconds |
 | Verified investigation | Start needs six calls remaining; up to six searches including Challenge and growth, two creative passes, extraction/verifier; one optional repair |
+| Research map | Concept network; one fading idea sentence; hover/tap/keyboard controls; stage activity on concepts; no extra provider calls |
 | Research models | Primary/high-impact/verifier GPT-4.1; economy GPT-4.1 mini; tool-free divergent thinker GPT-4.1 nano; server primary-model override retained |
 | Research spend cap | $5 USD tracked per project by default; adjustable in Project menu; saved API-usage estimates + conservative reservations, not an invoice cap |
 | Rate provenance | Official standard USD prices checked 2026-11-10, saved per request; missing/historical unpriced usage stays unknown |

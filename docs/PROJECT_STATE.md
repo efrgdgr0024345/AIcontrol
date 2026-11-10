@@ -5,6 +5,52 @@ AGENTS.md and DEPLOYMENT_DEFAULTS.md. Git history and Actions identify exact cod
 revisions; do not infer a live hosting revision from the latest source commit.
 
 
+## Concept network and reading queue (current UI)
+
+The map is now a two-dimensional concept network, with at least 90% of viewport
+area reserved for the canvas. Its default projection contains the project,
+selected/excluded original concepts and untested question nodes. Planning, phase,
+search and synthesis records stay persisted and appear in concept details / List;
+they no longer take separate boxes on the overview. Explicit evidence filters
+can reveal source/passage/edge records. Shared citations add visual concept links;
+these links are not proof of source independence or causal relations.
+
+A bounded force/rectangle-packing solver preserves previous positions as seeds,
+resolves overlap and adapts to viewport aspect ratio. New nodes and links gently
+rearrange neighbours; Fit reframes the network. Native scrolling/zoom remains
+available for large evidence filters, rather than discarding records or shrinking
+text indefinitely. Concept priority and speculative status remain distinct.
+
+A single short sentence replaces the scrolling findings list. Existing public
+claim/question/findings text is shortened into a deduplicated queue: no extra API
+request, fabricated endorsement or new assessment. Each sentence remains 5–10
+seconds, then fades to the next. Click/tap it to pause/resume; hidden tabs preserve
+reading time. The controls' Idea history exposes the backlog (50 pending, 100
+history entries). Unchecked/provisional labels survive condensation. Reduced-
+motion preference disables fades, movement and pulsing.
+
+Controls are in an on-demand overlay revealed by hover, click/tap or keyboard.
+Stop is inside it and has Alt+S; the default canvas has one small control handle.
+Failure/review states retain a compact notice, with full activity, tokens, cost
+and request outcome in the overlay. Details is an optional floating drawer, not
+a reserved column. Evidence/source selection, Learn, ranking and review continue
+to use the same authenticated forms and budget guards. Initial human claim review
+remains a reachable floating bar; no-JS retains the full List/forms.
+
+Real pending request metadata maps planning/evidence/discovery/verification work
+to its original concept (or selected concepts for shared work). A gentle stage-
+coloured pulse plus stage text shows activity there. Terminal runs never pulse
+as if active. No provider output, billing, saved graph or research lifecycle is
+changed by this presentation projection.
+
+Fourteen pure projection/packing/queue checks are in `tests/map_engine.cjs`, run before
+the existing browser suite by `npm run test:ui`. Browser coverage includes dense
+networks, the viewport budget, no technical boxes, keyboard/hover/mobile controls,
+paused queued sentences, reduced motion and terminal activity, with 31 axe
+audits and zero violations. All provider
+fixtures remain synthetic; no live billed API operation or cPanel activation
+is established by these checks.
+
 ## Current research usage, live activity and branching
 
 New runs now use `flow_version=1`; existing runs default to zero and retain their

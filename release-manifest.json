@@ -2,8 +2,8 @@
     "version": 2,
     "files": {
         "app.php": "28c1f4c172eec964d70646344b399fdef36e99c405c54ecea9c1e6e3e9b577b4",
-        "assets/panel.css": "dca810c88757fb9b6ba7b82b9fbfbdc83a53d7868c1dcbdc58a45a520bbb4da4",
-        "assets/panel.js": "9b1933afd4899259d23e546c8729ffa5389a4f0061b318357825fa3a6bd00753",
+        "assets/panel.css": "436551917be3bbf53e787938140afdfa276b3f8fc5f91796a4d92cbc72c3063c",
+        "assets/panel.js": "9bf77f0f6dbbe127265a13b8c47e118f5b818116055ab2297633532a1e813124",
         "src/AccessPolicy.php": "44469fc613bb1704d857e06e6d70d484d44083b33753e99feaec93baed561cd8",
         "src/AgentRunner.php": "dc72a96c41e74ef73dca129368dee637f8489516b116a146de34d5b10818565e",
         "src/Bootstrap.php": "68184329531c1526cb67b6e8068d98e238b3571feaccd4ff6c81d1f012245409",
@@ -17,15 +17,15 @@
         "src/Research.php": "67e341d20da5b3e67af0fc1eda71515db99d6bbf7a3d9ecff351a16d13229594",
         "src/ResearchApi.php": "efa6e1abee7a146c898e7b087830de393c569d6b2f12d15e3951c59262850e50",
         "src/ResearchFlow.php": "1aeab6af9b464ae14fd927ef99d3a7ba6ef629e05f52a9997cd7f1d518a8bc11",
-        "src/ResearchView.php": "7055fcd3d94fab959e67c93a2d59de59c72c55516ed9f0ed1c3f0ec8135502aa",
+        "src/ResearchView.php": "6b76d997dfdef166fa953edb40130d31335702d2073742ff70e39a7a7352c533",
         "src/ResponseStream.php": "2e88c341dcbe599d2a6c8218e6158099d94d2e9f57a359689c5a60410a013d9c",
-        "src/Ui.php": "5da5010aba6e83ac6eb7399b830f660395807f884f7d5b2b58ed300827db6313",
+        "src/Ui.php": "b3d15accfcdd36f978624c127c68d2ac45e4fb6b8851f8715e8e498ba2717dac",
         "src/UsageMeter.php": "227f54f35e1abe83fc0c3dd2835c258b969980633aa30e8583d92a067e4fbd81",
         "src/Vault.php": "67293540cbcc1dcd8f97033789e9a9b1c9688f0462f2720cc6c1cd83ec3fbded",
         "src/WorkspaceView.php": "c96ffa03550b12ed85373e08f14afd7367739d38a92817d01d2218cf78583f2f"
     },
     "bootstrap": {
         "path": "loader.php",
-        "sha256": "9e552413f2f184bf5d3c884f819fc20494b71759432e05bcf8da75204e99bed0"
+        "sha256": "c8bc49028373477982da722635cbbf49fc6a99aa296dc6d30c0aea235cff1918"
     }
 }
