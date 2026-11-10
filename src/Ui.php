@@ -124,7 +124,9 @@ final class AIcontrolWorkspaceUi
       }
     };
     try {
-      const response = await fetch(destination, {method: 'POST', body: new FormData(form), credentials: 'same-origin', headers: {'Accept': 'application/x-ndjson'}});
+      const payload = new FormData(form);
+    if (form.dataset.researchAction === 'research_continue') payload.set('selection_explicit', '1');
+    const response = await fetch(destination, {method: 'POST', body: payload, credentials: 'same-origin', headers: {'Accept': 'application/x-ndjson'}});
       if (!(response.headers.get('content-type') || '').includes('application/x-ndjson') || !response.body) throw new Error('Session expired or progress is unavailable. Open updates to confirm the active version.');
       const reader = response.body.getReader(), decoder = new TextDecoder();
       let buffer = '';
@@ -173,6 +175,106 @@ document.addEventListener('submit', event => {
   function safeUrl(value) {
     try { const url = new URL(value); return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password; } catch (_) { return false; }
   }
+  function claimData(node) {
+    try { const data = JSON.parse(node.data_json || '{}'); if (data.claim) return data; } catch (_) { /* Legacy text below. */ }
+    const data = {claim: node.title, confidence: 'unknown', uncertainty: '', verify: '', priority: 'normal'};
+    for (const [label, key] of [['Confidence', 'confidence'], ['Uncertainty', 'uncertainty'], ['Verify', 'verify']]) {
+      const match = node.content.match(new RegExp('^' + label + ': (.*)$', 'm')); if (match) data[key] = match[1];
+    }
+    return data;
+  }
+  function claimSources(snapshot, claim) {
+    const parents = new Map(snapshot.nodes.map(node => [Number(node.id), Number(node.parent_id)]));
+    return snapshot.sources.filter(source => {
+      try { if ((JSON.parse(source.meta_json || '{}').claim_ids || []).map(Number).includes(Number(claim))) return true; } catch (_) { /* Legacy ancestor lookup. */ }
+      let id = Number(source.node_id); const seen = new Set();
+      while (id && !seen.has(id)) { if (id === Number(claim)) return true; seen.add(id); id = parents.get(id); }
+      return false;
+    });
+  }
+  function sourceCard(source) {
+    const card = element('article', undefined, 'research-source'); card.dataset.sourceId = source.id;
+    const link = element('a', source.url); link.href = source.url; link.target = '_blank'; link.rel = 'noopener noreferrer';
+    const captured = new Intl.DateTimeFormat('en-AU', {timeZone: 'Australia/Perth', dateStyle: 'medium', timeStyle: 'short'}).format(new Date(source.retrieved_at * 1000));
+    card.append(element('h4', `Source #${source.id} · ${source.title}`), link, element('p', source.extract), element('small', `${source.domain} · Citation captured ${captured} AWST`));
+    return card;
+  }
+  function renderClaims(snapshot, review) {
+    const cards = root.querySelector('[data-dream-cards]');
+    const claims = snapshot.nodes.filter(node => node.type === 'dream_claim');
+    for (const claim of claims) {
+      let card = cards.querySelector(`[data-claim-id="${Number(claim.id)}"]`);
+      if (!card) { card = element('article', undefined, 'dream-card'); card.dataset.claimId = claim.id; cards.append(card); }
+      // Review polling must not recreate checkboxes or steal focus/selection.
+      const serial = JSON.stringify([claim, snapshot.nodes.filter(node => node.type !== 'learn'), snapshot.sources]);
+      if (card.dataset.serial !== serial) {
+        const old = card.querySelector('input'); const checked = old ? old.checked : Number(claim.selected ?? 1) === 1;
+        const focused = old === document.activeElement;
+        const data = claimData(claim), label = element('label', undefined, 'claim-selection');
+        const checkbox = element('input'); checkbox.type = 'checkbox'; checkbox.name = 'claim_ids[]'; checkbox.value = claim.id; checkbox.checked = checked;
+        label.append(checkbox, element('span', `Include claim #${claim.id}`));
+        const badges = element('p', undefined, 'claim-badges'); badges.append(element('span', `${data.confidence} prior confidence`, 'claim-badge'));
+        if (data.priority === 'high') badges.append(element('span', 'High priority', 'claim-badge'));
+        const uncertainty = element('p'); uncertainty.append(element('strong', 'Uncertainty: '), document.createTextNode(data.uncertainty));
+        const verify = element('p'); verify.append(element('strong', 'Verify: '), document.createTextNode(data.verify));
+        card.replaceChildren(element('div', `PRIOR / ${String(claim.id).padStart(2, '0')}`, 'claim-number'), label, element('h4', data.claim), badges, uncertainty, verify);
+        if (Number(claim.selected ?? 1) === 0) card.append(element('p', 'Excluded from verification'));
+        const trail = element('div', undefined, 'claim-trail'), descendants = new Set([Number(claim.id)]);
+        for (const node of snapshot.nodes) if (descendants.has(Number(node.parent_id))) {
+          descendants.add(Number(node.id));
+          if (['plan_step', 'dead_end', 'synthesis'].includes(node.type)) {
+            const event = element('article', undefined, 'claim-event'); event.dataset.status = node.status;
+            let content = node.content;
+            if (node.type === 'synthesis') { try { content = JSON.parse(node.data_json || '{}').reason || content; } catch (_) { /* Legacy text. */ } }
+            event.append(element('h5', node.title), element('p', content)); trail.append(event);
+          }
+        }
+        for (const source of claimSources(snapshot, claim.id).filter(source => safeUrl(source.url))) {
+          trail.append(element('p', `Evidence collected to test claim #${claim.id}`, 'source-relevance'), sourceCard(source));
+        }
+        card.append(trail); card.dataset.serial = serial; if (focused && review) checkbox.focus();
+      }
+      card.querySelector('input').disabled = !review;
+    }
+    const context = root.querySelector('[data-prior-context]'); context.replaceChildren();
+    for (const node of snapshot.nodes) {
+      let data; try { data = JSON.parse(node.data_json || '{}'); } catch (_) { continue; }
+      if (!data.least_confident) continue;
+      context.append(element('h4', 'Prior context'));
+      for (const [label, value] of [['Competing angles', data.competing_angles.join('; ')], ['Least confident', data.least_confident], ['Background assumptions', data.background_assumptions.join('; ')]]) {
+        const p = element('p'); p.append(element('strong', label + ': '), document.createTextNode(value)); context.append(p);
+      }
+    }
+    const rows = root.querySelector('[data-matrix-rows]'); rows.replaceChildren();
+    for (const claim of claims) {
+      const verdict = snapshot.nodes.find(node => node.type === 'synthesis' && Number(node.parent_id) === Number(claim.id));
+      let data = {}; try { data = JSON.parse(verdict?.data_json || '{}'); } catch (_) { /* Legacy title. */ }
+      const outcome = Number(claim.selected ?? 1) === 0 ? 'Excluded from verification' : (data.verdict || verdict?.title.split(' · ')[0] || 'open');
+      const tr = element('tr'), th = element('th', claimData(claim).claim); th.scope = 'row';
+      const sources = claimSources(snapshot, claim.id).filter(source => safeUrl(source.url) && (!data.source_ids || data.source_ids.includes(Number(source.id))));
+      const td = element('td', sources.length ? '' : 'No useful source');
+      for (const source of sources) { const link = element('a', source.title); link.href = source.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; td.append(link, document.createTextNode(' ')); }
+      tr.append(th, element('td', outcome), td); rows.append(tr);
+    }
+    root.querySelector('[data-claim-matrix]').hidden = snapshot.run.status !== 'complete';
+    root.querySelector('[data-dream-empty]').hidden = claims.length > 0;
+    const stages = ['dream', 'dream_review', 'plan', 'evidence', 'reconciliation'];
+    root.querySelectorAll('[data-phase-rail] li').forEach((item, index) => {
+      item.removeAttribute('aria-current');
+      if (stages[index] === snapshot.run.phase) item.setAttribute('aria-current', 'step');
+    });
+    const metrics = root.querySelector('[data-research-metrics]');
+    metrics.querySelectorAll('strong').forEach((item, index) => item.textContent = [claims.length, snapshot.sources.length, snapshot.run.status][index]);
+    updateSelection();
+  }
+  function updateSelection() {
+    if (!root) return;
+    const review = root.dataset.review === '1';
+    const total = root.querySelectorAll('[data-dream-cards] input:checked').length;
+    root.querySelector('[data-selection-count]').textContent = review ? `${total} selected for verification` : '';
+    root.querySelector('[data-continue-claims]').disabled = review && total === 0;
+  }
+  root?.addEventListener('change', event => { if (event.target.matches('[name="claim_ids[]"]')) updateSelection(); });
   function render(snapshot) {
     if (!root || !snapshot.run) return;
     const serial = JSON.stringify(snapshot);
@@ -180,13 +282,18 @@ document.addEventListener('submit', event => {
     lastSnapshot = serial;
     const run = snapshot.run;
     const active = ['pending', 'running'].includes(run.status);
+    const review = active && run.phase === 'dream_review';
+    root.dataset.review = review ? '1' : '0';
+    root.querySelector('[data-review-copy]').hidden = !review;
+    root.querySelector('[data-continue-claims]').hidden = !review;
+    renderClaims(snapshot, review);
     const pending = snapshot.requests.some(request => request.status === 'pending');
     root.dataset.status = run.status;
     root.dataset.busy = run.busy_since ? '1' : '0';
-    root.querySelector('[data-research-summary]').textContent = `${run.status} · ${run.phase} · ${snapshot.nodes.length} nodes · ${run.token_input} input / ${run.token_output} output tokens confirmed${run.usage_unknown ? ' · some usage unknown' : ''}`;
+    root.querySelector('[data-research-summary]').textContent = `${run.status} · ${review ? 'Dream complete — review claims' : run.phase} · ${run.token_input} input / ${run.token_output} output tokens confirmed${run.usage_unknown ? ' · some usage unknown' : ''}`;
     root.querySelector('[data-research-reason]').textContent = run.stop_reason;
     root.querySelector('[data-stop-control]').hidden = !(active || pending);
-    root.querySelector('[data-step-control]').hidden = !active || !!run.busy_since;
+    root.querySelector('[data-step-control]').hidden = !active || !!run.busy_since || review;
     const tree = root.querySelector('[data-research-tree]');
     const existing = new Map([...tree.querySelectorAll('[data-node-id]')].map(node => [Number(node.dataset.nodeId), node]));
     const parents = new Map();
@@ -236,14 +343,16 @@ document.addEventListener('submit', event => {
   async function send(form) {
     const destination = new URL(form.getAttribute('action') || location.href, location.href);
     destination.searchParams.set('research_api', '1');
-    const response = await fetch(destination, {method: 'POST', body: new FormData(form), credentials: 'same-origin', headers: {'Accept': 'application/json'}});
+    const payload = new FormData(form);
+    if (form.dataset.researchAction === 'research_continue') payload.set('selection_explicit', '1');
+    const response = await fetch(destination, {method: 'POST', body: payload, credentials: 'same-origin', headers: {'Accept': 'application/json'}});
     if (!(response.headers.get('content-type') || '').includes('application/json')) throw new Error('Research session expired. Sign in again and inspect the saved run before continuing.');
     const data = await response.json();
     if (!response.ok || data.error) throw new Error(data.error || 'Research request failed. Inspect the saved state before continuing.');
     return data;
   }
   async function advance() {
-    if (!root || stepping || halted || root.dataset.status !== 'running' || root.dataset.busy === '1') return;
+    if (!root || stepping || halted || root.dataset.status !== 'running' || root.dataset.busy === '1' || root.dataset.review === '1') return;
     const form = root.querySelector('[data-research-action=research_step]');
     stepping = true;
     try { render(await send(form)); }
@@ -281,6 +390,7 @@ document.addEventListener('submit', event => {
         const url = new URL(form.getAttribute('action'), location.href); url.searchParams.set('project', snapshot.run.project_id); url.searchParams.set('run', snapshot.run.id); location.assign(url); return;
       }
       render(snapshot); error('');
+      if (action === 'research_continue') { halted = false; advance(); }
     } catch (failure) { error(failure.message); if (!root) alert(failure.message); }
     finally { button.disabled = false; }
   });
@@ -640,6 +750,92 @@ details[open] summary { margin-bottom: 14px; }
 .research-error { color: #a12b2b; font-weight: 600; }
 @media (max-width: 600px) { .node-children { padding-left: 0; } .investigation-node { padding: .6rem; } }
 .investigation-node > summary { color: #403557; font-size: .9rem; font-weight: 600; }
+
+/* Claim review uses the same markup for server-rendered and polled states. */
+.dream-board { margin: 1.5rem 0; }
+.dream-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr)); gap: 1rem; margin-bottom: 1rem; }
+.dream-card { min-width: 0; padding: 1rem; border: 1px solid #c9c2df; border-radius: .75rem; background: #faf9fd; overflow-wrap: anywhere; }
+.dream-card h4 { font-size: 1.05rem; margin: .75rem 0; }
+.claim-selection { display: flex; align-items: center; gap: .6rem; cursor: pointer; font-weight: 600; }
+.claim-selection input { width: 1.25rem; height: 1.25rem; }
+[data-review="0"] .claim-selection { display: none; }
+.claim-badges { display: flex; flex-wrap: wrap; gap: .5rem; }
+.claim-badge { display: inline-block; background: #e9e4f5; color: #403557; padding: .2rem .6rem; border-radius: .5rem; font-size: .8rem; }
+.claim-event { margin: .75rem 0; border-left: 3px solid #7160c5; padding: .5rem .75rem; background: white; }
+.claim-event[data-status="dead_end"] { border-color: #a56516; background: #fffaf1; }
+.claim-event h5 { font-size: .95rem; }
+.claim-event p { white-space: pre-wrap; }
+.prior-context { padding: 1rem 0; overflow-wrap: anywhere; }
+.claim-matrix-scroll { overflow-x: auto; }
+.claim-matrix-scroll table { table-layout: fixed; width: 100%; }
+.claim-matrix-scroll th, .claim-matrix-scroll td { white-space: normal; overflow-wrap: anywhere; vertical-align: top; }
+.full-research-tree { margin: 1rem 0; }
+
+/* Research output is a reading workspace, with technical history behind details. */
+.investigation { border: 1px solid #ded9ea; box-shadow: 0 8px 30px #29203f08; }
+.investigation > .card-body { padding: clamp(1rem, 3vw, 2rem); }
+.research-eyebrow, .claim-number { font-size: .68rem; letter-spacing: .12em; font-weight: 700; color: #64577f; }
+.investigation-heading h2 { font-size: 1.65rem; letter-spacing: -.035em; margin-top: .4rem; }
+[data-research-summary] { color: #626779; font-size: .8rem; max-width: 42rem; }
+.research-intro { font-size: 1.15rem; color: #45405b; }
+.research-budget, .research-run-notes { font-size: .8rem; color: #626779; }
+.research-run-notes summary, .full-research-tree > summary, .source-catalog > summary { cursor: pointer; padding: .7rem 0; font-weight: 600; }
+.research-phase-rail { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); padding: 0; margin: 1.5rem 0; list-style: none; gap: .5rem; }
+.research-phase-rail li { padding: .75rem .6rem; border-top: 3px solid #e5e1ed; color: #626779; font-size: .78rem; font-weight: 600; }
+.research-phase-rail li[aria-current] { border-color: #6950b6; color: #4c358b; background: #f3effa; border-radius: 0 0 .5rem .5rem; }
+.research-metrics { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); border: 1px solid #e5e1ed; border-radius: .75rem; margin-bottom: 1.5rem; }
+.research-metrics > div { display: flex; flex-direction: column; gap: .3rem; padding: 1rem; border-right: 1px solid #e5e1ed; }
+.research-metrics > div:last-child { border: 0; }
+.research-metrics strong { font-size: 1.25rem; color: #403557; overflow-wrap: anywhere; }
+.research-metrics span { font-size: .75rem; color: #626779; }
+.research-section-heading p { margin-top: .5rem; color: #626779; max-width: 42rem; }
+.dream-board > h3 { font-size: 1.2rem; letter-spacing: -.02em; }
+[data-review-copy] { padding: 1rem 1.2rem; border-left: 3px solid #6950b6; background: #f3effa; color: #403557; border-radius: .5rem; }
+.dream-card { background: #fff; box-shadow: 0 3px 12px #29203f05; padding: 1.3rem; }
+.dream-card h4 { font-size: 1.15rem; line-height: 1.45; letter-spacing: -.02em; }
+.dream-card > p:not(.claim-badges) { font-size: .88rem; line-height: 1.6; color: #54596a; }
+.claim-selection { margin-top: .8rem; padding: .6rem; background: #f5f2fb; border-radius: .5rem; font-size: .8rem; }
+.claim-review-actions { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+[data-selection-count] { font-size: .85rem; color: #626779; }
+.prior-context:not(:empty) { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 1rem; padding: 1.25rem; margin-top: 1.5rem; background: #f7f7fa; border-radius: .75rem; }
+.prior-context h4 { grid-column: 1 / -1; font-size: .95rem; margin: 0; }
+.prior-context p { font-size: .82rem; margin: 0; line-height: 1.6; }
+.prior-context strong { display: block; color: #403557; }
+.claim-trail:empty { display: none; }
+.claim-trail { border-top: 1px solid #e8e4ef; padding-top: .5rem; margin-top: 1.2rem; }
+.claim-trail .research-source { background: #f8faf9; border-color: #d8e4dd; font-size: .82rem; }
+.source-relevance { color: #536a5d; font-size: .75rem; font-weight: 600; margin: 1rem 0 -.25rem; }
+.claim-event { font-size: .82rem; }
+.claim-event h5 { color: #4a3d66; }
+.source-catalog { border-top: 1px solid #e5e1ed; margin-top: 1rem; }
+.dream-empty { padding: 2rem; border: 1px dashed #d1c9df; border-radius: .75rem; color: #626779; background: #faf9fd; }
+@media(max-width:600px) {
+ .research-phase-rail { grid-template-columns: repeat(3,minmax(0,1fr)); }
+ .research-phase-rail li { font-size: .7rem; padding: .6rem .35rem; }
+ .research-metrics > div { padding: .7rem; }
+ .research-metrics strong { font-size: 1rem; }
+ .prior-context:not(:empty) { grid-template-columns: 1fr; }
+ .dream-card { padding: 1rem; }
+ .claim-review-actions .btn { width: 100%; }
+}
+
+.research-project-picker .card-body { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; padding: 1rem 1.3rem; }
+.research-project-picker .project-create { margin-left: auto; }
+.research-project-picker .project-create[open] { flex-basis: 100%; margin: 0; }
+.research-project-picker .btn { padding: .5rem .8rem; }
+.research-project-brief .card-body { display: grid; grid-template-columns: minmax(0,1fr) auto; column-gap: 1.5rem; padding: 1.3rem; }
+.research-project-brief h2, .research-project-brief .text-break, .research-project-brief .research-budget { grid-column: 1; }
+.research-project-brief form { grid-column: 2; grid-row: 1 / 4; align-self: center; }
+.research-project-brief h2 { font-size: 1.3rem; }
+.research-project-brief .text-break { margin-bottom: .5rem; }
+.research-project-brief .research-budget { margin: 0; }
+.claim-matrix-scroll tbody th { font-size: .85rem; font-weight: 600; text-transform: none; letter-spacing: normal; color: #403557; }
+.claim-matrix-scroll td { font-size: .85rem; }
+@media(max-width:600px) {
+ .research-project-picker .project-create { margin: 0; }
+ .research-project-brief .card-body { display: block; }
+ .research-project-brief form { margin-top: 1rem; }
+}
 
 AICONTROL_UI_CSS;
     }

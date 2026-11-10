@@ -41,7 +41,7 @@ try {
  \AIcontrol\InvestigationWire::$handler=function(array $body)use($engine,$run):array {
   verify($body['store']===false&&$body['max_output_tokens']===1600,'Request caps');verify(!str_contains(json_encode($body),'synthetic-test-only')&&!str_contains(json_encode($body),'NEVER-SEND-THIS'),'Secret leaked');
   $snapshot=$engine->getRunSnapshot($run);$phase=$snapshot['run']['phase'];
-  if($phase==='dream') {verify(!isset($body['tools'])&&str_contains($body['instructions'],'unchecked'),'Dream tools/label');return reply(json_encode(['claims'=>[['claim'=>'Solar may save money','uncertainty'=>'Location matters','confidence'=>'medium','verify'=>'Compare tariffs'],['claim'=>'Payback varies','uncertainty'=>'Capital cost','confidence'=>'low','verify'=>'Find independent costs']]]));}
+  if($phase==='dream') {verify(!isset($body['tools'])&&str_contains($body['instructions'],'unchecked'),'Dream tools/label');return reply(json_encode(['core_claims'=>[['priority'=>'high','claim'=>'Solar may save money','uncertainty'=>'Location matters','confidence'=>'medium','verify'=>'Compare tariffs'],['priority'=>'normal','claim'=>'Payback varies','uncertainty'=>'Capital cost','confidence'=>'low','verify'=>'Find independent costs']],'competing_angles'=>['Export tariffs may offset savings'],'least_confident'=>'Local installation cost','background_assumptions'=>['Owner can install panels']]));}
   $claims=array_values(array_filter($snapshot['nodes'],fn($n)=>$n['type']==='dream_claim'));
   if($phase==='plan')return reply(json_encode(['steps'=>[['claim_id'=>(int)$claims[0]['id'],'query'=>'solar tariff studies'],['claim_id'=>(int)$claims[1]['id'],'query'=>'independent capital costs']]]));
   if($phase==='evidence'){
@@ -53,7 +53,11 @@ try {
   verify(!isset($body['tools']),'Reconciliation can search');
   return reply(json_encode(['claims'=>[['claim_id'=>(int)$claims[0]['id'],'verdict'=>'supported','reason'=>'Within the cited study scope','source_ids'=>[(int)$snapshot['sources'][0]['id']]],['claim_id'=>(int)$claims[1]['id'],'verdict'=>'open','reason'=>'No useful source','source_ids'=>[]]],'open_questions'=>['Which local tariff applies?']]));
  };
- for($i=0;$i<5;$i++)$snapshot=$engine->step($run);
+ $snapshot=$engine->step($run);
+ verify($snapshot['run']['phase']==='dream_review','Dream did not pause for review');
+ $before=count(\AIcontrol\InvestigationWire::$bodies);$engine->step($run);verify(count(\AIcontrol\InvestigationWire::$bodies)===$before,'Review spent provider budget');
+ $engine->continueRun($run);
+ for($i=0;$i<4;$i++)$snapshot=$engine->step($run);
  verify($snapshot['run']['status']==='complete','Investigation not complete');
  verify(count($snapshot['sources'])===1&&$snapshot['sources'][0]['url']==='https://example.com/solar','Invalid or missing source');
  verify(count(array_filter($snapshot['nodes'],fn($n)=>$n['type']==='dead_end'))===1,'Dead end disappeared');
@@ -78,6 +82,61 @@ try {
  [$dir,$engine,$old,$db]=fixture();$run=$engine->createRun(1);\AIcontrol\InvestigationWire::$status=429;\AIcontrol\InvestigationWire::$handler=fn($body)=>reply('No response');verify($engine->step($run)['run']['status']==='failed','HTTP refusal claimed success');\AIcontrol\InvestigationWire::$status=200;
  [$dir,$engine,$old,$db]=fixture();$run=$engine->createRun(1);\AIcontrol\InvestigationWire::$handler=function($body){$r=reply('Partial output');$r['status']='incomplete';return $r;};verify($engine->step($run)['run']['status']==='incomplete','Truncated provider result claimed success');
  verify(!\AIcontrol\Investigation::sourceUrl('https://user:pass@example.com')&&!\AIcontrol\Investigation::sourceUrl('data:text/html,test'),'Unsafe source URL');
+ // Strict rich prior validation must not leave partially accepted claim nodes.
+ $valid=['core_claims'=>[['claim'=>'Concrete first claim','confidence'=>'medium','uncertainty'=>'Scope','verify'=>'Find measured evidence','priority'=>'high'],['claim'=>'Competing second claim','confidence'=>'low','uncertainty'=>'Cost','verify'=>'Compare independent costs','priority'=>'normal']],'competing_angles'=>['Alternative explanation'],'least_confident'=>'Local applicability','background_assumptions'=>['Comparable setting']];
+ $invalid=[];$bad=$valid;$bad['core_claims'][1]['confidence']='certain';$invalid[]=$bad;
+ $bad=$valid;$bad['core_claims'][1]['claim']=' ';$invalid[]=$bad;
+ $bad=$valid;$bad['core_claims']=array_fill(0,6,$valid['core_claims'][0]);$invalid[]=$bad;
+ $bad=$valid;$bad['core_claims']=[$valid['core_claims'][0]];$invalid[]=$bad;
+ $bad=$valid;$bad['competing_angles']=array_fill(0,4,'angle');$invalid[]=$bad;
+ $bad=$valid;$bad['least_confident']=str_repeat('x',3001);$invalid[]=$bad;
+ foreach($invalid as $bad){
+  [$dir,$engine,$old,$db]=fixture();$run=$engine->createRun(1);
+  \AIcontrol\InvestigationWire::$handler=fn($body)=>reply(json_encode($bad));
+  $snapshot=$engine->step($run);verify($snapshot['run']['status']==='incomplete','Invalid rich dream accepted');
+  verify(!array_filter($snapshot['nodes'],fn($n)=>$n['type']==='dream_claim'),'Partial invalid prior persisted');
+ }
+ [$dir,$engine,$old,$db]=fixture();$run=$engine->createRun(1);
+ \AIcontrol\InvestigationWire::$handler=fn($body)=>reply(json_encode($valid));
+ $snapshot=$engine->step($run);$claims=array_values(array_filter($snapshot['nodes'],fn($n)=>$n['type']==='dream_claim'));
+ verify(count($claims)===2&&\AIcontrol\Investigation::claimData($claims[0])['priority']==='high','Rich claim metadata lost');
+ denied(fn()=>$engine->continueRun($run,[]),'Empty selection accepted');
+ denied(fn()=>$engine->continueRun($run,[(int)$claims[0]['id'],(int)$claims[0]['id']]),'Duplicate selection accepted');
+ denied(fn()=>$engine->continueRun($run,[99999]),'Foreign selection accepted');
+ denied(fn()=>$engine->continueRun($run,[(string)$claims[0]['id']]),'Noninteger selection accepted');
+ $selected=(int)$claims[1]['id'];$excluded=(int)$claims[0]['id'];$engine->continueRun($run,[$selected]);
+ denied(fn()=>$engine->continueRun($run,[$selected]),'Repeated Continue accepted');
+ \AIcontrol\InvestigationWire::$handler=function($body)use($selected,$excluded){
+  $nodes=json_decode(explode("Dream nodes: ",$body['input'])[1],true);
+  verify(count($nodes)===1&&(int)$nodes[0]['id']===$selected,'Plan received excluded claim');
+  return reply(json_encode(['steps'=>[['claim_id'=>$excluded,'query'=>'Must reject excluded claim']]]));
+ };
+ verify($engine->step($run)['run']['status']==='incomplete','Plan accepted excluded claim');
+ [$dir,$engine,$old,$db]=fixture();$run=$engine->createRun(1);\AIcontrol\InvestigationWire::$handler=fn($body)=>reply(json_encode($valid));$engine->step($run);$engine->stop($run);
+ denied(fn()=>$engine->continueRun($run),'Continue revived stopped review');
+ verify($engine->getRunSnapshot($run)['run']['status']==='interrupted','Review Stop lost');
+ // Selected claims retain their ancestry through a complete no-source investigation.
+ [$dir,$engine,$old,$db]=fixture();$run=$engine->createRun(1);\AIcontrol\InvestigationWire::$handler=fn($body)=>reply(json_encode($valid));
+ $snapshot=$engine->step($run);$claims=array_values(array_filter($snapshot['nodes'],fn($n)=>$n['type']==='dream_claim'));$chosen=(int)$claims[1]['id'];
+ $engine->continueRun($run,[$chosen]);
+ \AIcontrol\InvestigationWire::$handler=function($body)use($chosen){
+  if(str_contains($body['instructions'],'Plan phase'))return reply(json_encode(['steps'=>[['claim_id'=>$chosen,'query'=>'Check chosen claim']]]));
+  if(isset($body['tools']))return reply('No useful citation found.',[['type'=>'web_search_call','status'=>'completed']]);
+  return reply(json_encode(['claims'=>[['claim_id'=>$chosen,'verdict'=>'open','reason'=>'No useful source supports the claim.','source_ids'=>[]]],'open_questions'=>[]]));
+ };
+ for($i=0;$i<3;$i++)$snapshot=$engine->step($run);
+ verify($snapshot['run']['status']==='complete','Selected-only run did not finish');
+ $outcomes=array_values(array_filter($snapshot['nodes'],fn($n)=>$n['type']==='synthesis'));
+ verify(count($outcomes)===1&&(int)$outcomes[0]['parent_id']===$chosen,'Outcome attached to excluded claim');
+ verify(count(array_filter($snapshot['nodes'],fn($n)=>$n['type']==='dead_end'))===1,'Selected dead end lost');
+ // A citation shared by two searches remains attached to both claims without duplicating source records.
+ $engine->addSource($run,$chosen,'https://example.com/shared','Shared study','Synthetic summary',['claim_id'=>$chosen]);
+ $engine->addSource($run,(int)$claims[0]['id'],'https://example.com/shared','Shared study','Synthetic summary',['claim_id'=>(int)$claims[0]['id']]);
+ $snapshot=$engine->getRunSnapshot($run);$meta=json_decode($snapshot['sources'][0]['meta_json'],true);
+ verify(count($snapshot['sources'])===1&&count($meta['claim_ids'])===2,'Shared citation lost claim relevance');
+ // Old plain-text claims remain readable after the additive migration.
+ $legacy=\AIcontrol\Investigation::claimData(['title'=>'Legacy prior','content'=>"Confidence: low\nUncertainty: Scope\nVerify: Check sources"]);
+ verify($legacy['confidence']==='low'&&$legacy['verify']==='Check sources','Legacy claim rendering lost');
  echo "PASS: $checks investigation migration, phase, budget, evidence, Learn, Stop race and uncertainty checks (synthetic transport only)\n";
 } finally {foreach($dirs as $dir){foreach(glob($dir.'/*') as $file)unlink($file);rmdir($dir);}}
 }

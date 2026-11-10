@@ -138,3 +138,28 @@ Limits and uncertainty semantics are documented in ADMIN_RESEARCH.md. Add
 `php tests/investigation.php` and `python3 -B -m unittest -v tests/investigation_http.py`
 to the reproducible checks. Provider tests use synthetic transport; live billed
 provider/shared-host validation remains separate.
+
+## Claim review and research output redesign
+
+Dream now requests 2–5 bounded core hypotheses with prior confidence, uncertainty,
+verification angle and priority, plus competing angles, assumptions and the least
+confident area. These remain explicitly unchecked. New runs pause in
+`dream_review` with status `running`, retaining the single-active-run guard.
+`research_step` cannot bypass review or spend another request there.
+`research_continue` validates selected claim IDs in a transaction before Plan;
+without JavaScript it selects all claims. Existing in-progress runs keep their
+saved phase and plain-text claims remain readable. Additive node columns preserve
+structured display data and selection; nothing resets project or private state.
+
+The research output is now a claim board with a stage rail, review controls,
+claim-linked verification/evidence/dead ends, a compact final outcome matrix,
+and separate prior context. The full expandable tree and source library are
+available as details. Shared source URLs retain relevance to multiple claims.
+Plan accepts selected claims only; reconciliation evaluates selected claims only.
+Selection polling preserves checkboxes and keyboard focus. Learn still requires
+sources and an idle investigation. Stop, request bounds, and uncertain outcomes
+retain their existing behavior.
+
+Validation for this change uses synthetic provider transport, HTTP requests,
+and desktop/mobile Chromium with accessibility checks. It does not establish
+live provider quality, a checked GitHub release, or deployment to cPanel.

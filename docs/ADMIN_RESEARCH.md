@@ -142,3 +142,21 @@ progress through polling, Stop, source links, Learn, accessibility and mobile
 layout. Existing vault, tasks, PIN and updater suites remain required.
 No live billed OpenAI investigation was performed in cloud; the real model,
 web-search entitlement and shared-host behavior remain host-side validation.
+
+### Review the prior before verification
+
+After Dream finishes, the claim board pauses for review. Prior confidence is the
+model's own confidence, not a measure of source support. Each card shows the
+hypothesis, uncertainty and verification angle; competing angles, assumptions and
+the weakest area appear separately. Select at least one claim and choose
+**Continue with selected claims**. Plan receives only those selected IDs. Up to
+two searches follow, so selected claims without useful evidence can remain open.
+With JavaScript unavailable, Continue uses all claims. Stop works during review
+and never resumes a stopped run. An active review still blocks another run.
+
+Evidence cards stay beside the claim they test. They contain real HTTP(S)
+citation URLs, model summaries, domain and captured time; they are not verified
+quotations. Repeated citation URLs can belong to multiple claims. Final outcomes
+are summarized in the claim matrix; excluded claims stay visible, and dead ends
+remain in the claim's history. The full tree, source library and Markdown export
+retain the detailed record. Old runs remain readable after additive migration.

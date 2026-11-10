@@ -107,14 +107,25 @@ const {spawn,spawnSync}=require('child_process');
   const researchSeed=spawnSync(php,['-r',`require 'src/Vault.php'; (new \\AIcontrol\\Vault(getenv('TEST_RESEARCH_HOME')))->change('openai_api_key','key','synthetic-browser-fixture',false);`],{env:{...process.env,TEST_RESEARCH_HOME:privateDir},encoding:'utf8'});
   if(researchSeed.status!==0)throw new Error(researchSeed.stderr||researchSeed.stdout);
   let investigation={run:{id:1,project_id:1,status:'running',phase:'dream',busy_since:null,token_input:0,token_output:0,usage_unknown:0,stop_reason:''},nodes:[],sources:[],requests:[]};
-  let stepCalls=0,stopped=false,pollCalls=0;
+  let stepCalls=0,stopped=false,pollCalls=0,reviewMode=false,continued=false;
   const clone=()=>JSON.parse(JSON.stringify(investigation));
   await page.route('**/loader.php?research_api=status*',route=>{pollCalls++;return route.fulfill({contentType:'application/json',body:JSON.stringify(clone())});});
   await page.route('**/loader.php?view=research&research_api=1',async route=>{
     const body=route.request().postData()||'';
     if(body.includes('research_start'))return route.continue();
     if(body.includes('research_stop')){stopped=true;investigation.run.status='interrupted';investigation.run.busy_since=null;investigation.run.usage_unknown=1;investigation.run.stop_reason='Stopped fixture; provider outcome unknown.';investigation.requests.forEach(request=>request.status='uncertain');investigation.nodes.forEach(node=>{if(node.status==='running')node.status='interrupted';});}
+    else if(body.includes('research_continue')){
+      const ids=[...body.matchAll(/name="claim_ids\[\]"\r?\n\r?\n(\d+)/g)].map(match=>Number(match[1]));
+      if(ids.length!==1||ids[0]!==2||!body.includes('selection_explicit'))throw new Error('Review submitted incorrect claims: '+JSON.stringify(ids));
+      continued=true;investigation.run.phase='plan';investigation.nodes.find(node=>node.id===9).selected=0;
+    }
     else if(body.includes('research_step')){
+      if(reviewMode){
+        if(!continued)throw new Error('Plan started before claim approval');
+        investigation.run.status='complete';investigation.run.phase='reconciliation';
+        investigation.nodes.push({id:10,parent_id:2,type:'plan_step',status:'dead_end',title:'Verify local tariff savings',content:'Compare measured local tariff data'},{id:11,parent_id:10,type:'dead_end',status:'dead_end',title:'Local evidence still missing',content:'No useful source for the local tariff claim.'},{id:12,parent_id:2,type:'synthesis',status:'complete',title:'Open · claim #2',content:'Local applicability remains uncertain.',data_json:JSON.stringify({verdict:'open',source_ids:[]})});
+        return route.fulfill({contentType:'application/json',body:JSON.stringify(clone())});
+      }
       stepCalls++;investigation.run.busy_since=Math.floor(Date.now()/1000);investigation.requests=[{id:1,kind:'dream',status:'pending'}];
       investigation.nodes=[{id:1,parent_id:null,type:'phase',status:'running',title:'Dream',content:'Model’s prior thoughts — not yet checked.'}];
       setTimeout(()=>{if(!stopped)investigation.nodes.push({id:2,parent_id:1,type:'dream_claim',status:'complete',title:'Fixture unchecked claim',content:'Uncertainty: needs evidence.'});},600);
@@ -126,7 +137,7 @@ const {spawn,spawnSync}=require('child_process');
   });
   await page.goto(appUrl+'/loader.php?view=research');
   await page.getByRole('button',{name:'Start research',exact:true}).click();
-  await page.getByText('Fixture unchecked claim',{exact:true}).waitFor();
+  await page.getByRole('heading',{name:'Fixture unchecked claim',exact:true}).waitFor();
   if(pollCalls<2)throw new Error('Tree did not grow through status polling');
   await audit('Investigation growing');
   await page.getByRole('button',{name:'Stop research',exact:true}).click();
@@ -136,11 +147,13 @@ const {spawn,spawnSync}=require('child_process');
   await audit('Investigation interrupted');
   investigation.run={...investigation.run,status:'complete',phase:'reconciliation',token_input:55,token_output:120,usage_unknown:0,busy_since:null};
   investigation.nodes.push({id:3,parent_id:2,type:'plan_step',status:'dead_end',title:'Verify fixture claim',content:'No useful second source.'},{id:4,parent_id:3,type:'dead_end',status:'dead_end',title:'No usable cited source',content:'The branch remains open.'});
-  investigation.sources=[{id:1,node_id:5,url:'https://example.com/research-fixture',title:'Collected source fixture',extract:'Provider summary, not a quotation.',domain:'example.com',retrieved_at:Math.floor(Date.now()/1000)}];
+  investigation.nodes.push({id:5,parent_id:3,type:'search',status:'complete',title:'Evidence search',content:'Completed search'},{id:6,parent_id:5,type:'source',status:'complete',title:'Collected source fixture',content:'Provider summary'},{id:7,parent_id:2,type:'synthesis',status:'complete',title:'Open · claim #2',content:'A useful source exists, but local applicability remains uncertain.',data_json:JSON.stringify({verdict:'open',reason:'A useful source exists, but local applicability remains uncertain.',source_ids:[1]})});
+  investigation.sources=[{id:1,node_id:6,url:'https://example.com/research-fixture',title:'Collected source fixture',extract:'Provider summary, not a quotation.',domain:'example.com',retrieved_at:Math.floor(Date.now()/1000)}];
   investigation.requests=[{id:1,status:'complete',kind:'dream'}];
   await page.reload();await page.getByRole('link',{name:'Learn',exact:true}).waitFor();
-  await page.getByRole('link',{name:'https://example.com/research-fixture',exact:true}).waitFor();
-  await page.getByText('No usable cited source',{exact:true}).waitFor();
+  await page.locator('.source-catalog > summary').click();
+  await page.locator('[data-research-sources]').getByRole('link',{name:'https://example.com/research-fixture',exact:true}).waitFor();
+  await page.locator('[data-dream-cards]').getByRole('heading',{name:'No usable cited source',exact:true}).waitFor();
   await audit('Investigation evidence');await page.screenshot({path:path.join(artifacts,'ui-investigate-desktop.png'),fullPage:true});
   await page.getByRole('link',{name:'Learn',exact:true}).click();
   await page.getByLabel('Learning action',{exact:true}).selectOption('compare');
@@ -151,6 +164,39 @@ const {spawn,spawnSync}=require('child_process');
   await page.setViewportSize({width:390,height:844});
   if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw new Error('Investigation tree overflows mobile viewport');
   await page.screenshot({path:path.join(artifacts,'ui-investigate-mobile.png'),fullPage:true});
+  // Review mode must pause automatic progression and preserve checkbox state through polls.
+  reviewMode=true;continued=false;stopped=false;
+  const rich=(claim,confidence,uncertainty,verify,priority)=>JSON.stringify({claim,confidence,uncertainty,verify,priority});
+  investigation={run:{id:1,project_id:1,status:'running',phase:'dream_review',busy_since:null,token_input:90,token_output:210,usage_unknown:0,stop_reason:''},nodes:[
+    {id:1,parent_id:null,type:'phase',status:'complete',title:'Dream',content:'Unchecked prior',data_json:JSON.stringify({competing_angles:['Self-consumption may matter more than panel size.'],least_confident:'Future export tariffs and installation cost.',background_assumptions:['A suitable unshaded roof is available.']})},
+    {id:2,parent_id:1,type:'dream_claim',status:'complete',title:'Solar savings depend on local tariffs',content:'Unchecked prior',selected:1,data_json:rich('Solar savings depend on local tariffs','medium','Future export prices may change.','Compare current local tariffs and measured household use.','high')},
+    {id:9,parent_id:1,type:'dream_claim',status:'complete',title:'Upfront cost may dominate payback',content:'Unchecked prior',selected:1,data_json:rich('Upfront cost may dominate payback','low','Installation cost varies by site.','Find independent installed-cost ranges.','normal')}
+  ],sources:[],requests:[{id:1,kind:'dream',status:'complete'}]};
+  await page.setViewportSize({width:1440,height:1000});await page.reload();
+  await page.getByRole('button',{name:'Continue with selected claims',exact:true}).waitFor();
+  const claims=page.locator('[data-dream-cards]');
+  await claims.getByLabel('Include claim #9',{exact:true}).uncheck();
+  await claims.getByLabel('Include claim #2',{exact:true}).focus();
+  await new Promise(resolve=>setTimeout(resolve,3200));
+  if(continued||await claims.getByLabel('Include claim #9',{exact:true}).isChecked())throw new Error('Review poll lost selection or auto-continued');
+  if(!await claims.getByLabel('Include claim #2',{exact:true}).evaluate(node=>node===document.activeElement))throw new Error('Review poll stole keyboard focus');
+  if(!await page.getByRole('button',{name:'Start research',exact:true}).isDisabled())throw new Error('Active review allowed Start');
+  if(await page.getByRole('link',{name:'Learn',exact:true}).isVisible())throw new Error('Learn visible without sources');
+  await audit('Dream claim review');await page.screenshot({path:path.join(artifacts,'ui-dream-review-desktop.png'),fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw new Error('Dream board overflows mobile');
+  await page.screenshot({path:path.join(artifacts,'ui-dream-review-mobile.png'),fullPage:true});
+  await claims.getByLabel('Include claim #2',{exact:true}).uncheck();
+  if(!await page.getByRole('button',{name:'Continue with selected claims',exact:true}).isDisabled())throw new Error('Empty review selection enabled Continue');
+  await claims.getByLabel('Include claim #2',{exact:true}).check();
+  await page.getByRole('button',{name:'Continue with selected claims',exact:true}).click();
+  await page.locator('[data-investigation][data-status=complete]').waitFor();
+  if(!continued)throw new Error('Continue did not submit selected claims');
+  await claims.getByText('Excluded from verification',{exact:true}).waitFor();
+  await claims.getByRole('heading',{name:'Local evidence still missing',exact:true}).waitFor();
+  if(await claims.locator('[data-claim-id="9"] .claim-event').count())throw new Error('Excluded claim has verification events');
+  await audit('Selected claim outcomes');
+  await page.setViewportSize({width:1440,height:1000});await page.screenshot({path:path.join(artifacts,'ui-claim-outcomes-desktop.png'),fullPage:true});
   fs.writeFileSync(path.join(artifacts,'ui-accessibility.json'),JSON.stringify({tool:'axe-core',version:require('axe-core/package.json').version,views:auditedViews,violations:accessibility},null,2));if(accessibility.length)throw new Error('Accessibility checks failed; inspect test-artifacts/ui-accessibility.json.');
   if(errors.length)throw new Error(errors.join('\n'));
   console.log('PASS: PIN/setup, all workspace views, project/task forms, search, agent-result fixture, mobile overflow and browser errors.');

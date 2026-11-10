@@ -17,6 +17,19 @@ final class ResearchApi
         try {
             $engine=new Investigation($directory);
             if($action==='research_start') { $id=$engine->createRun((int)self::input('project_id')); }
+            elseif($action==='research_continue') {
+                $selected=null;
+                if (self::input('selection_explicit')==='1') {
+                    $raw=$_POST['claim_ids']??[];
+                    if (!is_array($raw) || count($raw)>5) throw new \RuntimeException('Select at least one valid claim.');
+                    $selected=[];
+                    foreach ($raw as $value) {
+                        if (!is_string($value) || !preg_match('/^[1-9][0-9]{0,9}$/D',$value)) throw new \RuntimeException('Select at least one valid claim.');
+                        $selected[]=(int)$value;
+                    }
+                }
+                $engine->continueRun($id,$selected);
+            }
             elseif($action==='research_step') { $engine->step($id); }
             elseif($action==='research_stop') { $engine->stop($id); }
             elseif($action==='research_learn') { $engine->learn($id,self::input('learn_action'),self::input('question')); }
@@ -28,7 +41,7 @@ final class ResearchApi
             header('Location: '.$entry.'?view=research&project='.$snapshot['run']['project_id'].'&run='.$id,true,303);
         } catch(Throwable $e) {
             http_response_code(422);
-            $safe=['Connect OpenAI in Admin first.','Invalid model configuration.','Research limit reached: ten provider requests per hour.','Research is already active. Stop or resolve it before starting another request.','Research run not found.','Research project not found.','Collect source cards before using Learn.','Invalid Learn action or question.'];
+            $safe=['Select at least one valid claim.','This run is not awaiting claim review.','Connect OpenAI in Admin first.','Invalid model configuration.','Research limit reached: ten provider requests per hour.','Research is already active. Stop or resolve it before starting another request.','Research run not found.','Research project not found.','Collect source cards before using Learn.','Invalid Learn action or question.'];
             $message=in_array($e->getMessage(),$safe,true)?$e->getMessage():'Research request did not complete. Inspect its saved status before starting another request.';
             if($json) { self::json(['error'=>$message]);return; }
             header('Content-Type: text/html; charset=utf-8');
