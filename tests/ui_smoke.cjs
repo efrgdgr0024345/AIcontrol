@@ -398,6 +398,14 @@ const {spawn,spawnSync}=require('child_process');
   if(await idea.innerText()!==currentIdea)throw new Error('Paused idea was interrupted by a new concept');
   await idea.click();await idea.filter({hasText:'Fresh alternative'}).waitFor({timeout:15000});
   if(await idea.locator('span').count()!==1)throw new Error('Headline queue renders multiple sentences at once');
+  investigation.findings.push({status:'search observation',text:'Another plausible mechanism may be worth testing.',reason:'Unverified fixture observation',provisional:true});
+  const pausedFade=await page.evaluate(()=>new Promise((resolve,reject)=>{
+    const target=document.querySelector('[data-mindmap] [data-idea-sentence]'),timeout=setTimeout(()=>{observer.disconnect();reject(new Error('No queued fade arrived'));},15000);
+    const observer=new MutationObserver(()=>{if(!target.classList.contains('idea-fading'))return;target.click();observer.disconnect();clearTimeout(timeout);resolve({text:target.innerText,paused:target.getAttribute('aria-pressed'),fading:target.classList.contains('idea-fading')});});observer.observe(target,{attributes:true,attributeFilter:['class']});
+  }));
+  await new Promise(resolve=>setTimeout(resolve,700));
+  if(pausedFade.paused!=='true'||pausedFade.fading||await idea.innerText()!==pausedFade.text)throw new Error('Pausing during a fade allowed a later sentence change');
+  await idea.click();
   await page.locator('[data-map-controls]').hover();await page.locator('.map-controls-tray').waitFor();
   await page.keyboard.press('Escape');await page.locator('[data-map-controls]').focus();await page.keyboard.press('Enter');
   if(!await page.locator('.map-controls-tray').isVisible())throw new Error('Keyboard cannot reveal controls');

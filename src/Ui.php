@@ -654,12 +654,13 @@ document.addEventListener('submit', event => {
   function controls(open){clearTimeout(controlsTimer);tray.hidden=!open;handle.setAttribute('aria-expanded',String(open));}
   handle.addEventListener('click',()=>{clearTimeout(hoverTimer);controls(tray.hidden);});handle.addEventListener('pointerenter',event=>{if(event.pointerType==='mouse')hoverTimer=setTimeout(()=>controls(true),180);});
   const leaveControls=()=>{clearTimeout(hoverTimer);controlsTimer=setTimeout(()=>{if(!tray.contains(document.activeElement)&&document.activeElement!==handle)controls(false);},450);};handle.addEventListener('pointerleave',leaveControls);tray.addEventListener('pointerenter',()=>clearTimeout(controlsTimer));tray.addEventListener('pointerleave',leaveControls);
+  let finishFade=null,fadeTimer;
   const tickers=[ticker,...document.querySelectorAll('[data-research-now] [data-idea-sentence]')];
-  for(const button of tickers)button.addEventListener('click',()=>{reading.paused=!reading.paused;for(const item of tickers){item.setAttribute('aria-pressed',String(reading.paused));item.setAttribute('aria-label',reading.paused?'Resume idea rotation':'Pause idea rotation');}});
+  for(const button of tickers)button.addEventListener('click',()=>{const paused=!reading.paused;if(paused&&finishFade){clearTimeout(fadeTimer);finishFade();}reading.paused=paused;for(const item of tickers){item.setAttribute('aria-pressed',String(reading.paused));item.setAttribute('aria-label',reading.paused?'Resume idea rotation':'Pause idea rotation');}});
   setInterval(()=>{
     const next=reading.tick(Date.now(),!document.hidden);if(!next)return;historyTitle.textContent='Idea history · '+reading.items.length+' queued';
-    for(const button of tickers)button.classList.add('idea-fading');const change=()=>{for(const button of tickers){button.querySelector('span').textContent=next;button.title=next;button.classList.remove('idea-fading');}};
-    if(matchMedia('(prefers-reduced-motion: reduce)').matches)change();else setTimeout(change,220);
+    for(const button of tickers)button.classList.add('idea-fading');finishFade=()=>{for(const button of tickers){button.querySelector('span').textContent=next;button.title=next;button.classList.remove('idea-fading');}finishFade=null;};
+    if(matchMedia('(prefers-reduced-motion: reduce)').matches)finishFade();else fadeTimer=setTimeout(()=>finishFade?.(),220);
   },250);
   document.addEventListener('visibilitychange',()=>reading.tick(Date.now(),false));
   function enqueueIdeas(){
