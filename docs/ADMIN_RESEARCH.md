@@ -421,3 +421,19 @@ IDs; claims without evidence can only be open. Server checks still reject
 unrelated/unknown source IDs, duplicate claims and invalid verdicts. A live cloud
 browser investigation completed all phases using the environment-configured
 OpenAI credential on 12 November 2026 AWST; hosting validation remains separate.
+
+Progress checks use authenticated POST form requests (research_status) with the
+same CSRF protection as Start/Stop, avoiding dependence on a custom CSRF header.
+They do not invoke the provider or consume request budget. If a host returns a
+non-JSON response, the report now includes HTTP status, content type, redirect
+flag, response pathname and error category, while excluding the response body.
+
+Provider return diagnostics include a bounded structural summary of the API JSON:
+response/model IDs, status, token usage (including cached/reasoning details when
+returned), incomplete/error details, tool operations and citation metadata. Large
+strings and generated text/arguments are replaced with byte counts and SHA-256
+fingerprints. Prompt/input/instructions, private metadata and opaque encrypted
+payloads are omitted. Array, depth and total-size caps explicitly mark omissions.
+Streaming diagnostics also retain event-type counts and stream error facts, even
+when a stream ends without a complete final response. This is a concise sanitized
+API-return summary, not an archive of complete response bodies.

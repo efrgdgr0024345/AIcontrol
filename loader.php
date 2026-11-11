@@ -453,13 +453,31 @@ document.addEventListener('submit', event => {
 (() => {
   'use strict';
   const root = document.querySelector('[data-investigation]');
-  const csrf = () => document.querySelector('input[name=csrf]')?.value || '';
+  const csrf = () => root?.querySelector('input[name=csrf]')?.value || document.querySelector('input[name=csrf]')?.value || '';
   function diagnosticFailure(stage, failure) {
     const payload = new FormData();
     payload.set('action', 'diagnostic_client'); payload.set('csrf', csrf());
     payload.set('stage', stage); payload.set('run_id', root?.dataset.runId || '0');
     payload.set('message', String(failure.message || failure).slice(0, 1000));
+    for (const field of ['http_status','content_type','redirected','response_path','error_kind']) payload.set(field, String(failure.diagnostics?.[field] ?? (field === 'error_kind' ? (failure instanceof TypeError ? 'network_error' : 'client_error') : '')).slice(0,160));
     fetch(root?.dataset.entry || location.pathname, {method:'POST',body:payload,credentials:'same-origin'}).catch(() => {});
+  }
+  async function researchResponse(response, stage) {
+    const contentType = response.headers.get('content-type') || '';
+    const details = {http_status:response.status, content_type:contentType, redirected:response.redirected,
+      response_path:new URL(response.url || location.href, location.href).pathname};
+    const fail = (message, kind) => {
+      const failure = new Error(`${message} (HTTP ${response.status}, ${contentType.split(';')[0] || 'no content type'}${response.redirected ? ', redirected' : ''}). Inspect saved status before continuing.`);
+      failure.diagnostics = {...details,error_kind:kind}; return failure;
+    };
+    if (!contentType.toLowerCase().includes('application/json')) throw fail(`${stage} returned an unexpected response`, 'non_json');
+    let data;
+    try { data = await response.json(); } catch { throw fail(`${stage} returned invalid JSON`, 'invalid_json'); }
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw fail(`${stage} returned an invalid response`, 'invalid_shape');
+    showBudget(data.budget);
+    if (data.budget && root) root.dispatchEvent(new CustomEvent('research:budget',{detail:data.budget}));
+    if (!response.ok || data.error) throw fail(data.error || `${stage} failed`, 'http_error');
+    return data;
   }
   let stepping = false, halted = false, polling = false, lastSnapshot = '';
   const element = (tag, text, className) => {
@@ -727,10 +745,7 @@ document.addEventListener('submit', event => {
     const payload = new FormData(form);
     if (form.dataset.researchAction === 'research_continue') payload.set('selection_explicit', '1');
     const response = await fetch(destination, {method: 'POST', body: payload, credentials: 'same-origin', headers: {'Accept': 'application/json'}});
-    if (!(response.headers.get('content-type') || '').includes('application/json')) throw new Error('Research session expired. Sign in again and inspect the saved run before continuing.');
-    const data = await response.json();
-    showBudget(data.budget);
-    if (data.budget && root) root.dispatchEvent(new CustomEvent('research:budget',{detail:data.budget}));
+    const data = await researchResponse(response, 'Research request');
     if (!response.ok || data.error) throw new Error(data.error || 'Research request failed. Inspect the saved state before continuing.');
     return data;
   }
@@ -740,7 +755,7 @@ document.addEventListener('submit', event => {
     const form = root.querySelector('[data-research-action=research_step]');
     stepping = true;
     try { render(await send(form)); }
-    catch (failure) { diagnosticFailure('progress', failure); halted = true; error(failure.message); }
+    catch (failure) { diagnosticFailure('phase', failure); halted = true; error(failure.message); }
     finally { stepping = false; }
     if (!halted && root.dataset.status === 'running') setTimeout(advance, 200);
   }
@@ -750,13 +765,13 @@ document.addEventListener('submit', event => {
     if (!force && !['pending', 'running'].includes(root.dataset.status) && !pending) return;
     polling = true;
     try {
-      const url = new URL(root.dataset.entry, location.href); url.searchParams.set('research_api', 'status'); url.searchParams.set('run_id', root.dataset.runId);
-      const response = await fetch(url, {credentials: 'same-origin', headers: {'X-CSRF-Token': csrf(), 'Accept': 'application/json'}});
-      if (!response.ok || !(response.headers.get('content-type') || '').includes('application/json')) throw new Error('Progress could not be verified. Sign in again if needed; no phase will be retried automatically.');
-      const data = await response.json(); if (data.error) throw new Error(data.error);
+      const url = new URL(root.dataset.entry, location.href); url.searchParams.set('view', 'research'); url.searchParams.set('research_api', '1');
+      const payload = new FormData(); payload.set('action', 'research_status'); payload.set('csrf', csrf()); payload.set('run_id', root.dataset.runId);
+      const response = await fetch(url, {method:'POST',body:payload,credentials:'same-origin',cache:'no-store',headers:{'Accept':'application/json'}});
+      const data = await researchResponse(response, 'Progress check');
       root.dataset.lastContact=String(Date.now());render(data);
       if (!halted) advance();
-    } catch (failure) { diagnosticFailure('progress', failure); halted = true; error(failure.message); }
+    } catch (failure) { diagnosticFailure('poll', failure); halted = true; error(failure.message); }
     finally { polling = false; }
   }
   document.addEventListener('submit', async event => {

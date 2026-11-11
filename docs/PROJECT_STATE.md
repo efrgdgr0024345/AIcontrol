@@ -430,3 +430,34 @@ application release or cloud environment publication had been performed.
 The owner subsequently authorized publishing this logging update for host testing.
 Release preparation integrates the latest main research map, streaming, ledger
 and usage changes and adds diagnostics to the required CI workflow.
+
+## Hosted research progress failure (12 November 2026 AWST)
+
+The owner's diagnostic report shows runs 18/19 were created, then progress
+verification failed before any research_step/provider event, and Stop worked.
+The report did not include HTTP status or content type, so it does not establish
+whether the host rejected the custom header, returned HTML, redirected, or
+failed for another reason. Do not describe this as an OpenAI API failure.
+
+Browser status polling now uses a CSRF-protected POST research_status action via
+the same endpoint/form channel as Start and Stop, with no-store caching. It is
+read-only and releases the session lock before SQLite snapshot access; existing
+GET/header status remains compatible. Polling selects the investigation's own
+CSRF field. Response failures now retain HTTP status, content type, redirect
+flag, final URL pathname (no query), and error category; raw HTML is excluded.
+Server CSRF/status rejections are also recorded without token values. A failed
+poll still halts automatic phase dispatch, preserving uncertain-call semantics.
+
+Regression coverage: POST status rejects wrong CSRF, returns a run with zero
+provider requests, and works during a blocked provider phase while Stop remains
+responsive. Browser fixtures reject legacy header polling and use POST; a host
+returning HTML produces detailed diagnostics without logging its body or sending
+a provider phase. Cloud validation does not establish the precise hosted cause;
+the owner must install the checked release and retest on cPanel.
+
+The owner also requested API-return facts without large text blocks. Diagnostics
+now includes bounded JSON response summaries for investigation, task and legacy
+chat calls; streaming returns include event counts and stream error metadata.
+Long/generated text uses length/hash markers; private prompt fields are excluded.
+New regression checks retain error codes, usage details, citations and stream
+errors while proving large prose and private instructions are not logged.

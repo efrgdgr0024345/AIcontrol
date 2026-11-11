@@ -102,6 +102,13 @@ namespace { $_SERVER['SCRIPT_NAME']='/aiadmin/loader.php';require getenv('TEST_A
                 (Path(directory)/'stream').touch()
                 self.assertEqual(request(f'?research_api=status&run_id={run}')[0], 403)
                 self.assertEqual(request('?research_api=1', dict(csrf='bad', action='research_stop', run_id=run))[0], 403)
+                self.assertEqual(request('?view=research&research_api=1', dict(csrf='bad', action='research_status', run_id=run))[0], 403)
+                status, headers, body = request('?view=research&research_api=1', dict(csrf=csrf, action='research_status', run_id=run))
+                self.assertEqual(status, 200)
+                self.assertIn('application/json', headers['Content-Type'])
+                self.assertEqual(json.loads(body)['run']['id'], run)
+                self.assertEqual(len(json.loads(body)['requests']), 0, 'Status check dispatched provider work')
+
                 cookie = '; '.join(f'{c.name}={c.value}' for c in jar)
                 with concurrent.futures.ThreadPoolExecutor() as pool:
                     work = pool.submit(request, '?research_api=1', dict(csrf=csrf, action='research_step', run_id=run), None, cookie)
@@ -110,7 +117,7 @@ namespace { $_SERVER['SCRIPT_NAME']='/aiadmin/loader.php';require getenv('TEST_A
                         time.sleep(.02)
                     self.assertTrue(ready.exists(), 'Provider phase was not entered')
                     start = time.monotonic()
-                    status, _, body = request(f'?research_api=status&run_id={run}', headers={'X-CSRF-Token': csrf}, cookie=cookie)
+                    status, _, body = request('?view=research&research_api=1', dict(csrf=csrf,action='research_status',run_id=run), cookie=cookie)
                     self.assertEqual(status, 200, body[:200])
                     self.assertEqual(json.loads(body)['run']['status'], 'running')
                     self.assertEqual(json.loads(body)['requests'][-1]['activity'],'Provider accepted request')

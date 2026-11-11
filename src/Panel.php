@@ -105,6 +105,7 @@ final class Panel
         $error = '';
         if (($_GET['research_api'] ?? '') === 'status' && $method === 'GET') {
             if (!($_SESSION['authenticated'] ?? false) || !hash_equals($_SESSION['csrf'], $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '')) {
+                Diagnostics::record('research.status.denied',['authenticated'=>(bool)($_SESSION['authenticated']??false),'csrf_header_present'=>isset($_SERVER['HTTP_X_CSRF_TOKEN'])]);
                 http_response_code(403); header('Content-Type: application/json'); echo '{"error":"Research session verification failed."}'; return;
             }
             session_write_close();
@@ -117,6 +118,7 @@ final class Panel
                 return;
             }
             if (!hash_equals($_SESSION['csrf'], self::input('csrf'))) {
+                Diagnostics::record('panel.csrf.denied',['method'=>'POST','action'=>substr(self::input('action'),0,80)]);
                 http_response_code(403);
                 echo 'Request verification failed.';
                 return;
@@ -145,8 +147,14 @@ final class Panel
                 $last=(int)($_SESSION['diagnostic_client_at']??0);
                 if (time()-$last<5) { http_response_code(429); return; }
                 $_SESSION['diagnostic_client_at']=time();
-                Diagnostics::record('browser.research.failed',['stage'=>substr(self::input('stage'),0,80),'message'=>substr(self::input('message'),0,1000),'run_id'=>(int)self::input('run_id')]);
+                $responseDetails=[];
+                foreach(['http_status','content_type','redirected','response_path','error_kind'] as $field)$responseDetails[$field]=substr(self::input($field),0,160);
+                Diagnostics::record('browser.research.failed',array_merge($responseDetails,['stage'=>substr(self::input('stage'),0,80),'message'=>substr(self::input('message'),0,1000),'run_id'=>(int)self::input('run_id')]));
                 http_response_code(204);return;
+            } elseif ($action === 'research_status') {
+                session_write_close();
+                ResearchApi::status($directory,(int)self::input('run_id'));
+                return;
             } elseif ($action === 'logout' && $passwordMode) {
                 $_SESSION = [];
                 session_destroy();

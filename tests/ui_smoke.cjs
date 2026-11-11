@@ -113,10 +113,11 @@ const {spawn,spawnSync}=require('child_process');
   let investigation={budget:{remaining:9,retry_after_seconds:0},run:{id:1,project_id:1,status:'running',phase:'dream',busy_since:null,token_input:0,token_output:0,usage_unknown:0,stop_reason:''},nodes:[],sources:[],requests:[]};
   let stepCalls=0,stopped=false,pollCalls=0,reviewMode=false,continued=false,focusedMode=false,focusedCalls=0,rigourMode=false;
   const clone=()=>JSON.parse(JSON.stringify(investigation));
-  await page.route('**/loader.php?research_api=status*',route=>{pollCalls++;return route.fulfill({contentType:'application/json',body:JSON.stringify(clone())});});
+  await page.route('**/loader.php?research_api=status*',route=>route.fulfill({status:403,contentType:'text/html',body:'Legacy header-based polling blocked by synthetic host'}));
   let focusReject=false;
   await page.route('**/loader.php?view=research&research_api=1',async route=>{
     const body=route.request().postData()||'';
+    if(body.includes('research_status')){pollCalls++;return route.fulfill({contentType:'application/json',body:JSON.stringify(clone())});}
     if(body.includes('research_start'))return route.continue();
     if(focusReject&&body.includes('focus_node_id')){focusReject=false;expectedFocusErrors++;return route.fulfill({status:409,contentType:'application/json',body:JSON.stringify({error:'Synthetic focus conflict: another request is pending.'})});}
     if(rigourMode&&(body.includes('research_finish')||body.includes('research_rank'))){const response=await route.fetch();const result=await response.json();if(response.ok())investigation=result;return route.fulfill({response,json:result});}
@@ -462,6 +463,19 @@ const {spawn,spawnSync}=require('child_process');
   await page.locator('[data-map-inspector-content]').getByRole('link',{name:'https://example.com/legacy-source',exact:true}).waitFor();
   if(!await page.locator('[data-map-search]').isDisabled())throw new Error('Synthetic legacy source allowed steering');
   await audit('Legacy source inspector');
+  // A host returning HTML for status must be diagnosed without dispatching a provider step.
+  const stepsBeforeFailure=stepCalls;
+  await page.route('**/loader.php?view=research&research_api=1',async route=>{
+    if((route.request().postData()||'').includes('research_status'))return route.fulfill({status:200,contentType:'text/html',body:'PRIVATE-HOST-RESPONSE-MUST-NOT-BE-LOGGED'});
+    return route.fallback();
+  });
+  const diagnosticRequest=page.waitForRequest(request=>(request.postData()||'').includes('diagnostic_client'));
+  await page.reload();
+  const diagnosticBody=(await diagnosticRequest).postData();
+  for(const expected of ['http_status','200','content_type','text/html','error_kind','non_json'])if(!diagnosticBody.includes(expected))throw new Error('Response diagnostics missing '+expected);
+  if(diagnosticBody.includes('PRIVATE-HOST-RESPONSE-MUST-NOT-BE-LOGGED'))throw new Error('Raw host HTML entered diagnostics');
+  await page.waitForFunction(()=>document.querySelector('[data-research-error]')?.textContent.includes('HTTP 200, text/html'));
+  if(stepCalls!==stepsBeforeFailure)throw new Error('Failed polling dispatched a provider phase');
   await noJs.close();
   fs.writeFileSync(path.join(artifacts,'ui-accessibility.json'),JSON.stringify({tool:'axe-core',version:require('axe-core/package.json').version,views:auditedViews,violations:accessibility},null,2));if(accessibility.length)throw new Error('Accessibility checks failed; inspect test-artifacts/ui-accessibility.json.');
   if(errors.length)throw new Error(errors.join('\n'));

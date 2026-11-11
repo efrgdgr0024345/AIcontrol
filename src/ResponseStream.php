@@ -3,6 +3,7 @@ declare(strict_types=1);
 namespace AIcontrol;
 
 use RuntimeException;
+require_once __DIR__.'/Diagnostics.php';
 
 /** Incremental Responses SSE reader, with JSON fallback for fixtures/older transports. */
 final class ResponseStream
@@ -12,6 +13,8 @@ final class ResponseStream
     private ?array $response=null;
     private int $characters=0;
     private bool $sse=false;
+    private array $eventCounts=[];
+    private ?array $streamError=null;
     public function __construct(private mixed $progress) {}
     public function push(string $chunk): int
     {
@@ -24,6 +27,8 @@ final class ResponseStream
             if(!str_starts_with($line,'data:'))continue;
             $payload=trim(substr($line,5));if($payload===''||$payload==='[DONE]')continue;
             $event=json_decode($payload,true,64,JSON_THROW_ON_ERROR);$type=$event['type']??'';
+            if(is_string($type)&&strlen($type)<120&&(isset($this->eventCounts[$type])||count($this->eventCounts)<32))$this->eventCounts[$type]=($this->eventCounts[$type]??0)+1;
+            if($type==='error')$this->streamError=Diagnostics::apiReturn($event);
             $activity=match($type){
                 'response.created','response.in_progress'=>'Provider accepted request',
                 'response.web_search_call.in_progress','response.web_search_call.searching'=>'Searching external sources',
@@ -42,8 +47,8 @@ final class ResponseStream
     {
         $result=$this->response??json_decode($this->raw,true,64);
         return ['response_bytes'=>strlen($this->raw),'streaming'=>$this->sse,
-            'provider_error'=>$result['error']??null,'provider_status'=>$result['status']??null,
-            'incomplete_details'=>$result['incomplete_details']??null];
+            'event_counts'=>$this->eventCounts,'stream_error'=>$this->streamError,
+            'api_return'=>Diagnostics::apiReturn($result)];
     }
     public function result(): array
     {

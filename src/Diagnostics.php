@@ -59,6 +59,41 @@ final class Diagnostics
             } finally { fclose($h); }
         } catch (\Throwable) { /* Diagnostics must never interrupt the operation. */ }
     }
+    /** Keep response structure and operational facts; omit prose, prompts and opaque blobs. */
+    public static function apiReturn(mixed $response): array
+    {
+        if (!is_array($response)) return ['parse_status'=>'No complete JSON response available'];
+        $budget=9000;
+        $priority=['id','object','created_at','completed_at','model','status','usage','error','incomplete_details','service_tier','max_output_tokens','max_tool_calls','tool_choice','parallel_tool_calls','output','tools'];
+        $ordered=[];
+        foreach($priority as $field)if(array_key_exists($field,$response))$ordered[$field]=$response[$field];
+        $ordered+=array_diff_key($response,$ordered);
+        return ['returned_fields'=>array_slice(array_keys($response),0,64),'response'=>self::compactReturn($ordered,'',0,$budget)];
+    }
+    private static function compactReturn(mixed $value,string $key,int $depth,int &$budget): mixed
+    {
+        if (in_array(strtolower($key),['instructions','input','prompt','metadata','encrypted_content','authorization','api_key','access_token'],true)) {
+            return ['omitted'=>'private or opaque field'];
+        }
+        if ($depth>9 || $budget<80) return ['omitted'=>'diagnostic size limit'];
+        if (is_string($value)) {
+            $budget-=min(strlen($value),300)+40;
+            if(strlen($value)>300 && in_array($key,['message','reason','refusal','query'],true))return ['preview'=>mb_strcut($value,0,280,'UTF-8'),'omitted_bytes'=>strlen($value)-strlen(mb_strcut($value,0,280,'UTF-8')),'sha256'=>hash('sha256',$value)];
+            if(strlen($value)>300 || in_array($key,['text','arguments','image_url','audio','delta'],true)) {
+                return ['omitted'=>'text or binary block','bytes'=>strlen($value),'sha256'=>hash('sha256',$value)];
+            }
+            return $value;
+        }
+        if (!is_array($value)) { $budget-=20; return $value; }
+        $out=[];$total=count($value);$limit=array_is_list($value)?16:64;$kept=0;
+        foreach($value as $name=>$item) {
+            if($kept>=$limit || $budget<80)break;
+            $budget-=strlen((string)$name)+8;
+            $out[$name]=self::compactReturn($item,(string)$name,$depth+1,$budget);$kept++;
+        }
+        if($kept<$total)$out['_omitted_entries']=$total-$kept;
+        return $out;
+    }
     public static function report(): string
     {
         $directory=getenv('AICONTROL_PRIVATE_DIR');$path=$directory.'/diagnostics.jsonl';

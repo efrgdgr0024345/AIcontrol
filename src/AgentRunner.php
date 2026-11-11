@@ -63,7 +63,7 @@ final class AgentRunner
             $started=microtime(true);
             $ok = curl_exec($client);
             $status = curl_getinfo($client, CURLINFO_RESPONSE_CODE);
-            Diagnostics::record('agent.provider',['http_status'=>$status,'elapsed_ms'=>round((microtime(true)-$started)*1000),'transport_ok'=>$ok!==false,'response_bytes'=>strlen($response),'provider_error'=>json_decode($response,true)['error']??null]);
+            Diagnostics::record('agent.provider',['http_status'=>$status,'elapsed_ms'=>round((microtime(true)-$started)*1000),'transport_ok'=>$ok!==false,'response_bytes'=>strlen($response),'api_return'=>Diagnostics::apiReturn(json_decode($response,true))]);
             curl_close($client);
             if ($ok === false || $status >= 500 || $status === 408) {
                 $store->finishAgent($run['id'], 'outcome_uncertain', 'Provider outcome is uncertain after a transport error or server timeout. No automatic retry.');
