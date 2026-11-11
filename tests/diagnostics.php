@@ -27,7 +27,8 @@ try {
     foreach(['PRIVATE PROMPT','NOISY-PROSE'] as $noise)if(str_contains($encoded,$noise))throw new RuntimeException('Private/noisy API block retained');
     if(strlen($encoded)>4000)throw new RuntimeException('API summary too noisy');
     Diagnostics::record('test.api',['api_return'=>$summary]);
-    $structured=Diagnostics::apiReturn(['output'=>[['content'=>[['type'=>'output_text','text'=>json_encode(['claims'=>[['claim_id'=>7,'verdict'=>'open','source_ids'=>[2,3],'reason'=>'Needs independent verification']]]])]]]]]);
+    $phaseText=json_encode(['claims'=>[['claim_id'=>7,'verdict'=>'open','source_ids'=>[2,3],'reason'=>'Needs independent verification']]]);
+    $structured=Diagnostics::apiReturn(['output'=>[['content'=>[['type'=>'output_text','text'=>$phaseText]]]]]);
     $structuredJson=json_encode($structured);
     foreach(['claim_id','source_ids','Needs independent verification'] as $fact)if(!str_contains($structuredJson,$fact))throw new RuntimeException('Structured phase output fact omitted');
     require_once __DIR__.'/../src/ResponseStream.php';
