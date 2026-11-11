@@ -15,12 +15,13 @@ final class ResearchApi
     public static function status(string $directory,int $id):void
     {
         try { self::json((new Investigation($directory))->getRunSnapshot($id)); }
-        catch(Throwable) { http_response_code(404); self::json(['error'=>'Research run is unavailable.']); }
+        catch(Throwable $e) { Diagnostics::record('research.status.failed',['run_id'=>$id],$e); http_response_code(404); self::json(['error'=>'Research run is unavailable.']); }
     }
     public static function action(string $directory,string $action,string $entry,bool $json):void
     {
         $id=(int)self::input('run_id');
         try {
+            Diagnostics::record('research.action',['action'=>$action,'run_id'=>$id]);
             $engine=new Investigation($directory);
             if($action==='research_start') { $id=$engine->createRun((int)self::input('project_id')); }
             elseif($action==='research_continue') {
@@ -58,6 +59,7 @@ final class ResearchApi
             if($json) { self::json($snapshot); return; }
             header('Location: '.$entry.'?view=research&project='.$snapshot['run']['project_id'].'&run='.$id,true,303);
         } catch(Throwable $e) {
+            Diagnostics::record('research.action.failed',['action'=>$action,'run_id'=>$id],$e);
             http_response_code(422);
             $safe=['Project spend cap reached. Saved findings are retained; adjust the cap in Project menu to continue.','Current pricing is unavailable for this model. Choose a priced research model.','Choose a priced model, a USD cap from 0.05 to 1000, and zero to three growth searches.','Choose an idle path, weight 10–100 and a valid model tier.','At least six requests must remain to start a verified investigation.','Invalid focus note.','Focus requires an idle Evidence phase with a remaining search.','Choose a selected claim, open question or dead end from this run.','Select valid source cards from this run.','Select at least one valid claim.','This run is not awaiting claim review.','Connect OpenAI in Admin first.','Invalid model configuration.','Research hourly request limit reached.','Research is already active. Stop or resolve it before starting another request.','Research run not found.','Research project not found.','Collect source cards before using Learn.','Invalid Learn action or question.'];
             $message=in_array($e->getMessage(),$safe,true)?$e->getMessage():'Research request did not complete. Inspect its saved status before starting another request.';

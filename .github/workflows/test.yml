@@ -29,6 +29,7 @@ jobs:
           php tests/agent.php
           php tests/agent_adapter.php
           php tests/workspace.php
+          php tests/diagnostics.php
           php tests/investigation.php
           php tests/rigour.php
           php tests/research_flow.php

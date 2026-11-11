@@ -7,6 +7,8 @@ use RuntimeException;
 use Throwable;
 
 /** One bounded task response. Generated text is never executed as code. */
+require_once __DIR__.'/Diagnostics.php';
+
 final class AgentRunner
 {
     public static function configured(): bool
@@ -58,8 +60,10 @@ final class AgentRunner
                     return strlen($chunk);
                 },
             ]);
+            $started=microtime(true);
             $ok = curl_exec($client);
             $status = curl_getinfo($client, CURLINFO_RESPONSE_CODE);
+            Diagnostics::record('agent.provider',['http_status'=>$status,'elapsed_ms'=>round((microtime(true)-$started)*1000),'transport_ok'=>$ok!==false,'response_bytes'=>strlen($response),'provider_error'=>json_decode($response,true)['error']??null]);
             curl_close($client);
             if ($ok === false || $status >= 500 || $status === 408) {
                 $store->finishAgent($run['id'], 'outcome_uncertain', 'Provider outcome is uncertain after a transport error or server timeout. No automatic retry.');
@@ -83,7 +87,8 @@ final class AgentRunner
             $input = $result['usage']['input_tokens'] ?? null;
             $outputCount = $result['usage']['output_tokens'] ?? null;
             $store->finishAgent($run['id'], $text!==''&&($result['status']??'completed')==='completed'?'in_review':'failed', $text, $providerId, is_int($input) ? $input : null, is_int($outputCount) ? $outputCount : null,UsageMeter::measure($result,$model));
-        } catch (Throwable) {
+        } catch (Throwable $e) {
+            Diagnostics::record('agent.exception',['run_id'=>$run['id']],$e);
             // A response-parsing or recording failure does not prove no provider work occurred.
             $store->finishAgent($run['id'], 'outcome_uncertain');
         }

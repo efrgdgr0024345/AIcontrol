@@ -305,18 +305,35 @@ final class Investigation
         } else {
             $base['instructions'] .= ' Reconciliation: use only the supplied claim nodes and collected evidence, no tools or new URLs. Map only the selected claim IDs, exactly once each, to supported, weakened, contradicted or open. Explain caveats briefly with source_ids drawn only from collected cards. No sources means open, never supported. Include open_questions. Dead ends remain unresolved.';
             $base['input'] = 'Project: '.$run['name']."\nBrief: ".$run['brief']."\nSelected claim IDs: ".json_encode(array_column($this->activeClaims($snapshot),'id'),JSON_THROW_ON_ERROR)."\nCollected nodes: ".json_encode($snapshot['nodes'],JSON_THROW_ON_ERROR)."\nSource cards: ".json_encode($snapshot['sources'],JSON_THROW_ON_ERROR);
-            $base['text'] = self::jsonText(self::objectSchema(['claims'=>['type'=>'array','minItems'=>1,'maxItems'=>5,'items'=>self::objectSchema(['claim_id'=>['type'=>'integer'],'verdict'=>['type'=>'string','enum'=>['supported','weakened','contradicted','open']],'reason'=>$string,'source_ids'=>['type'=>'array','maxItems'=>12,'items'=>['type'=>'integer']]])],'open_questions'=>['type'=>'array','items'=>$string,'maxItems'=>6]]));
+            $variants=[];$sourceMap=[];
+            foreach ($this->activeClaims($snapshot) as $claim) {
+                $claimId=(int)$claim['id'];$allowed=[];
+                foreach ($snapshot['sources'] as $source) {
+                    $meta=json_decode($source['meta_json']??'{}',true)??[];
+                    $linked=array_map('intval',$meta['claim_ids']??(isset($meta['claim_id'])?[$meta['claim_id']]:[]));
+                    if (!$linked || in_array($claimId,$linked,true)) $allowed[]=(int)$source['id'];
+                }
+                $sourceMap[$claimId]=$allowed;
+                $variants[]=self::objectSchema(['claim_id'=>['type'=>'integer','enum'=>[$claimId]],
+                    'verdict'=>['type'=>'string','enum'=>$allowed?['supported','weakened','contradicted','open']:['open']],
+                    'reason'=>$string,'source_ids'=>['type'=>'array','maxItems'=>$allowed?12:0,'items'=>$allowed?['type'=>'integer','enum'=>$allowed]:['type'=>'integer']]]);
+            }
+            $base['input'].="\nAllowed source IDs by claim ID (empty means verdict must be open with no sources): ".json_encode($sourceMap,JSON_THROW_ON_ERROR);
+            $base['text'] = self::jsonText(self::objectSchema(['claims'=>['type'=>'array','minItems'=>count($variants),'maxItems'=>count($variants),'items'=>['anyOf'=>$variants]],'open_questions'=>['type'=>'array','items'=>$string,'maxItems'=>6]]));
         }
         return $base;
     }
     private function provider(array $body,?callable $progress=null): array
     {
+        $started=microtime(true);$headers=[];
+        Diagnostics::record('provider.request',['model'=>$body['model']??null,'tools'=>array_column($body['tools']??[],'type'),'max_output_tokens'=>$body['max_output_tokens']??null,'request_bytes'=>strlen(json_encode($body))]);
         $body['service_tier']='default';
         $stream=new ResponseStream($progress??static function(string $activity,int $chars):void{});
         if($progress!==null)$body['stream']=true;
         $client=curl_init('https://api.openai.com/v1/responses');
-        curl_setopt_array($client,[CURLOPT_POST=>true,CURLOPT_POSTFIELDS=>json_encode($body,JSON_THROW_ON_ERROR),CURLOPT_HTTPHEADER=>['Content-Type: application/json','Authorization: Bearer '.AgentRunner::apiKey()],CURLOPT_CONNECTTIMEOUT=>10,CURLOPT_TIMEOUT=>60,CURLOPT_FOLLOWLOCATION=>false,CURLOPT_PROTOCOLS=>CURLPROTO_HTTPS,CURLOPT_WRITEFUNCTION=>static fn($h,string $chunk):int=>$stream->push($chunk)]);
-        $ok=curl_exec($client);$status=curl_getinfo($client,CURLINFO_RESPONSE_CODE);curl_close($client);
+        curl_setopt_array($client,[CURLOPT_HEADERFUNCTION=>static function($h,string $line)use(&$headers):int{if(preg_match('/^(x-request-id|retry-after|openai-processing-ms):\s*(.*)$/i',trim($line),$m))$headers[strtolower($m[1])]=substr($m[2],0,200);return strlen($line);},CURLOPT_POST=>true,CURLOPT_POSTFIELDS=>json_encode($body,JSON_THROW_ON_ERROR),CURLOPT_HTTPHEADER=>['Content-Type: application/json','Authorization: Bearer '.AgentRunner::apiKey()],CURLOPT_CONNECTTIMEOUT=>10,CURLOPT_TIMEOUT=>60,CURLOPT_FOLLOWLOCATION=>false,CURLOPT_PROTOCOLS=>CURLPROTO_HTTPS,CURLOPT_WRITEFUNCTION=>static fn($h,string $chunk):int=>$stream->push($chunk)]);
+        $ok=curl_exec($client);$status=curl_getinfo($client,CURLINFO_RESPONSE_CODE);
+        Diagnostics::record('provider.response',array_merge(['http_status'=>$status,'elapsed_ms'=>round((microtime(true)-$started)*1000),'headers'=>$headers,'transport_ok'=>$ok!==false,'curl_errno'=>$client instanceof \CurlHandle?curl_errno($client):null,'curl_error'=>$client instanceof \CurlHandle?curl_error($client):null],$stream->diagnostics()));curl_close($client);
         if ($ok===false || $status>=500 || in_array($status,[0,408],true)) { return ['status'=>'uncertain','reason'=>'Provider transport outcome unknown. No automatic retry.']; }
         if ($status!==200) { return ['status'=>'failed','reason'=>'Provider returned HTTP '.$status.'. Check the connection and model.']; }
         $result=$stream->result();$billing=UsageMeter::measure($result,$body['model']); $text='';$citations=[];$searched=false;$snippets=[];
@@ -374,6 +391,7 @@ final class Investigation
             return compact('run','phase','token','node','request','focus','worker');
         });
         if ($job===null) { return $this->getRunSnapshot($id); }
+        Diagnostics::record('research.phase.started',['run_id'=>$id,'phase'=>$job['phase']??'learn','node_id'=>$job['node'],'provider_request_id'=>$job['request']]);
         $dispatched=false;
         try {
             $body=$this->phaseBody($job['run'],$job['phase'],$this->getRunSnapshot($id),$job['focus']);$body['model']=$job['worker']['model'];
@@ -391,10 +409,12 @@ final class Investigation
             };
             $result=$this->provider($body,$progress);
         }catch (Throwable $e) {
+            Diagnostics::record('research.provider.exception',['run_id'=>$id,'phase'=>$job['phase']??'learn'],$e);
             $reason=$dispatched?'Provider or response outcome unknown. No automatic retry.':(str_starts_with($e->getMessage(),'Project spend cap')||str_starts_with($e->getMessage(),'Current pricing')?$e->getMessage():'Request could not be prepared; no provider call was sent.');
             $result=['status'=>$dispatched?'uncertain':'incomplete','reason'=>$reason];
             if(!$dispatched){$result['input']=0;$result['output']=0;$result['billing']=UsageMeter::measure(['usage'=>['input_tokens'=>0,'output_tokens'=>0]],$job['worker']['model']);$result['billing']['basis']='No provider request dispatched';$result['billing']['estimated_usd']=0.0;}
         }
+        Diagnostics::record('research.phase.response',['run_id'=>$id,'phase'=>$job['phase']??'learn','status'=>$result['status'],'reason'=>$result['reason']??null,'input_tokens'=>$result['input']??null,'output_tokens'=>$result['output']??null,'searched'=>$result['searched']??false,'citations'=>count($result['citations']??[])]);
         $this->transaction(function () use ($id,$job,$result): void {
             $current=$this->run($id);
             if ($current['status']!=='running' || $current['busy']!==$job['token']) {
@@ -408,7 +428,7 @@ final class Investigation
             }
             $this->db->exec('SAVEPOINT phase_apply');
             try { $this->apply($job,$result); $this->db->exec('RELEASE phase_apply'); }
-            catch (Throwable) { $this->db->exec('ROLLBACK TO phase_apply'); $this->db->exec('RELEASE phase_apply'); $this->updateRunStatus($id,'incomplete','The response did not satisfy the phase schema. Saved evidence retained; no automatic retry.'); return; }
+            catch (Throwable $e) { Diagnostics::record('research.schema.rejected',['run_id'=>$id,'phase'=>$job['phase']??'learn','response_bytes'=>strlen($result['text']??'')],$e); $this->db->exec('ROLLBACK TO phase_apply'); $this->db->exec('RELEASE phase_apply'); $this->updateRunStatus($id,'incomplete','The response did not satisfy the phase schema. Saved evidence retained; no automatic retry.'); return; }
             $this->execute("UPDATE research_nodes SET status='complete',updated_at=? WHERE id=?",[time(),$job['node']]);
             $this->execute('UPDATE research_runs SET busy=NULL,busy_since=NULL WHERE id=?',[$id]);
         });
@@ -529,6 +549,7 @@ final class Investigation
             $this->execute('UPDATE research_nodes SET data_json=? WHERE id=?',[json_encode(['source_ids'=>array_map('intval',array_column($sources,'id'))],JSON_THROW_ON_ERROR),$node]);
             return ['run'=>$run,'node'=>$node,'sources'=>$sources,'passages'=>$this->rows('SELECT * FROM research_passages WHERE run_id=?',[$id]),'request'=>$this->request($id,$node,'learn')];
         });
+        Diagnostics::record('research.phase.started',['run_id'=>$id,'phase'=>$job['phase']??'learn','node_id'=>$job['node'],'provider_request_id'=>$job['request']]);
         $dispatched=false;
         try {
             $body=['model'=>$job['run']['model'],'store'=>false,'max_output_tokens'=>1600,
@@ -536,7 +557,8 @@ final class Investigation
                 'input'=>'Brief: '.$job['run']['brief']."\nCollected evidence: ".json_encode($job['sources'],JSON_THROW_ON_ERROR).((int)$job['run']['rigour_version']===1?"\nFrozen passage material: ".json_encode(array_values(array_filter($job['passages'],static fn(array $p):bool=>in_array((int)$p['source_id'],array_map('intval',array_column($job['sources'],'id')),true))),JSON_THROW_ON_ERROR):'')."\nUser question/understanding: ".$question];
             $this->transaction(function()use($job,$body):void{UsageMeter::reserveProject($this->db,(int)$job['run']['project_id'],'research_requests',$job['request'],$body);$this->execute('UPDATE research_requests SET worker_role=?,activity=?,heartbeat_at=? WHERE id=?',['Evidence explainer','Waiting for provider',time(),$job['request']]);});
             $dispatched=true;$result=$this->provider($body);
-        } catch (Throwable $e) { $result=['status'=>$dispatched?'uncertain':'incomplete','reason'=>$dispatched?'Provider outcome unknown. No automatic retry.':(str_starts_with($e->getMessage(),'Project spend cap')?$e->getMessage():'No provider request sent; request could not be prepared.')];if(!$dispatched){$result['input']=0;$result['output']=0;$result['billing']=UsageMeter::measure(['usage'=>['input_tokens'=>0,'output_tokens'=>0]],$job['run']['model']);} }
+        } catch (Throwable $e) { Diagnostics::record('research.provider.exception',['run_id'=>$id,'phase'=>'learn'],$e); $result=['status'=>$dispatched?'uncertain':'incomplete','reason'=>$dispatched?'Provider outcome unknown. No automatic retry.':(str_starts_with($e->getMessage(),'Project spend cap')?$e->getMessage():'No provider request sent; request could not be prepared.')];if(!$dispatched){$result['input']=0;$result['output']=0;$result['billing']=UsageMeter::measure(['usage'=>['input_tokens'=>0,'output_tokens'=>0]],$job['run']['model']);} }
+        Diagnostics::record('research.phase.response',['run_id'=>$id,'phase'=>$job['phase']??'learn','status'=>$result['status'],'reason'=>$result['reason']??null,'input_tokens'=>$result['input']??null,'output_tokens'=>$result['output']??null,'searched'=>$result['searched']??false,'citations'=>count($result['citations']??[])]);
         $this->transaction(function () use ($id,$job,$result): void {
             $pending=$this->rows("SELECT id FROM research_requests WHERE id=? AND status='pending'",[$job['request']]);
             $this->usage($id,$job['request'],$result,$pending?$result['status']:'uncertain');

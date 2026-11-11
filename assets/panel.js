@@ -1,5 +1,14 @@
 (() => {
   'use strict';
+  document.querySelector('[data-copy-diagnostics]')?.addEventListener('click', async () => {
+    const report = document.getElementById('diagnostics-report');
+    const status = document.querySelector('[data-copy-diagnostics-status]');
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(report.value);
+      else { report.focus(); report.select(); if (!document.execCommand('copy')) throw new Error('copy'); }
+      status.textContent = 'Contents copied.';
+    } catch { report.focus(); report.select(); status.textContent = 'Copy unavailable. The report is selected; use your device’s Copy command.'; }
+  });
   let installing = false;
   const statusRoot = document.querySelector('[data-update-status-url]');
   const formatTime = timestamp => new Intl.DateTimeFormat('en-AU', {timeZone: 'Australia/Perth', hour: 'numeric', minute: '2-digit'}).format(new Date(timestamp * 1000)) + ' AWST';
@@ -152,6 +161,13 @@ document.addEventListener('submit', event => {
   'use strict';
   const root = document.querySelector('[data-investigation]');
   const csrf = () => document.querySelector('input[name=csrf]')?.value || '';
+  function diagnosticFailure(stage, failure) {
+    const payload = new FormData();
+    payload.set('action', 'diagnostic_client'); payload.set('csrf', csrf());
+    payload.set('stage', stage); payload.set('run_id', root?.dataset.runId || '0');
+    payload.set('message', String(failure.message || failure).slice(0, 1000));
+    fetch(root?.dataset.entry || location.pathname, {method:'POST',body:payload,credentials:'same-origin'}).catch(() => {});
+  }
   let stepping = false, halted = false, polling = false, lastSnapshot = '';
   const element = (tag, text, className) => {
     const node = document.createElement(tag);
@@ -431,7 +447,7 @@ document.addEventListener('submit', event => {
     const form = root.querySelector('[data-research-action=research_step]');
     stepping = true;
     try { render(await send(form)); }
-    catch (failure) { halted = true; error(failure.message); }
+    catch (failure) { diagnosticFailure('progress', failure); halted = true; error(failure.message); }
     finally { stepping = false; }
     if (!halted && root.dataset.status === 'running') setTimeout(advance, 200);
   }
@@ -447,7 +463,7 @@ document.addEventListener('submit', event => {
       const data = await response.json(); if (data.error) throw new Error(data.error);
       root.dataset.lastContact=String(Date.now());render(data);
       if (!halted) advance();
-    } catch (failure) { halted = true; error(failure.message); }
+    } catch (failure) { diagnosticFailure('progress', failure); halted = true; error(failure.message); }
     finally { polling = false; }
   }
   document.addEventListener('submit', async event => {
@@ -467,7 +483,7 @@ document.addEventListener('submit', event => {
       }
       render(snapshot); error('');
       if (action === 'research_continue' || form.hasAttribute('data-map-focus')) { halted = false; advance(); }
-    } catch (failure) { error(failure.message);  }
+    } catch (failure) { diagnosticFailure(action, failure); error(failure.message);  }
     finally { button.disabled = false; root?.dispatchEvent(new Event('research:controls')); }
   });
   root?.addEventListener('click', event => {

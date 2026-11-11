@@ -19,6 +19,7 @@ if (getenv('AICONTROL_PRIVATE_DIR') !== false) {
     require_once __DIR__ . '/src/WorkspaceView.php';
     require_once __DIR__ . '/src/ResearchView.php';
     require_once __DIR__ . '/src/ResearchApi.php';
+    \AIcontrol\Diagnostics::install();
     try {
         if (PHP_VERSION_ID < 80200 || PHP_VERSION_ID >= 80600
             || !extension_loaded('pdo_sqlite') || !extension_loaded('mbstring') || !extension_loaded('session')) {
@@ -34,7 +35,8 @@ if (getenv('AICONTROL_PRIVATE_DIR') !== false) {
             isset($_GET['health']) ? '/health' : $requestedPath,
             $_SERVER['REQUEST_METHOD'] ?? 'GET'
         );
-    } catch (Throwable) {
+    } catch (Throwable $e) {
+        \AIcontrol\Diagnostics::record('panel.unavailable',[],$e);
         http_response_code(503);
         header('Cache-Control: no-store');
         header('Content-Type: application/json');

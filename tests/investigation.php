@@ -21,6 +21,10 @@ try {
    $r['output'][1]['content'][0]['annotations']=[['type'=>'url_citation','url'=>'https://example.com/solar','title'=>'Solar study'],['type'=>'url_citation','url'=>'javascript:alert(1)','title'=>'Unsafe']];return $r;
   }
   verify(!isset($body['tools']),'Reconciliation can search');
+  $variants=$body['text']['format']['schema']['properties']['claims']['items']['anyOf'];
+  verify(count($variants)===2,'Missing claim-specific response variants');
+  verify($variants[0]['properties']['source_ids']['items']['enum']===[(int)$snapshot['sources'][0]['id']],'Evidence-backed claim missing allowed source constraint');
+  verify($variants[1]['properties']['verdict']['enum']===['open']&&$variants[1]['properties']['source_ids']['maxItems']===0,'Unsearched claim can fabricate evidence in response schema');
   return reply(json_encode(['claims'=>[['claim_id'=>(int)$claims[0]['id'],'verdict'=>'supported','reason'=>'Within the cited study scope','source_ids'=>[(int)$snapshot['sources'][0]['id']]],['claim_id'=>(int)$claims[1]['id'],'verdict'=>'open','reason'=>'No useful source','source_ids'=>[]]],'open_questions'=>['Which local tariff applies?']]));
  };
  $snapshot=$engine->step($run);

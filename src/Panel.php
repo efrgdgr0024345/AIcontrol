@@ -141,6 +141,12 @@ final class Panel
             } elseif (!($_SESSION['authenticated'] ?? false)) {
                 http_response_code(401);
                 $error = 'Sign in to record a proposal.';
+            } elseif ($action === 'diagnostic_client') {
+                $last=(int)($_SESSION['diagnostic_client_at']??0);
+                if (time()-$last<5) { http_response_code(429); return; }
+                $_SESSION['diagnostic_client_at']=time();
+                Diagnostics::record('browser.research.failed',['stage'=>substr(self::input('stage'),0,80),'message'=>substr(self::input('message'),0,1000),'run_id'=>(int)self::input('run_id')]);
+                http_response_code(204);return;
             } elseif ($action === 'logout' && $passwordMode) {
                 $_SESSION = [];
                 session_destroy();
@@ -185,6 +191,7 @@ final class Panel
                     header('Location: ' . self::entry() . '?view=' . (str_starts_with($action, 'vault_') ? 'admin' : (str_starts_with($action, 'research_') ? 'research' : 'projects')), true, 303);
                     return;
                 } catch (Throwable $failure) {
+                    Diagnostics::record('panel.action.failed',['action'=>$action],$failure);
                     http_response_code(422);
                     $error = 'Operation could not be completed. Check the selected project and field lengths.';
                     if (str_starts_with($action, 'vault_')) { $error = 'Vault could not be updated. Use a lowercase name with underscores, and a nonempty value up to 8000 bytes. Existing private data was retained.'; }

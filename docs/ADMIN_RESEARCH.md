@@ -398,3 +398,26 @@ not captured owner data. Local PHP/HTTP/browser checks and synthetic provider
 transport do not establish billed API behavior or cPanel activation. Consult
 PROJECT_STATE.md for the final validation scope and RESEARCH_MAP_RELIABILITY_PLAN.md
 for the supplied milestones and any remaining authenticated-host checks.
+Select citation source nodes to Learn from those cards only, once the run is
+idle. The inspector also offers the current source's Learn and copy-link actions.
+No vault notes or Dream hypotheses are sent as Learn context. The ordinary Learn
+form continues to use all collected cards. See RESEARCH_MAP_CONTRACT.md for the
+status fields, request contracts and a separate live-host validation checklist.
+
+## Diagnostic reports
+
+Open Admin and use **Copy contents** under **Detailed error and research log**.
+Refresh Admin after reproducing a failure to include the latest events. The
+readonly report can also be selected manually if clipboard permission is denied.
+It includes runtime capabilities, source fingerprint, provider status/timing,
+request correlation, research phases and sanitized exception details. It omits
+prompt bodies and vault contents. Logs are private, persist across updates, and
+retain roughly the latest 0.5–1 MB. Diagnostic collection is best effort: an
+unwritable private directory or a browser unable to reach the server can prevent
+an event being recorded. Missing events do not establish success.
+
+Reconciliation's strict provider schema limits each claim to its linked source
+IDs; claims without evidence can only be open. Server checks still reject
+unrelated/unknown source IDs, duplicate claims and invalid verdicts. A live cloud
+browser investigation completed all phases using the environment-configured
+OpenAI credential on 12 November 2026 AWST; hosting validation remains separate.

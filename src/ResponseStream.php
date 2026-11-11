@@ -38,6 +38,13 @@ final class ResponseStream
         }
         return strlen($chunk);
     }
+    public function diagnostics(): array
+    {
+        $result=$this->response??json_decode($this->raw,true,64);
+        return ['response_bytes'=>strlen($this->raw),'streaming'=>$this->sse,
+            'provider_error'=>$result['error']??null,'provider_status'=>$result['status']??null,
+            'incomplete_details'=>$result['incomplete_details']??null];
+    }
     public function result(): array
     {
         if($this->sse&&str_starts_with(trim($this->buffer),'data:'))$this->push("\n");

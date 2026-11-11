@@ -388,3 +388,45 @@ Starting from the map preserves that view through the new-run navigation,
 including on mobile. Existing human review, bounded Evidence steering and Stop
 semantics are preserved. Browser coverage verifies viewport dimensions, canvas
 height, sibling spacing, header controls, restart, and fallback behavior.
+## Admin diagnostics and live research validation (12 November 2026 AWST)
+
+Admin now shows a private bounded diagnostic journal and Copy contents button
+(with a selection fallback when clipboard access fails). Events include UTC
+and request correlation IDs, research actions/phases, provider HTTP status and
+request ID, timing, transport failures, usage, citation counts, schema rejection
+locations and traces without arguments, PHP warnings/fatal errors, and bounded
+browser research failures. Task and legacy research-chat provider errors are
+also recorded. The journal lives in runtime/diagnostics.jsonl, mode 0600, under
+an exclusive write lock; it rotates from approximately 1 MB to 512 KB. It
+persists across application updates. Prompt/response bodies, authorization
+headers, cookies and request form bodies are not recorded. Environment provider
+credentials and vault values are redacted before storage and again on export.
+Admin requires the existing authenticated PIN session; client reports require
+CSRF/authentication and are limited to one per session per five seconds.
+
+The configured cloud OpenAI credential was used for real Responses API calls
+with gpt-4.1-mini through the Research tab in Chromium. An initial investigation
+reached web search but failed reconciliation with `Unrelated source.` The new
+log identified the exact rejection. Reconciliation now sends a claim-specific
+strict response schema: only linked source IDs are allowed, and claims without
+collected sources must remain open. Existing server validation remains in place.
+
+A fresh live run then completed Dream, reviewed claims, Plan, one web search and
+Reconciliation: four provider requests, three cited source cards, 5,731 input and
+944 output tokens confirmed, no unknown usage. Admin clipboard contents matched
+the complete report. This proves live provider operation in this cloud runtime,
+not deployment or authentication against the owner's cPanel installation.
+The previous no-live-key statements describe earlier validation only. These live
+tests preceded integration with the newer concept-map/streaming research changes;
+the integrated release is covered by the current full automated checks.
+
+Validation: all nine existing PHP suites, workspace and investigation suites,
+five Python HTTP suites, Chromium desktop/mobile/accessibility suite, new
+`php tests/diagnostics.php` redaction/retention checks, and build/manifest checks.
+The investigation suite adds constraints preventing cross-claim source citation
+and unsupported verdicts in the provider schema. At this validation stage no
+application release or cloud environment publication had been performed.
+
+The owner subsequently authorized publishing this logging update for host testing.
+Release preparation integrates the latest main research map, streaming, ledger
+and usage changes and adds diagnostics to the required CI workflow.
