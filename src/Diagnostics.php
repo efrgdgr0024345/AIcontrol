@@ -75,9 +75,13 @@ final class Diagnostics
         if (in_array(strtolower($key),['instructions','input','prompt','metadata','encrypted_content','authorization','api_key','access_token'],true)) {
             return ['omitted'=>'private or opaque field'];
         }
-        if ($depth>9 || $budget<80) return ['omitted'=>'diagnostic size limit'];
+        if ($depth>12 || $budget<80) return ['omitted'=>'diagnostic size limit'];
         if (is_string($value)) {
             $budget-=min(strlen($value),300)+40;
+            if($key==='text') {
+                $structured=json_decode($value,true,16);
+                if(is_array($structured))return ['bytes'=>strlen($value),'structured_output'=>self::compactReturn($structured,'', $depth+1,$budget)];
+            }
             if(strlen($value)>300 && in_array($key,['message','reason','refusal','query'],true))return ['preview'=>mb_strcut($value,0,280,'UTF-8'),'omitted_bytes'=>strlen($value)-strlen(mb_strcut($value,0,280,'UTF-8')),'sha256'=>hash('sha256',$value)];
             if(strlen($value)>300 || in_array($key,['text','arguments','image_url','audio','delta'],true)) {
                 return ['omitted'=>'text or binary block','bytes'=>strlen($value),'sha256'=>hash('sha256',$value)];
