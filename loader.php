@@ -1982,6 +1982,7 @@ body.research-map-open { overflow:hidden; }
 
 .project-json-select { display:flex; flex-wrap:wrap; gap:10px; align-items:end; margin:18px 0; }.project-json-select label { width:100%; margin-bottom:0; }.project-json-select select { flex:1 1 240px; min-width:0; }
 .project-json-report,.project-json-checks { padding:14px; border:1px solid #e0e4ec; border-radius:8px; margin:12px 0; }.project-json-report>summary,.project-json-checks>summary { font-weight:600; cursor:pointer; }.project-json-text { font-family:monospace; font-size:.8rem; white-space:pre; }.project-json-downloads { display:flex; flex-wrap:wrap; gap:10px; margin-top:18px; }
+#project-json-inspector .btn { transition:none; }
 
 AICONTROL_UI_CSS;
     }
