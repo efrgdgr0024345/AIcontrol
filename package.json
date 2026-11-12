@@ -2,7 +2,7 @@
   "name": "aicontrol-ui-checks",
   "private": true,
   "scripts": {
-    "test:ui": "node tests/map_engine.cjs && node tests/ui_smoke.cjs"
+    "test:ui": "node tests/map_engine.cjs && node tests/brief_ui.cjs && node tests/ui_smoke.cjs"
   },
   "devDependencies": {
     "axe-core": "4.14.0",

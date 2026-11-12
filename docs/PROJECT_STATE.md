@@ -461,3 +461,30 @@ chat calls; streaming returns include event counts and stream error metadata.
 Long/generated text uses length/hash markers; private prompt fields are excluded.
 New regression checks retain error codes, usage details, citations and stream
 errors while proving large prose and private instructions are not logged.
+
+## Guided research creation and live writing-help draft
+
+The current local change implements the owner's RESEARCH_CREATE_PLAN.md. See
+RESEARCH_CREATE_DELIVERY.md for milestone-by-milestone coverage, baseline, product
+choices and exact validation scope. Create is now a first-class guided card;
+New research opens it while preserving existing projects/runs. Titles/briefs use
+the existing POST contract and schema. Applying a suggestion never starts research.
+
+The new helper streams short alternatives, with abort/stale-response protection,
+copyable examples, soft quality hints, undo, no-JS creation and mobile/accessibility
+coverage. Private metadata-only usage is bounded to 20/hour and $0.01/hour for
+pre-project help. No suggestion tables or dummy project/run rows are added.
+ProviderGate serializes provider calls and creation admission without blocking
+Stop/status. Existing research/map/ledger behavior and project caps are preserved.
+
+Local PHP suites, six HTTP suites, the new brief UI/accessibility/no-JS suite and
+existing workspace/map UI suite pass. A real call to the original mandated
+`gpt-4.1-nano` failed with provider HTTP 404/model_not_found (retired). The owner
+then explicitly approved `gpt-5.4-nano`. It is now forced for this feature with
+reasoning effort none and known alias/snapshot pricing. A fresh live browser test
+successfully streamed three suggestions, applied one and created a project.
+First text appeared at 1,175 ms including debounce; confirmed usage was 100 input
+and 162 output tokens, estimated $0.0002225 USD, no tools/reasoning tokens. No
+research auto-started. See delivery evidence for scope and source rates. Publish
+only after required planning-panel checks pass on the exact release SHA; cloud
+success is separate from host activation.

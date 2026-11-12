@@ -9,6 +9,7 @@ require_once __DIR__.'/EvidenceLedger.php';
 require_once __DIR__.'/UsageMeter.php';
 require_once __DIR__.'/ResponseStream.php';
 require_once __DIR__.'/ResearchFlow.php';
+require_once __DIR__.'/ProviderGate.php';
 
 /** A persisted, bounded phase machine; no shell worker or automatic retry. */
 final class Investigation
@@ -16,9 +17,11 @@ final class Investigation
     use EvidenceLedger;
     use ResearchFlow;
     private PDO $db;
+    private string $directory;
     private int $transactionDepth=0;
     public function __construct(string $directory)
     {
+        $this->directory=$directory;
         // Preserve/migrate the original research database before adding investigation data.
         new Research($directory);
         $this->db = new PDO('sqlite:' . $directory . '/research.sqlite', null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
@@ -95,6 +98,10 @@ final class Investigation
         }
     }
     public function createRun(int $project): int
+    {
+        return ProviderGate::run($this->directory,fn()=> $this->createRunWork($project));
+    }
+    private function createRunWork(int $project): int
     {
         $model = $this->credentials();
         return $this->transaction(function () use ($project, $model): int {
@@ -365,6 +372,10 @@ final class Investigation
     }
     public function step(int $id, ?int $focusNode = null, string $note = ''): array
     {
+        return ProviderGate::run($this->directory,fn()=> $this->stepWork($id,$focusNode,$note));
+    }
+    private function stepWork(int $id, ?int $focusNode = null, string $note = ''): array
+    {
         $this->credentials();
         if(strlen($note)>1000||!mb_check_encoding($note,'UTF-8')||($focusNode===null&&$note!==''))throw new RuntimeException('Invalid focus note.');
         $job = $this->transaction(function () use ($id,$focusNode,$note): ?array {
@@ -531,6 +542,10 @@ final class Investigation
     }
     public function learn(int $id, string $action, string $question, ?array $sourceIds = null): array
     {
+        return ProviderGate::run($this->directory,fn()=> $this->learnWork($id,$action,$question,$sourceIds));
+    }
+    private function learnWork(int $id, string $action, string $question, ?array $sourceIds = null): array
+    {
         $this->credentials();
         $actions=['explain'=>'Explain the main findings plainly.','caveats'=>'Explain limitations, contradictions and caveats.','compare'=>'Compare the collected sources and their disagreements.','deeper'=>'Explain the findings in progressively more detail.','check'=>'Check the user’s understanding; correct misunderstandings using only the evidence.'];
         if (!isset($actions[$action]) || strlen($question)>2000 || !mb_check_encoding($question,'UTF-8')) { throw new RuntimeException('Invalid Learn action or question.'); }
@@ -566,10 +581,11 @@ final class Investigation
         });
         return $this->getRunSnapshot($id);
     }
-    public function workspace(int $project, int $run): array
+    public function workspace(int $project, int $run, bool $new=false): array
     {
         $projects=$this->rows('SELECT * FROM research_projects ORDER BY id DESC');
         foreach($projects as &$p)$p['usage']=$this->projectUsage((int)$p['id']);unset($p);
+        if($new)return ['budget'=>$this->requestBudget(),'project'=>null,'runs'=>[],'snapshot'=>null];
         $selected=null;
         foreach($projects as $p)if((int)$p['id']===$project)$selected=$p;
         $selected ??= $projects[0]??null;

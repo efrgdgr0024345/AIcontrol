@@ -16,9 +16,10 @@ final class Research
             CREATE TABLE IF NOT EXISTS research_messages(id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL REFERENCES research_projects(id), role TEXT NOT NULL, text TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL);');
         Investigation::migrate($this->db);
     }
-    public function create(string $name, string $brief): void {
-        if (trim($name) === '' || strlen($name) > 160 || strlen($brief) > 4000 || !mb_check_encoding($name . $brief, 'UTF-8')) { throw new RuntimeException('Enter a project name and a brief up to 4000 bytes.'); }
+    public function create(string $name, string $brief): int {
+        if (trim($name) === '' || trim($brief)==='' || strlen($name) > 160 || strlen($brief) > 4000 || !mb_check_encoding($name . $brief, 'UTF-8')) { throw new RuntimeException('Enter a project name and a brief up to 4000 bytes.'); }
         $this->db->prepare('INSERT INTO research_projects(name,brief) VALUES(?,?)')->execute([trim($name), trim($brief)]);
+        return (int)$this->db->lastInsertId();
     }
     public function snapshot(): array {
         $projects=$this->db->query('SELECT * FROM research_projects ORDER BY id DESC')->fetchAll(PDO::FETCH_ASSOC);$engine=new Investigation($this->directory);
@@ -26,6 +27,9 @@ final class Research
         return ['projects' => $projects, 'messages' => $this->db->query('SELECT * FROM research_messages ORDER BY id')->fetchAll(PDO::FETCH_ASSOC)];
     }
     public function chat(int $id, string $message, bool $web): void {
+        ProviderGate::run($this->directory,fn()=> $this->chatWork($id,$message,$web));
+    }
+    private function chatWork(int $id,string $message,bool $web): void {
         if (trim($message) === '' || strlen($message) > 4000 || !mb_check_encoding($message, 'UTF-8')) { throw new RuntimeException('Enter a message up to 4000 bytes.'); }
         $model = getenv('AICONTROL_OPENAI_MODEL') ?: 'gpt-4.1-mini';
         if (!preg_match('/^[A-Za-z0-9._-]{1,100}$/D', $model)) { throw new RuntimeException('Invalid model configuration.'); }

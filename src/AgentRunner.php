@@ -8,6 +8,7 @@ use Throwable;
 
 /** One bounded task response. Generated text is never executed as code. */
 require_once __DIR__.'/Diagnostics.php';
+require_once __DIR__.'/ProviderGate.php';
 
 final class AgentRunner
 {
@@ -30,6 +31,10 @@ final class AgentRunner
     }
 
     public static function run(PanelStore $store, int $task): void
+    {
+        ProviderGate::run(getenv('AICONTROL_PRIVATE_DIR')?:'',fn()=>self::runWork($store,$task));
+    }
+    private static function runWork(PanelStore $store,int $task): void
     {
         if (!self::configured()) {
             throw new RuntimeException('OpenAI is not connected. Configure AICONTROL_OPENAI_API_KEY directly on the server.');

@@ -151,6 +151,11 @@ final class Panel
                 foreach(['http_status','content_type','redirected','response_path','error_kind'] as $field)$responseDetails[$field]=substr(self::input($field),0,160);
                 Diagnostics::record('browser.research.failed',array_merge($responseDetails,['stage'=>substr(self::input('stage'),0,80),'message'=>substr(self::input('message'),0,1000),'run_id'=>(int)self::input('run_id')]));
                 http_response_code(204);return;
+            } elseif ($action === 'research_brief_suggest') {
+                session_write_close();
+                require_once __DIR__.'/BriefSuggestions.php';
+                BriefSuggestions::serve($directory,$_POST['draft']??'',$_POST['name']??'');
+                return;
             } elseif ($action === 'research_status') {
                 session_write_close();
                 ResearchApi::status($directory,(int)self::input('run_id'));
@@ -172,7 +177,8 @@ final class Panel
                         (new Vault($directory))->change(self::input('name'), self::input('type'), self::input('value'), self::input('share') === '1', $action === 'vault_delete');
                         $_SESSION['flash'] = 'Private vault updated.';
                     } elseif ($action === 'research_project') {
-                        (new Research($directory))->create(self::input('name'), self::input('brief'));
+                        $projectId=(new Research($directory))->create(self::input('name'), self::input('brief'));
+                        header('Location: '.self::entry().'?view=research&project='.$projectId,true,303);return;
                     } elseif ($action === 'research_chat') {
                         (new Research($directory))->chat((int)self::input('project_id'), self::input('message'), self::input('web') === '1');
                     } elseif ($action === 'research_resolve') {
@@ -204,6 +210,7 @@ final class Panel
                     $error = 'Operation could not be completed. Check the selected project and field lengths.';
                     if (str_starts_with($action, 'vault_')) { $error = 'Vault could not be updated. Use a lowercase name with underscores, and a nonempty value up to 8000 bytes. Existing private data was retained.'; }
                     if (str_starts_with($action, 'research_')) { $error = 'Research request could not be started. Check the provider connection, field lengths, pending requests and ten-request hourly limit.'; }
+                    if ($action === 'research_project') { $error='Enter a working title (up to 160 bytes) and a research brief (up to 4,000 bytes). Your draft is retained.'; }
                     if ($action === 'run_agent') {
                         $safeMessages = ['An agent run is already active.', 'Testing limit reached: three runs per hour.', 'Task not found.', 'Invalid server model configuration.', 'OpenAI is not connected. Configure AICONTROL_OPENAI_API_KEY directly on the server.'];
                         $error = in_array($failure->getMessage(), $safeMessages, true)
@@ -228,7 +235,8 @@ final class Panel
         $authenticated = (bool) ($_SESSION['authenticated'] ?? false);
         $data = $authenticated ? $store->snapshot() : ['projects' => [], 'tasks' => [], 'events' => [], 'runs' => []];
         if ($authenticated && $view === 'admin') { $data['vault'] = (new Vault($directory))->entries(); }
-        if ($authenticated && $view === 'research') { $data['research'] = (new Research($directory))->snapshot(); $data['research']['workspace'] = (new Investigation($directory))->workspace((int)($_GET['project'] ?? 0), (int)($_GET['run'] ?? 0)); }
+        if ($authenticated && $view === 'research') { $data['research'] = (new Research($directory))->snapshot(); $data['research']['workspace'] = (new Investigation($directory))->workspace((int)($_GET['project'] ?? 0), (int)($_GET['run'] ?? 0),($_GET['new']??'')==='1'||(($action??'')==='research_project'&&$error!=='')); }
+        if(($action??'')==='research_project'&&$error!==''&&isset($data['research']))$data['research']['create_values']=['name'=>self::input('name'),'brief'=>self::input('brief')];
         $data['asset_nonce'] = $assetNonce;
         PanelView::render($data, $view, $csrf, $error, $passwordMode, $config, $authenticated);
     }

@@ -15,7 +15,7 @@ final class ResponseStream
     private bool $sse=false;
     private array $eventCounts=[];
     private ?array $streamError=null;
-    public function __construct(private mixed $progress) {}
+    public function __construct(private mixed $progress, private mixed $delta = null) {}
     public function push(string $chunk): int
     {
         if(strlen($this->raw)+strlen($chunk)>256000)return 0;
@@ -37,7 +37,7 @@ final class ResponseStream
                 'response.completed'=>'Provider finished; validating response',
                 default=>null,
             };
-            if($type==='response.output_text.delta'&&is_string($event['delta']??null))$this->characters+=mb_strlen($event['delta'],'UTF-8');
+            if($type==='response.output_text.delta'&&is_string($event['delta']??null)){$this->characters+=mb_strlen($event['delta'],'UTF-8');if($this->delta!==null)($this->delta)($event['delta']);}
             if($activity!==null)($this->progress)($activity,$this->characters);
             if(in_array($type,['response.completed','response.incomplete','response.failed'],true)&&is_array($event['response']??null))$this->response=$event['response'];
         }

@@ -437,3 +437,36 @@ payloads are omitted. Array, depth and total-size caps explicitly mark omissions
 Streaming diagnostics also retain event-type counts and stream error facts, even
 when a stream ends without a complete final response. This is a concise sanitized
 API-return summary, not an archive of complete response bodies.
+
+## Guided create and draft writing help (local draft)
+
+New research opens an eight-row brief with a working title, starters, examples,
+soft hints and scope/evidence coaching. A plain HTML POST still creates a project;
+JavaScript is not required. The saved brief is nonempty and limited to 4,000 UTF-8
+bytes, title to 160 bytes. Invalid creates retain the text for correction.
+
+POST `research_brief_suggest` requires the normal authenticated session and CSRF.
+It accepts `draft` (16 characters minimum, 2,000 UTF-8 bytes maximum) and optional
+`name` (160 bytes). It emits SSE start/delta/done/error, has no tools, caps output
+at 240 tokens and transport at 25 seconds. Success includes alternatives and
+returned token usage/estimated cost. No prompt, vault notes or generated text is
+persisted by this feature. Summarized provider errors remain in Admin diagnostics.
+
+Draft assistance has a dedicated 20-request/$0.01 USD rolling-hour allowance,
+including unknown-call reserves. It operates before project creation, so it does
+not debit project caps or the research request ceiling. Investigation/chat/Learn
+continue using their existing project caps. `brief-suggestions.json` privately
+retains at most 100 metadata records. The common provider lock prevents overlapping
+AI dispatches, while Stop/status remain available. Aborting browser display does
+not prove the provider stopped; unknown outcomes are retained without retrying
+that same draft for the hour. Quality hints never block creation.
+
+The helper always uses gpt-5.4-nano with reasoning effort none, as explicitly
+approved by the owner after the plan's original gpt-4.1-nano returned retirement
+HTTP 404. No fallback or primary-model override is used. Saved input/cached/output
+rates are $0.20/$0.02/$1.25 per million tokens, checked 12 November 2026 against
+https://developers.openai.com/api/docs/models/gpt-5.4-nano. Both the alias and
+2026-03-17 snapshot are priced; unknown snapshots remain unpriced. A real cloud
+browser successfully streamed three alternatives and saved an applied suggestion
+without starting research. This does not establish cPanel stream/proxy behavior.
+The UI remains usable with static examples and normal creation if help fails.

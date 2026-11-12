@@ -76,3 +76,16 @@ Admin/research defaults: the same PIN session manages the vault; private runtime
 `vault.key`, encrypted `vault.json` and `research.sqlite` persist across releases.
 The `openai_api_key` vault entry supplies research/task provider credentials unless
 the server environment overrides it. Shared notes require explicit opt-in.
+
+Guided-create draft defaults: saved title/brief remain 160/4,000 UTF-8 bytes.
+The optional pre-project suggestion action uses 16–2,000-byte drafts, 500 ms
+client debounce, 240 output tokens, 25-second provider timeout, a separate
+20-request/$0.01 rolling-hour workspace allowance, and private metadata-only
+journal storage (100 records). Project research caps/limits remain unchanged.
+The shared provider-request lock serializes provider dispatch without covering
+Stop/status. The owner approved gpt-5.4-nano to replace the retired model mandated in the
+original plan. It is hard-coded for writing help with reasoning effort none;
+project/server primary-model overrides and fallback are not used. Saved standard
+rates: $0.20 input/$0.02 cached/$1.25 output per million tokens, checked 12 November
+2026 against official model documentation. Existing investigation models remain
+unchanged by this create-flow plan.

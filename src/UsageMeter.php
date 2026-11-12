@@ -14,6 +14,7 @@ final class UsageMeter
         'gpt-4.1'=>[2.0,0.5,8.0],
         'gpt-4.1-mini'=>[0.4,0.1,1.6],
         'gpt-4.1-nano'=>[0.1,0.025,0.4],
+        'gpt-5.4-nano'=>[0.2,0.02,1.25],
     ];
 
     public static function columns(PDO $db,string $table,array $fields): void
@@ -28,11 +29,13 @@ final class UsageMeter
     public static function rates(string $model): ?array
     {
         // Recognise only explicitly priced aliases/snapshots, never an arbitrary prefix match.
-        $alias=preg_replace('/-2025-04-14$/D','',$model);
+        $alias=$model;
+        if(preg_match('/^(gpt-4\.1(?:-mini|-nano)?)-2025-04-14$/D',$model,$match))$alias=$match[1];
+        if($model==='gpt-5.4-nano-2026-03-17')$alias='gpt-5.4-nano';
         if(!isset(self::RATES[$alias]))return null;
         [$input,$cached,$output]=self::RATES[$alias];
         return ['input_per_million'=>$input,'cached_per_million'=>$cached,'output_per_million'=>$output,
-            'preview_search_per_call'=>0.025,'currency'=>'USD','checked_at'=>self::CHECKED,
+            'preview_search_per_call'=>0.025,'currency'=>'USD','checked_at'=>$alias==='gpt-5.4-nano'?'2026-11-12':self::CHECKED,
             'source'=>self::SOURCE,'model_source'=>'https://developers.openai.com/api/docs/models/'.$alias];
     }
     private static function count(mixed $value): ?int { return is_int($value)&&$value>=0?$value:null; }
