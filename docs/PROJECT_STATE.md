@@ -488,3 +488,13 @@ and 162 output tokens, estimated $0.0002225 USD, no tools/reasoning tokens. No
 research auto-started. See delivery evidence for scope and source rates. Publish
 only after required planning-panel checks pass on the exact release SHA; cloud
 success is separate from host activation.
+
+## Workspace chrome simplification
+
+The owner requested update status/checking only under Admin. The update-status
+root, banner, refresh control and installer link now live in Admin's Application
+updates card. Other views do not poll or display update status; sidebar/footer
+update links are removed. The sidebar “One step at a time” box and redundant
+YOUR WORKSPACE heading eyebrow are removed. PIN locking, update verification,
+installation paths and private state are unchanged. Browser coverage checks
+Admin-only status placement and existing update success/failure flows.

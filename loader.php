@@ -1326,8 +1326,6 @@ a { text-underline-offset: 3px; }
 .app-navigation a[aria-current=page] { background: #343044; color: #e0d7ff; }
 .app-navigation .icon { width: 18px; height: 18px; opacity: .9; }
 .sidebar-foot { margin-top: auto; padding-top: 28px; }
-.sidebar-note { padding: 15px; border: 1px solid #353a49; border-radius: 10px; color: #a9b0c2; font-size: 12px; }
-.sidebar-note strong { color: #e7eaf3; display: block; margin-bottom: 5px; font-size: 12px; }
 .sidebar-lock { display: flex; gap: 10px; align-items: center; margin: 19px 12px 0; color: #d3d6e1; font-size: 12px; text-decoration: none; }
 .app-main { margin-left: 238px; min-width: 0; }
 .app-topbar { min-height: 73px; padding: 0 38px; border-bottom: 1px solid var(--ac-border); background: white; display: flex; align-items: center; justify-content: space-between; gap: 16px; }

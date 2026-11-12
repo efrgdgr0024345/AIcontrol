@@ -96,3 +96,11 @@ subtrees packed with a 14px sibling gap and 24px column connectors, and the worl
 bounds follow actual content. Auto-fit follows growth until the user pans/zooms;
 Fit restores that behavior. Accessible control sizes and the existing review and
 Evidence pauses remain intact. The server-rendered List is unchanged without JS.
+
+## Admin-only update controls
+
+Application update status, the AWST checked time, refresh and installer links are
+shown only on Admin. Other workspace views do not initialize update polling.
+Sidebar/footer update links and the sidebar coaching box have been removed; the
+redundant YOUR WORKSPACE eyebrow is also removed. Main page titles, navigation,
+PIN lock and the protected standalone update installer remain available.

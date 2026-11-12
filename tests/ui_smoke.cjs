@@ -70,6 +70,8 @@ const {spawn,spawnSync}=require('child_process');
   if(!await page.getByRole('button',{name:'Start research',exact:true}).isDisabled())throw new Error('Disconnected research enabled');
   for(const [name,file] of [['Overview','overview'],['Projects & tasks','projects'],['Agent runs','runs'],['Systems','systems'],['Activity','activity'],['Admin','admin'],['Research projects','research']]){
    await page.getByRole('link',{name,exact:true}).click();
+   if(await page.locator('[data-update-status-url]').count()!==(file==='admin'?1:0))throw new Error('Update status escaped Admin: '+name);
+   if(await page.locator('.sidebar-note').count()||await page.locator('.app-sidebar a[href*=installer], .app-footer a[href*=installer]').count())throw new Error('Sidebar/footer clutter returned');
    await page.screenshot({path:path.join(artifacts,`ui-${file}-desktop.png`),fullPage:true});await audit(name);
   }
   await page.getByRole('link',{name:'Projects & tasks',exact:true}).click();
@@ -77,6 +79,7 @@ const {spawn,spawnSync}=require('child_process');
   await page.getByRole('heading',{name:'Draft the homepage structure',exact:true}).waitFor();
   if(await page.getByRole('heading',{name:'Review the installation experience',exact:true}).count())throw new Error('Project/task search did not filter');
   await page.getByRole('link',{name:'Clear search',exact:true}).click();
+  await page.getByRole('link',{name:'Admin',exact:true}).click();
   updateFixture={state:'update_available',app_update:true,loader_update:true,installed_sha:'a'.repeat(40),latest_sha:'b'.repeat(40),release_title:'UI fixture release',checked_at:Math.floor(Date.now()/1000)};
   await page.getByRole('button',{name:'Check again',exact:true}).click();
   await page.getByText('An update is available',{exact:true}).waitFor();
@@ -95,6 +98,7 @@ const {spawn,spawnSync}=require('child_process');
   await page.getByRole('button',{name:'Check again',exact:true}).click();
   await page.getByText('You’re up to date',{exact:true}).waitFor();
 
+  await page.getByRole('link',{name:'Projects & tasks',exact:true}).click();
   await page.locator('summary').filter({hasText:'Agent run #1'}).click();
   await page.getByText('UI test fixture only.',{exact:false}).waitFor();
   for(const [name,file] of [['Overview','overview'],['Projects & tasks','projects'],['Agent runs','runs'],['Systems','systems'],['Activity','activity'],['Admin','admin'],['Research projects','research']]){
