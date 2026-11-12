@@ -87,3 +87,12 @@ lock, successful deletion, stale-token rejection and preserved configuration.
 inspection, clipboard equality, retained-project checks, mobile overflow, axe and
 no-JavaScript history reset. It joins the existing brief/map/workspace UI suite.
 All mutation validation uses local disposable fixtures, not the owner's live host.
+
+## Selected-project JSON and map inspection
+
+The Admin JSON inspector shows a selected project's investigations, raw stored
+rows, polling payload and same-engine browser projection with filters. Copy or
+download the debug bundle for a matched capture. It is read-only, includes
+reference/cycle checks, and preserves raw rows when payload construction fails.
+See PROJECT_JSON_INSPECTION.md for capture timing, no-JS downloads and browser
+view-state limitations. No public JSON file or provider request is created.

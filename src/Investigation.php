@@ -212,9 +212,9 @@ final class Investigation
         if(!$claim||(int)$claim['selected']!==1)throw new RuntimeException('Choose a selected claim, open question or dead end from this run.');
         return ['focus_node_id'=>$node,'claim_id'=>(int)$claim['id'],'title'=>$target['title'],'content'=>$target['content'],'note'=>$note];
     }
-    public function getRunSnapshot(int $id): array
+    public function getRunSnapshot(int $id, bool $reconcile=true): array
     {
-        $this->transaction(function () use ($id): void {
+        if($reconcile)$this->transaction(function () use ($id): void {
             $run = $this->run($id);
             if ($run['busy_since'] !== null && (int)$run['busy_since'] < time()-120) {
                 $this->updateRunStatus($id,'uncertain','Phase worker interrupted or timed out; provider outcome unknown. No automatic retry.');
@@ -234,6 +234,31 @@ final class Investigation
         $requests=$this->rows('SELECT * FROM research_requests WHERE run_id=? ORDER BY id',[$id]);
         return ['ledger'=>$this->getEvidenceLedger($id),'budget'=>$this->requestBudget(),'run'=>$run,'nodes'=>self::mapNodes($nodes,$sources),'sources'=>$sources,
             'requests'=>$requests,'usage'=>$this->usageSnapshot((int)$run['project_id'],$id,$requests,$nodes),'findings'=>$this->findings($id),'server_time'=>time()];
+    }
+    /** A consistent read snapshot; never runs timeout recovery or advances research. */
+    public function inspectProject(int $project,int $run=0): array
+    {
+        $this->db->exec('BEGIN');
+        try {
+            $definition=$this->rows('SELECT * FROM research_projects WHERE id=?',[$project])[0]??throw new RuntimeException('Research project not found.');
+            $runs=$this->rows('SELECT id,project_id,status,phase,started_at,finished_at FROM research_runs WHERE project_id=? ORDER BY id DESC',[$project]);
+            if($run===0)$run=(int)($runs[0]['id']??0);
+            if($run!==0&&!in_array($run,array_map('intval',array_column($runs,'id')),true))throw new RuntimeException('The selected investigation does not belong to this project.');
+            $stored=null;$snapshot=null;$error=null;
+            if($run!==0){
+                $storedRun=$this->rows('SELECT * FROM research_runs WHERE id=?',[$run])[0];unset($storedRun['busy']);
+                $stored=['run'=>$storedRun,'nodes'=>$this->rows('SELECT * FROM research_nodes WHERE run_id=? ORDER BY id',[$run]),
+                    'sources'=>$this->rows('SELECT * FROM research_sources WHERE run_id=? ORDER BY id',[$run]),
+                    'requests'=>$this->rows('SELECT * FROM research_requests WHERE run_id=? ORDER BY id',[$run]),'ledger'=>$this->getEvidenceLedger($run)];
+                try {$snapshot=$this->getRunSnapshot($run,false);}
+                catch(Throwable $failure){$error=['class'=>get_class($failure),'message'=>substr(Diagnostics::clean($failure->getMessage()),0,1000),'file'=>basename($failure->getFile()),'line'=>$failure->getLine()];}
+            }
+            $this->db->exec('COMMIT');
+            return ['format'=>'AIcontrol project map inspection v1','generated_utc'=>gmdate('c'),
+                'installed_release'=>getenv('AICONTROL_INSTALLED_SHA')?:null,'ui_fingerprint'=>hash_file('sha256',__DIR__.'/Ui.php'),
+                'project'=>$definition,'available_runs'=>$runs,'selected_run_id'=>$run!==0?$run:null,
+                'snapshot'=>$snapshot,'stored_state'=>$stored,'map_payload_error'=>$error];
+        } catch(Throwable $e){$this->db->exec('ROLLBACK');throw $e;}
     }
     public function projectRuns(int $project): array { return $this->rows('SELECT * FROM research_runs WHERE project_id=? ORDER BY id DESC LIMIT 20',[$project]); }
     private function request(int $id, int $node, string $kind): int

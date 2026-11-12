@@ -11,7 +11,7 @@
   });
   document.querySelectorAll('[data-copy-report]').forEach(button => button.addEventListener('click', async () => {
     const report=document.getElementById(button.dataset.copyReport), status=button.parentElement.querySelector('[data-copy-report-status]');
-    try { if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(report.value);else {report.focus();report.select();if(!document.execCommand('copy'))throw new Error('copy');}status.textContent='Technical report copied.'; }
+    try { if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(report.value);else {report.focus();report.select();if(!document.execCommand('copy'))throw new Error('copy');}status.textContent=button.dataset.copyReport==='admin-technical-report'?'Technical report copied.':'JSON copied.'; }
     catch {report.focus();report.select();status.textContent='Report selected. Use your device’s Copy command.';}
   }));
   let installing = false;
@@ -539,4 +539,27 @@ document.addEventListener('submit', event => {
     setInterval(poll, 1500);
     poll(true);
   }
+})();
+
+// Admin map inspection reuses the map's pure projection, without changing saved state.
+(() => {
+  const root=document.querySelector('[data-project-json-inspector]'); if(!root)return;
+  const bundleField=document.getElementById('project-debug-bundle'),baseBundle=JSON.parse(bundleField.value);
+  function download(text,kind){const url=URL.createObjectURL(new Blob([text+'\n'],{type:'application/json'})),link=document.createElement('a');link.href=url;link.download=`research-project-${root.dataset.projectId}-run-${root.dataset.runId}-${kind}.json`;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+  root.querySelectorAll('[data-inspection-download]').forEach(form=>form.addEventListener('submit',event=>{event.preventDefault();const kind=form.dataset.inspectionDownload;download(kind==='payload'?document.getElementById('project-map-payload').value:bundleField.value,kind);}));
+  if(root.dataset.runId==='0'||!globalThis.AIcontrolMap)return;
+  const panel=root.querySelector('[data-project-projection]'),field=document.getElementById('project-map-projection'),summary=root.querySelector('[data-project-projection-summary]');
+  function update(){
+    try {
+      const snapshot=JSON.parse(document.getElementById('project-map-payload').value);if(!snapshot||!Array.isArray(snapshot.nodes))throw new Error('payload');
+      const filter=root.querySelector('[data-project-projection-filter]').value,projection=AIcontrolMap.project(snapshot,filter),visible=new Set(projection.nodes.map(node=>String(node.id)));
+      const report={project_id:Number(root.dataset.projectId),run_id:Number(root.dataset.runId),source_snapshot_server_time:snapshot.server_time,engine:'AIcontrolMap.project',filter:projection.filter,
+        projection,stored_node_ids_without_same_id_card:snapshot.nodes.filter(node=>!visible.has(String(node.id))).map(node=>node.id),
+        note:'Filtered/grouped records and process wrappers need not have a same-ID card. Layout, zoom and collapsed branches in the research window are separate browser state.'};
+      field.value=JSON.stringify(report,null,2);bundleField.value=JSON.stringify({...baseBundle,browser_projection:report},null,2);
+      summary.textContent=`${snapshot.nodes.length} input nodes → ${projection.nodes.length} map cards and ${projection.edges.length} links · ${projection.filter} filter${projection.empty?' · '+projection.empty_reason:''}`;panel.hidden=false;
+    }catch{field.value='';summary.textContent='Projection could not be built. Copy the debug bundle to inspect the stored rows and payload error.';panel.hidden=false;}
+  }
+  root.querySelector('[data-project-projection-filter]').addEventListener('change',update);update();
+  root.querySelector('[data-download-map-projection]').addEventListener('click',()=>{if(field.value)download(field.value,'projected');});
 })();

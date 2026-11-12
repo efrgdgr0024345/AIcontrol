@@ -517,3 +517,20 @@ excludes credentials, project contents, raw environment and phpinfo dumps.
 Mutation events go to the existing private diagnostic log. Current-session CSRF
 rotation rejects stale forms after cleanup; open pages should be refreshed.
 Add admin_data.php, admin_http.py and admin_ui.cjs to required validation.
+
+## Admin selected-project map JSON inspector
+
+Admin now exposes a selected research project's saved JSON and investigation
+history, defaulting to its newest run. See PROJECT_JSON_INSPECTION.md. It shows
+stored database rows, the normal map payload and the exact browser map projection
+under selectable filters, with copy/download controls and ID/reference checks.
+With JS, the downloaded/copied debug bundle includes the displayed projection;
+no-JS users retain authenticated server JSON downloads. No public files are saved.
+
+Inspection uses a consistent read transaction with timeout reconciliation off;
+regular polling's recovery behavior remains unchanged. A broken payload builder
+leaves raw rows and a diagnostic error in the bundle. Other projects' contents,
+private worker tokens, vault/config/session files are not exported. Tests cover
+scope, read-only pending/stale state, malformed data, no-JS/subfolder downloads,
+source/node IDs and parity with AIcontrolMap.project. This adds diagnosis tools;
+it does not by itself establish the cause of a hosted map disconnect.

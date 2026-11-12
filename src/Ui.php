@@ -296,7 +296,7 @@ final class AIcontrolWorkspaceUi
   });
   document.querySelectorAll('[data-copy-report]').forEach(button => button.addEventListener('click', async () => {
     const report=document.getElementById(button.dataset.copyReport), status=button.parentElement.querySelector('[data-copy-report-status]');
-    try { if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(report.value);else {report.focus();report.select();if(!document.execCommand('copy'))throw new Error('copy');}status.textContent='Technical report copied.'; }
+    try { if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(report.value);else {report.focus();report.select();if(!document.execCommand('copy'))throw new Error('copy');}status.textContent=button.dataset.copyReport==='admin-technical-report'?'Technical report copied.':'JSON copied.'; }
     catch {report.focus();report.select();status.textContent='Report selected. Use your device’s Copy command.';}
   }));
   let installing = false;
@@ -824,6 +824,29 @@ document.addEventListener('submit', event => {
     setInterval(poll, 1500);
     poll(true);
   }
+})();
+
+// Admin map inspection reuses the map's pure projection, without changing saved state.
+(() => {
+  const root=document.querySelector('[data-project-json-inspector]'); if(!root)return;
+  const bundleField=document.getElementById('project-debug-bundle'),baseBundle=JSON.parse(bundleField.value);
+  function download(text,kind){const url=URL.createObjectURL(new Blob([text+'\n'],{type:'application/json'})),link=document.createElement('a');link.href=url;link.download=`research-project-${root.dataset.projectId}-run-${root.dataset.runId}-${kind}.json`;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+  root.querySelectorAll('[data-inspection-download]').forEach(form=>form.addEventListener('submit',event=>{event.preventDefault();const kind=form.dataset.inspectionDownload;download(kind==='payload'?document.getElementById('project-map-payload').value:bundleField.value,kind);}));
+  if(root.dataset.runId==='0'||!globalThis.AIcontrolMap)return;
+  const panel=root.querySelector('[data-project-projection]'),field=document.getElementById('project-map-projection'),summary=root.querySelector('[data-project-projection-summary]');
+  function update(){
+    try {
+      const snapshot=JSON.parse(document.getElementById('project-map-payload').value);if(!snapshot||!Array.isArray(snapshot.nodes))throw new Error('payload');
+      const filter=root.querySelector('[data-project-projection-filter]').value,projection=AIcontrolMap.project(snapshot,filter),visible=new Set(projection.nodes.map(node=>String(node.id)));
+      const report={project_id:Number(root.dataset.projectId),run_id:Number(root.dataset.runId),source_snapshot_server_time:snapshot.server_time,engine:'AIcontrolMap.project',filter:projection.filter,
+        projection,stored_node_ids_without_same_id_card:snapshot.nodes.filter(node=>!visible.has(String(node.id))).map(node=>node.id),
+        note:'Filtered/grouped records and process wrappers need not have a same-ID card. Layout, zoom and collapsed branches in the research window are separate browser state.'};
+      field.value=JSON.stringify(report,null,2);bundleField.value=JSON.stringify({...baseBundle,browser_projection:report},null,2);
+      summary.textContent=`${snapshot.nodes.length} input nodes → ${projection.nodes.length} map cards and ${projection.edges.length} links · ${projection.filter} filter${projection.empty?' · '+projection.empty_reason:''}`;panel.hidden=false;
+    }catch{field.value='';summary.textContent='Projection could not be built. Copy the debug bundle to inspect the stored rows and payload error.';panel.hidden=false;}
+  }
+  root.querySelector('[data-project-projection-filter]').addEventListener('change',update);update();
+  root.querySelector('[data-download-map-projection]').addEventListener('click',()=>{if(field.value)download(field.value,'projected');});
 })();
 
 // Progressive writing help. The ordinary create form remains the source of truth.
@@ -1948,6 +1971,9 @@ body.research-map-open { overflow:hidden; }
 .admin-project>summary,.admin-record>summary,.admin-table>summary,.admin-bulk>summary { cursor:pointer; font-weight:600; }.admin-data-action>summary { cursor:pointer; color:#a12b2b; font-weight:600; }.admin-data-action p { margin-top:12px; }
 .admin-bulk { padding:18px; border:1px solid #e4c5c5; border-radius:10px; }.admin-technical>summary { cursor:pointer; font-weight:600; }.admin-database { margin:24px 0; }.admin-schema { color:#29314a; white-space:pre-wrap; overflow-wrap:anywhere; padding:16px; background:#f6f7fa; }.admin-technical td { max-width:50vw; }
 @media(max-width:760px) { .admin-data-groups { grid-template-columns:minmax(0,1fr); }.admin-technical td { max-width:60vw; } }
+
+.project-json-select { display:flex; flex-wrap:wrap; gap:10px; align-items:end; margin:18px 0; }.project-json-select label { width:100%; margin-bottom:0; }.project-json-select select { flex:1 1 240px; min-width:0; }
+.project-json-report,.project-json-checks { padding:14px; border:1px solid #e0e4ec; border-radius:8px; margin:12px 0; }.project-json-report>summary,.project-json-checks>summary { font-weight:600; cursor:pointer; }.project-json-text { font-family:monospace; font-size:.8rem; white-space:pre; }.project-json-downloads { display:flex; flex-wrap:wrap; gap:10px; margin-top:18px; }
 
 AICONTROL_UI_CSS;
     }

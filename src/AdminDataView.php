@@ -3,6 +3,7 @@ declare(strict_types=1);
 namespace AIcontrol;
 use AIcontrolWorkspaceUi as Ui;
 require_once __DIR__.'/AdminData.php';
+require_once __DIR__.'/ProjectInspector.php';
 final class AdminDataView
 {
     private static function control(string $csrf,string $operation,int $id,string $label,string $description): void
@@ -16,7 +17,7 @@ final class AdminDataView
         echo '<section class="card mb-3"><div class="card-body"><h2>Saved workspace data</h2><p>Review projects and remove the records you no longer want. Deletion cannot be undone here. Clearing history also removes its saved usage and local request counters; provider charges are unchanged. Open pages may need refreshing after a change.</p><p>Currently executing AI requests block these operations until they finish. PIN, credentials, signing identity, installation settings and security throttling are retained.</p><div class="admin-data-groups"><section><h3>Research projects · '.count($data['research']).'</h3>';
         if(!$data['research'])echo '<p>No saved research projects.</p>';
         foreach($data['research'] as $project){$id=(int)$project['id'];
-            echo '<details class="admin-project"><summary>#'.$id.' · '.Ui::e($project['name']).' · '.(int)$project['runs'].' investigations · '.(int)$project['messages'].' chat messages</summary><p class="text-break">'.Ui::e($project['brief']).'</p><a href="/loader.php?view=research&amp;project='.$id.'">Open research project</a>';
+            echo '<details class="admin-project"><summary>#'.$id.' · '.Ui::e($project['name']).' · '.(int)$project['runs'].' investigations · '.(int)$project['messages'].' chat messages</summary><p class="text-break">'.Ui::e($project['brief']).'</p><a href="/loader.php?view=research&amp;project='.$id.'">Open research project</a> · <a href="/loader.php?view=admin&amp;inspect_project='.$id.'#project-json-inspector">Inspect project JSON</a>';
             self::control($csrf,'reset_research_project',$id,'Clear research history','Remove every investigation, source, passage, evidence relation, ranking, usage record and chat message for this project. Keep its name, brief and settings.');
             self::control($csrf,'clear_research_chat',$id,'Clear conversation','Remove this project’s legacy chat messages and their recorded usage. Investigation evidence stays.');
             foreach($data['runs'] as $run)if((int)$run['project_id']===$id){echo '<div class="admin-record"><p>Investigation #'.(int)$run['id'].' · '.Ui::e($run['status'].' · '.$run['phase']).'</p>';self::control($csrf,'delete_research_run',(int)$run['id'],'Delete investigation','Remove this investigation and all of its saved evidence, sources, nodes, rankings and usage. Keep the project and other investigations.');echo '</div>';}
@@ -36,6 +37,7 @@ final class AdminDataView
         self::control($csrf,'clear_suggestions',0,'Clear writing-help history','Remove the private suggestion usage journal and reset its local hourly allowance. Already incurred provider charges are unchanged.');
         self::control($csrf,'reset_workspace',0,'Reset all project data','Delete every task project and research project, all tasks, conversations, investigations, evidence, activity and related usage. Keep PIN, encrypted vault, signing identity, security throttling, configuration, installed code, diagnostics and the separate writing-help journal.');
         echo '</details></div></section>';
+        ProjectInspector::render($directory,$csrf,$data['research']);
         self::technical($report);
     }
     private static function technical(array $report): void

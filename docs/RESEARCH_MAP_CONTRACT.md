@@ -203,3 +203,9 @@ PIN or provider key is available in this cloud checkout. Synthetic provider
 transport and local browser checks do not establish a billed live API run
 or activation on cPanel. A checked GitHub release and its loader compatibility
 pointer must be distinguished from an authenticated host installation.
+
+Admin JSON inspection now reuses this payload builder without timeout recovery
+and the exact AIcontrolMap.project implementation. It exposes the difference
+between stored rows, delivered payload and filtered/grouped cards, including
+source IDs versus persisted/display-only node IDs. Inspection does not advance
+research. See PROJECT_JSON_INSPECTION.md for scope, export and view-state limits.

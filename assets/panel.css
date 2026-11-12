@@ -686,3 +686,6 @@ body.research-map-open { overflow:hidden; }
 .admin-project>summary,.admin-record>summary,.admin-table>summary,.admin-bulk>summary { cursor:pointer; font-weight:600; }.admin-data-action>summary { cursor:pointer; color:#a12b2b; font-weight:600; }.admin-data-action p { margin-top:12px; }
 .admin-bulk { padding:18px; border:1px solid #e4c5c5; border-radius:10px; }.admin-technical>summary { cursor:pointer; font-weight:600; }.admin-database { margin:24px 0; }.admin-schema { color:#29314a; white-space:pre-wrap; overflow-wrap:anywhere; padding:16px; background:#f6f7fa; }.admin-technical td { max-width:50vw; }
 @media(max-width:760px) { .admin-data-groups { grid-template-columns:minmax(0,1fr); }.admin-technical td { max-width:60vw; } }
+
+.project-json-select { display:flex; flex-wrap:wrap; gap:10px; align-items:end; margin:18px 0; }.project-json-select label { width:100%; margin-bottom:0; }.project-json-select select { flex:1 1 240px; min-width:0; }
+.project-json-report,.project-json-checks { padding:14px; border:1px solid #e0e4ec; border-radius:8px; margin:12px 0; }.project-json-report>summary,.project-json-checks>summary { font-weight:600; cursor:pointer; }.project-json-text { font-family:monospace; font-size:.8rem; white-space:pre; }.project-json-downloads { display:flex; flex-wrap:wrap; gap:10px; margin-top:18px; }

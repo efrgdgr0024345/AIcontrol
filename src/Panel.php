@@ -143,6 +143,16 @@ final class Panel
             } elseif (!($_SESSION['authenticated'] ?? false)) {
                 http_response_code(401);
                 $error = 'Sign in to record a proposal.';
+            } elseif ($action === 'admin_project_json') {
+                try {
+                    $project=ProjectInspector::id($_POST['project_id']??null);
+                    $run=ProjectInspector::id($_POST['run_id']??'0',true);
+                    $kind=self::input('kind');
+                    session_write_close();
+                    ProjectInspector::download($directory,$project,$run,$kind);return;
+                } catch(Throwable $failure) {
+                    http_response_code(422);header('Content-Type: application/json; charset=utf-8');echo '{"error":"Choose a valid project and investigation JSON export."}';return;
+                }
             } elseif ($action === 'admin_data') {
                 try {
                     $raw=self::input('record_id');
