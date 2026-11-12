@@ -470,3 +470,9 @@ https://developers.openai.com/api/docs/models/gpt-5.4-nano. Both the alias and
 browser successfully streamed three alternatives and saved an applied suggestion
 without starting research. This does not establish cPanel stream/proxy behavior.
 The UI remains usable with static examples and normal creation if help fails.
+
+Admin's Saved workspace data controls can clear/delete research projects,
+individual investigations and legacy conversations; related sources, passages,
+ledger relations, rankings and usage are removed in dependency order. See
+ADMIN_DATA.md for confirmation phrases, active-worker behavior and reset scope.
+Database/PHP technical metadata and a copyable report are now available there.

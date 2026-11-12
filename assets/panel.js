@@ -9,6 +9,11 @@
       status.textContent = 'Contents copied.';
     } catch { report.focus(); report.select(); status.textContent = 'Copy unavailable. The report is selected; use your device’s Copy command.'; }
   });
+  document.querySelectorAll('[data-copy-report]').forEach(button => button.addEventListener('click', async () => {
+    const report=document.getElementById(button.dataset.copyReport), status=button.parentElement.querySelector('[data-copy-report-status]');
+    try { if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(report.value);else {report.focus();report.select();if(!document.execCommand('copy'))throw new Error('copy');}status.textContent='Technical report copied.'; }
+    catch {report.focus();report.select();status.textContent='Report selected. Use your device’s Copy command.';}
+  }));
   let installing = false;
   const statusRoot = document.querySelector('[data-update-status-url]');
   const formatTime = timestamp => new Intl.DateTimeFormat('en-AU', {timeZone: 'Australia/Perth', hour: 'numeric', minute: '2-digit'}).format(new Date(timestamp * 1000)) + ' AWST';

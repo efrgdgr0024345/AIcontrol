@@ -498,3 +498,22 @@ update links are removed. The sidebar “One step at a time” box and redundant
 YOUR WORKSPACE heading eyebrow are removed. PIN locking, update verification,
 installation paths and private state are unchanged. Browser coverage checks
 Admin-only status placement and existing update success/failure flows.
+
+## Admin saved-data controls and database/PHP inventory
+
+See ADMIN_DATA.md for the exact allowlisted controls, reset scope and validation.
+Admin can now delete either project type, clear histories, delete investigations
+or tasks, reset task history, clear activity/diagnostics/writing-help usage, or
+reset all project data. Destructive forms require typed confirmation and the
+existing authenticated CSRF POST flow. ProviderGate blocks active workers;
+attached SQLite transactions delete children first and check relationships.
+PIN, vault/key, signing identity, configuration, sessions, login throttling and
+installed release files are retained. No live user data is cleared by deployment.
+
+The expandable technical section reads actual SQLite paths, engine/driver,
+health, tables, row counts and column/schema metadata, plus effective PHP runtime
+limits, extension versions and error-output settings. Copy technical report
+excludes credentials, project contents, raw environment and phpinfo dumps.
+Mutation events go to the existing private diagnostic log. Current-session CSRF
+rotation rejects stale forms after cleanup; open pages should be refreshed.
+Add admin_data.php, admin_http.py and admin_ui.cjs to required validation.

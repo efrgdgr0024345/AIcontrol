@@ -89,3 +89,10 @@ project/server primary-model overrides and fallback are not used. Saved standard
 rates: $0.20 input/$0.02 cached/$1.25 output per million tokens, checked 12 November
 2026 against official model documentation. Existing investigation models remain
 unchanged by this create-flow plan.
+
+Admin data management uses existing runtime panel.sqlite/research.sqlite schemas;
+no database paths are accepted from browser forms. Deletion/reset is allowlisted,
+CSRF-protected and typed-confirmed, with active-provider exclusion. It preserves
+PIN, encrypted vault/key, signing identity, configuration, security throttling
+and installed code. Diagnostic/suggestion cleanup is separately selected. See
+ADMIN_DATA.md for exact scopes and queried SQLite/PHP inventory fields.

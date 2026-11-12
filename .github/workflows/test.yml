@@ -29,6 +29,8 @@ jobs:
           php tests/agent.php
           php tests/agent_adapter.php
           php tests/workspace.php
+          php tests/admin_data.php
+          python3 -B -m unittest -v tests/admin_http.py
           php tests/research_brief_suggest.php
           python3 -B -m unittest -v tests/brief_http.py
           php tests/diagnostics.php

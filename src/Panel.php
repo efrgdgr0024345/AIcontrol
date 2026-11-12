@@ -143,6 +143,21 @@ final class Panel
             } elseif (!($_SESSION['authenticated'] ?? false)) {
                 http_response_code(401);
                 $error = 'Sign in to record a proposal.';
+            } elseif ($action === 'admin_data') {
+                try {
+                    $raw=self::input('record_id');
+                    if(!preg_match('/^(0|[1-9][0-9]{0,9})$/D',$raw))throw new RuntimeException('Choose a valid record.');
+                    (new AdminData($directory))->change(self::input('operation'),(int)$raw,self::input('confirmation'));
+                    $_SESSION['csrf']=bin2hex(random_bytes(32));
+                    $_SESSION['flash']='Saved data updated. Refresh any other open workspace pages. Provider charges are unchanged.';
+                    header('Location: '.self::entry().'?view=admin',true,303);return;
+                } catch(Throwable $failure) {
+                    Diagnostics::record('admin.data.failed',['operation'=>is_string($_POST['operation']??null)?substr($_POST['operation'],0,80):'invalid'],$failure);
+                    http_response_code(422);
+                    $safe=['Confirmation did not match. No data was changed.','Choose a valid record.','Unknown data operation.','The selected record no longer exists. Refresh Admin.','Database relationships require repair; no data was changed.','Another AI request is finishing. Wait before asking for suggestions or starting research.'];
+                    $error=in_array($failure->getMessage(),$safe,true)?$failure->getMessage():'Data management did not complete. Review the saved records and Admin diagnostic log.';
+                    if(str_starts_with($failure->getMessage(),'Another AI request is finishing.'))$error='An AI request is still running. Wait for it to finish before changing saved data.';
+                }
             } elseif ($action === 'diagnostic_client') {
                 $last=(int)($_SESSION['diagnostic_client_at']??0);
                 if (time()-$last<5) { http_response_code(429); return; }
