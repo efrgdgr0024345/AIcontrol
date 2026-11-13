@@ -658,3 +658,18 @@ body.research-map-open { overflow:hidden; }
 .project-json-select { display:flex; flex-wrap:wrap; gap:10px; align-items:end; margin:18px 0; }.project-json-select label { width:100%; margin-bottom:0; }.project-json-select select { flex:1 1 240px; min-width:0; }
 .project-json-report,.project-json-checks { padding:14px; border:1px solid #e0e4ec; border-radius:8px; margin:12px 0; }.project-json-report>summary,.project-json-checks>summary { font-weight:600; cursor:pointer; }.project-json-text { font-family:monospace; font-size:.8rem; white-space:pre; }.project-json-downloads { display:flex; flex-wrap:wrap; gap:10px; margin-top:18px; }
 #project-json-inspector .btn { transition:none; }
+
+/* Muted layer surfaces retain opaque text for readable contrast. */
+.living-controls { display:grid; gap:.5rem; padding:1rem; border:1px solid #a8b1bf; border-radius:.5rem; margin-block:1rem; }
+.living-controls select,.living-controls textarea { max-width:100%; min-width:0; }
+.map-layer-controls { display:flex; gap:.5rem; flex-wrap:wrap; }
+.map-node[data-layer="1"] { background:#e8ebef!important; border-color:#a1a9b4!important; box-shadow:none; }
+.map-node[data-layer="2"] { background:#f4f5f7!important; border-color:#c2c7cf!important; box-shadow:none; }
+.map-node[data-layer="1"] .map-node-button,.map-node[data-layer="2"] .map-node-button { color:#263244!important; }
+.map-node[data-layer="1"] .map-node-type,.map-node[data-layer="2"] .map-node-type,.map-node[data-layer="1"] .map-node-status,.map-node[data-layer="2"] .map-node-status { color:#455266!important; }
+.living-controls .btn { transition:none; }
+.map-node[data-layer="1"]::after,.map-node[data-layer="2"]::after { content:""; position:absolute; inset:0 auto 0 0; width:4px; background:#68768a; pointer-events:none; }
+.map-node[data-layer="1"]::after { opacity:.6; }
+.map-node[data-layer="2"]::after { opacity:.35; }
+.map-node[data-layer="1"] .map-node-button[aria-pressed=true] { background:#e1e6ed; }
+.map-node[data-layer="2"] .map-node-button[aria-pressed=true] { background:#edf0f4; }

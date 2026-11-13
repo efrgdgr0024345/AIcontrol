@@ -7,6 +7,8 @@
   const map = root.querySelector('[data-mindmap]'), world = map.querySelector('[data-map-world]');
   const viewport = map.querySelector('[data-map-viewport]'), space = map.querySelector('[data-map-space]');
   const inspector = map.querySelector('[data-map-inspector-content]');
+  const conceptTypes=['dream_claim','question','model_idea','association','counter','edge_case','reframing'];
+  const shownLayers=new Set([0,1,2]);
   const collapsed = new Set(), selectedSources = new Set();
   let positions=new Map(),layoutSignature='',initialCamera=true;const sizes=new Map(),reading=new Engine.ReadingQueue();
   const debug=new URLSearchParams(location.search).get('map_debug')==='1';
@@ -32,6 +34,9 @@
   actions.append(screenButton('▶ Start research','start','btn-primary'),screenButton('■ Stop research','stop','btn-outline-danger'),screenButton('Continue planned search','step'),screenButton('Finish and freeze','finish','btn-primary'),screenButton('Review gaps once','repair'),screenButton('Project menu','menu'),screenButton('Details','details'),screenButton('List','list'));
   actions.children[0].setAttribute('aria-label','Start research');actions.children[1].setAttribute('aria-label','Stop research');actions.children[1].setAttribute('aria-keyshortcuts','Alt+S');
   tray.append(actions,map.querySelector('.mindmap-toolbar'),map.querySelector('[data-map-outcomes]'));
+  const layerControls=el('div',undefined,'map-layer-controls');layerControls.setAttribute('role','group');layerControls.setAttribute('aria-label','Map layers');
+  for(const [layer,label] of [[1,'Show Secondary'],[2,'Show Tertiary']]){const button=el('button',label,'btn btn-outline-secondary');button.type='button';button.setAttribute('aria-pressed','true');button.addEventListener('click',()=>{shownLayers.has(layer)?shownLayers.delete(layer):shownLayers.add(layer);button.setAttribute('aria-pressed',String(shownLayers.has(layer)));draw();});layerControls.append(button);}
+  const activeFocus=el('button','Focus Active','btn btn-outline-secondary');activeFocus.type='button';activeFocus.addEventListener('click',()=>{const node=visible.find(n=>n.type!=='root'&&Number(n.layer||0)===0)||visible[0];if(node){inspect(node.id);world.querySelector(`[data-map-node="${node.id}"] button`)?.focus();}});layerControls.append(activeFocus);tray.append(layerControls);
   const live=el('p');live.dataset.liveActivity='1';live.setAttribute('role','status');const clock=el('small');clock.dataset.liveClock='1';clock.setAttribute('aria-live','off');const spend=el('p');spend.dataset.projectSpend='1';
   const history=el('details',undefined,'map-idea-history'),historyTitle=el('summary','Idea history'),historyList=el('ol');history.append(historyTitle,historyList);tray.append(live,clock,spend,map.querySelector('[data-map-evidence-help]'),history);
   header.append(heading,ticker,handle,tray);map.prepend(header);
@@ -57,9 +62,9 @@
     const findings=[...(snapshot.findings||[])].filter(f=>f.status!=='collecting');
     const preview=finding=>(finding.provisional?'Provisional idea: ':({'supported':'Evidence suggests: ','weakened':'Reconsidering: ','contradicted':'Counter-evidence: ','open':'Open question: '}[finding.status]||finding.status+': '))+finding.text;
     if(firstIdeas)for(const finding of findings)reading.add(preview(finding));
-    for(const node of snapshot.nodes.filter(n=>['dream_claim','question'].includes(n.type))){if(!knownIdeas.has(node.id)&&(!firstIdeas||!findings.length))reading.add((node.type==='question'?'Untested idea: ':'Idea to test: ')+(data(node).claim||node.title));knownIdeas.add(node.id);}
+    for(const node of snapshot.nodes.filter(n=>conceptTypes.includes(n.type))){if(!knownIdeas.has(node.id)&&(!firstIdeas||!findings.length))reading.add((node.type==='question'?'Untested idea: ':'Idea to test: ')+(data(node).claim||node.title));knownIdeas.add(node.id);}
     if(!firstIdeas)for(const finding of findings.reverse())reading.add(preview(finding));
-    firstIdeas=false;historyTitle.textContent='Idea history · '+reading.items.length+' queued';historyList.replaceChildren();for(const text of reading.history)historyList.append(el('li',text));
+    firstIdeas=false;historyTitle.textContent='Idea history · '+reading.items.length+' queued';historyList.replaceChildren();for(const text of reading.history){const item=el('li',text);const idea=snapshot.nodes.find(n=>conceptTypes.includes(n.type)&&text.includes(Engine.sentence(data(n).claim||n.title)));if(idea){const button=el('button','Focus idea','btn btn-outline-secondary');button.type='button';button.addEventListener('click',()=>{inspect(String(idea.id));world.querySelector(`[data-map-node="${idea.id}"] button`)?.focus();});item.append(button);}historyList.append(item);}
   }
   const side=map.querySelector('[data-map-inspector]');side.hidden=true;const closeSide=el('button','×','map-inspector-close btn');closeSide.type='button';closeSide.setAttribute('aria-label','Close details');closeSide.addEventListener('click',()=>{details(false);viewport.focus();});side.prepend(closeSide);
   let underlay=[],previousFocus=null,manualViewport=false;
@@ -85,6 +90,7 @@
     actions.querySelector('[data-map-screen-action=stop]').disabled=!(active||pending);
     actions.querySelector('[data-map-screen-action=step]').hidden=!active||!!snapshot.run.busy_since||snapshot.run.phase!=='evidence';
     const verificationReview=active&&snapshot.run.phase==='verification_review';
+    map.querySelector('[data-map-focus]').hidden=Number(snapshot.run.flow_version)>=2;
     for(const action of ['finish','repair']){const button=actions.querySelector(`[data-map-screen-action=${action}]`);button.hidden=!verificationReview;button.disabled=root.querySelector(`[data-research-action=research_${action}] button`).disabled||pending;}
     map.querySelector('[data-map-evidence-help]').textContent=Number(snapshot.run.flow_version)?'Choose a direction for the next remaining planned search. Priority and model budgets still apply.':Number(snapshot.run.rigour_version)===1?'Choose a direction or continue the planned search. The reserved Challenge always seeks counter-evidence, including when redirected.':'Choose a direction or continue the planned search. Each uses a remaining slot; at most two searches per run.';
     heading.querySelector('strong').textContent=`${projectName} · #${snapshot.run.id}`;
@@ -105,7 +111,7 @@
     if(event.altKey&&event.key.toLowerCase()==='s'){event.preventDefault();root.querySelector('[data-research-action=research_stop]')?.requestSubmit();return;}
     if(event.key==='Escape'){event.preventDefault();if(!tray.hidden){controls(false);handle.focus();}else if(!side.hidden){details(false);viewport.focus();}else showView('list');return;}
     if(event.key!=='Tab')return;
-    const stops=[...map.querySelectorAll('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),a[href],[tabindex="0"]')].filter(node=>node.getClientRects().length);
+    const stops=[...map.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],[tabindex="0"]')].filter(node=>node.getClientRects().length);
     const first=stops[0],last=stops.at(-1);
     if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}
     else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
@@ -152,7 +158,7 @@
       const node = nodes.find(item => item.id === card.dataset.mapNode)||visible.find(item=>item.id===card.dataset.mapNode);
       const input = card.querySelector('[data-map-claim]');
       if (input) { input.checked = checked.has(node.id); input.disabled = !reviewing(); }
-      card.dataset.excluded = String(node.type === 'dream_claim' && !(reviewing() ? checked.has(node.id) : Number(node.selected ?? 1) === 1));
+      card.dataset.excluded = String(Number(snapshot.run.flow_version)<2 && node.type === 'dream_claim' && !(reviewing() ? checked.has(node.id) : Number(node.selected ?? 1) === 1));
     }
     map.querySelector('[data-map-review]').hidden = !reviewing();
     map.querySelector('[data-map-selection-count]').textContent = `${checked.size} of ${inputs.length} claims selected · ${Number(snapshot.run.rigour_version)===1?'up to '+snapshot.run.normal_search_limit+' normal searches + 1 challenge':'up to two searches'}`;
@@ -165,7 +171,7 @@
     for(const node of graph.nodes)if(node.parent_id&&children.has(node.parent_id))children.get(node.parent_id).push(node);
     const active=pathIds(nodes.find(n=>n.id===selected)||nodes[0]);active.add(Engine.owner(snapshot,selected));
     visible=[];const visited=new Set();
-    function collect(node){if(!node||visited.has(node.id))return;visited.add(node.id);visible.push(node);if(!collapsed.has(node.id))for(const child of children.get(node.id)||[])collect(child);}
+    function collect(node){if(!node||visited.has(node.id))return;visited.add(node.id);if(node.type==='root'||shownLayers.has(Number(node.layer)||0))visible.push(node);if(!collapsed.has(node.id))for(const child of children.get(node.id)||[])collect(child);}
     collect(byId.get('root'));
     world.querySelector('svg')?.remove();
     for (const card of [...world.querySelectorAll('[data-map-node]')]) if (!visible.some(node => node.id === card.dataset.mapNode)) card.remove();
@@ -175,16 +181,17 @@
         card = el('article',undefined,'map-node'); card.dataset.mapNode=node.id;
         const button=el('button',undefined,'map-node-button'); button.type='button'; button.append(el('span','','map-node-type'),el('strong','','map-node-title'),el('span','','map-node-status')); card.append(button); world.append(card);
       }
-      card.dataset.type=node.type;card.dataset.working=String(!!node.working);card.dataset.activity=node.activity||''; card.dataset.status=node.status; card.dataset.path=String(active.has(node.id));
+      card.dataset.layer=String(node.layer||0);card.dataset.origin=node.origin||'';card.dataset.type=node.type;card.dataset.working=String(!!node.working);card.dataset.activity=node.activity||''; card.dataset.status=node.status; card.dataset.path=String(active.has(node.id));
       const priority=Number(node.path_weight||50);card.dataset.priority=priority>=75?'high':priority<40?'low':'normal';card.dataset.speculative=String(Number(node.speculative||0));
       const button=card.querySelector('button'); button.setAttribute('aria-pressed',String(node.id===selected));
       button.querySelector('.map-node-type').textContent=(node.type==='dream_claim'?'concept':node.type==='root'?'project':node.type.replaceAll('_',' ')) + (collapsed.has(node.id)?' · collapsed':'');
       button.querySelector('.map-node-title').textContent=node.title;
       const source=snapshot.sources.find(source => sourceIds(node).includes(Number(source.id)));
       button.querySelector('.map-node-status').textContent=source?`${source.domain} · ${links(node).map(id=>'claim #'+id).join(', ')}`:`${node.status}${node.confidence?' · '+node.confidence+' prior confidence':''}`;
-      if(['dream_claim','question'].includes(node.type))button.querySelector('.map-node-status').textContent+=(node.type==='question'?' · untested':'')+' · priority '+priority;
+      if(conceptTypes.includes(node.type))button.querySelector('.map-node-status').textContent+=(node.type==='question'?' · untested':'')+' · priority '+priority;
       if(node.type==='root'&&node.working)button.querySelector('.map-node-status').textContent=({planning:'Planning concepts',evidence:'Researching',discovery:'Discovering concepts',verification:'Checking findings'}[node.activity]||'Working');
-      if(['dream_claim','question'].includes(node.type)){button.querySelector('.map-node-status').textContent=(node.working?({planning:'Planning',evidence:'Researching',discovery:'Exploring',verification:'Checking'}[node.activity]||'Working')+' · ':node.verdict?node.verdict+' · ':'')+((node.source_ids||[]).length?node.source_ids.length+' sources · ':'')+'priority '+priority+(Number(node.speculative)?' · untested':'');}
+      if(conceptTypes.includes(node.type)){button.querySelector('.map-node-status').textContent=(node.working?({planning:'Planning',evidence:'Researching',discovery:'Exploring',verification:'Checking'}[node.activity]||'Working')+' · ':node.verdict?node.verdict+' · ':'')+((node.source_ids||[]).length?node.source_ids.length+' sources · ':'')+'priority '+priority+(Number(node.speculative)?' · untested':'');}
+      if(Number(snapshot.run.flow_version)>=2&&conceptTypes.includes(node.type)){button.querySelector('.map-node-status').textContent=`${['Active','Secondary','Tertiary'][Number(node.layer)||0]} · ${node.origin||'legacy'} · ${node.provenance_tag||'unchecked'}`;}
       if (node.type==='dream_claim' && !card.querySelector('[data-map-claim]')) {
         const label=el('label',undefined,'map-node-check'),input=el('input');input.type='checkbox';input.dataset.mapClaim=node.id;
         label.append(input,document.createTextNode(`Keep claim #${node.id}`));card.append(label);
@@ -199,7 +206,7 @@
     if(map.hidden)return false;
     const cards=new Map([...world.querySelectorAll('[data-map-node]')].map(card=>[card.dataset.mapNode,card]));
     for(const node of visible){let size=sizes.get(node.id);if(!size){const card=cards.get(node.id);size={w:card.offsetWidth||194,h:card.offsetHeight||110};sizes.set(node.id,size);}Object.assign(node,size);}
-    const linksToDraw=graph.edges.filter(e=>visited.has(e.from)&&visited.has(e.to));
+    const visibleIDs=new Set(visible.map(n=>n.id));const linksToDraw=graph.edges.filter(e=>visibleIDs.has(e.from)&&visibleIDs.has(e.to));
     // Layout inputs are structure and viewport only. Usage, stage badges and title updates do not move cards.
     const nextLayout=JSON.stringify([visible.map(n=>n.id).sort(),linksToDraw.map(e=>[e.from,e.to,e.kind]).sort(),viewport.clientWidth,viewport.clientHeight]);
     const layoutRan=nextLayout!==layoutSignature;
@@ -229,12 +236,15 @@
     const stages=snapshot.nodes.filter(n=>['plan_step','search','dead_end','synthesis'].includes(n.type)&&Engine.owner(snapshot,n.id)===node.id);
     // Keep open details and keyboard focus stable on heartbeats, token accounting and pending-request updates.
     const {working,activity,activity_text,status,...savedNode}=node;
+    const living=map.querySelector('[data-living-controls]');
+    if(living&&living.dataset.selectedNode!==node.id){living.dataset.selectedNode=node.id;for(const option of living.querySelector('[data-living-nodes]').options)option.selected=option.value===String(node.id);living.dispatchEvent(new Event('change'));}
     const stamp=JSON.stringify([savedNode,sources,passages,edges,stages,[...selectedSources].sort()]);
     if(inspector.dataset.stamp!==stamp){
       const opened=new Set([...inspector.querySelectorAll('details[open]')].map(item=>item.querySelector('summary')?.textContent));
       const title=el('h3',node.title),detail=el('p',`${node.type.replaceAll('_',' ')} · ${node.status}`,'map-inspector-status');
       inspector.replaceChildren(title,detail,el('p',node.dead_end_reason||node.content||'No details saved yet.','map-inspector-text'));
-      if(['dream_claim','question'].includes(node.type))inspector.append(el('p',`Priority ${node.path_weight||50} · ${node.model_tier||'primary'} model tier. ${node.weight_reason||'Priority is separate from evidence strength.'}${Number(node.speculative)?' Untested idea — may be wrong.':''}`));
+      if(conceptTypes.includes(node.type))inspector.append(el('p',`Priority ${node.path_weight||50} · ${node.model_tier||'primary'} model tier. ${node.weight_reason||'Priority is separate from evidence strength.'}${Number(node.speculative)?' Untested idea — may be wrong.':''}`));
+      if(Number(snapshot.run.flow_version)>=2)inspector.append(el('p',`${['Active','Secondary','Tertiary'][Number(node.layer)||0]} · ${node.origin||'legacy'} · ${node.provenance_tag||'unchecked'}${node.park_reason?' · Park reason: '+node.park_reason:''}`));
       if(stages.length){const history=el('details');history.append(el('summary','Planning, evidence and findings history'));for(const stage of stages)history.append(el('h4',stage.title+' · '+stage.status),el('p',stage.content));inspector.append(history);}
       const usage=el('p');usage.dataset.mapPathUsage='1';inspector.append(usage);
       if(linked.length)inspector.append(el('p',`Linked claims: ${linked.map(id=>'#'+id).join(', ')}`));
@@ -342,7 +352,7 @@
     const laidOut=draw();
     if(laidOut&&!manualViewport)requestAnimationFrame(()=>{fit();initialCamera=false;});
     if(count!==nodes.length){count=nodes.length;map.querySelector('[data-map-announcement]').textContent=`${snapshot.nodes.length} saved nodes · ${snapshot.sources.length} citation sources. ${snapshot.run.phase==='evidence'?'Choose the direction for your next search.':''}`;}
-    map.querySelector('[data-map-evidence-help]').hidden=snapshot.run.status!=='running'||snapshot.run.phase!=='evidence';
+    map.querySelector('[data-map-evidence-help]').hidden=Number(snapshot.run.flow_version)>=2||snapshot.run.status!=='running'||snapshot.run.phase!=='evidence';
     const strip=map.querySelector('[data-map-outcomes]');strip.replaceChildren();
     for(const verdict of ['supported','weakened','contradicted','open']){
       const latest=new Map();for(const node of nodes.filter(n=>n.type==='synthesis'&&n.parent_id&&nodes.some(c=>c.id===n.parent_id&&c.type==='dream_claim')))latest.set(node.parent_id,node);

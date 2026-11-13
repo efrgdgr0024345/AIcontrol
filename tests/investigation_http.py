@@ -92,6 +92,9 @@ namespace { $_SERVER['SCRIPT_NAME']='/aiadmin/loader.php';require getenv('TEST_A
                 self.assertEqual(status, 200)
                 csrf = re.search(r'name="csrf" value="([a-f0-9]+)"', page).group(1)
                 request('?view=research', dict(csrf=csrf, action='research_project', name='Concurrent research', brief='Stop while waiting'))
+                # Exercise the persisted version-one compatibility flow in this suite.
+                with sqlite3.connect(private/'research.sqlite') as db:
+                    db.execute('UPDATE research_projects SET exploration_first=0')
                 self.assertEqual(request('?research_api=1',dict(csrf='bad',action='research_settings',project_id='1'))[0],403)
                 status, _, body=request('?research_api=1',dict(csrf=csrf,action='research_settings',project_id='1',primary_model='gpt-4.1',spend_cap_usd='5',auto_search='1',growth_searches='3'))
                 self.assertEqual(status,200,body)

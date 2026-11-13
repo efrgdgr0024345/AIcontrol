@@ -25,7 +25,8 @@
   };
   const ids = value => [...new Set(list(value).map(key).filter(id => id !== null))].sort(compare);
   const sourceId = value => /^\d+$/.test(String(value)) && Number.isSafeInteger(Number(value)) ? Number(value) : value;
-  const isConcept = node => node && ['dream_claim', 'question'].includes(node.type);
+  const ideaTypes = ['dream_claim','question','model_idea','association','counter','edge_case','reframing'];
+  const isConcept = node => node && ideaTypes.includes(node.type);
   function index(snapshot) {
     const input = isObject(snapshot) ? snapshot : {}, ledger = object(input.ledger);
     const nodes = records(input.nodes), byId = new Map(nodes.map(node => [key(node.id), node]));
@@ -58,7 +59,7 @@
     const state = index(snapshot), {run, nodes: full, byId, sources, passages} = state;
     const nearest = id => resolveOwner(byId, id);
     const review = run.phase === 'dream_review';
-    const claims = full.filter(node => node.type === 'dream_claim' && (review || ![0, '0', false].includes(node.selected)));
+    const claims = full.filter(node => node.type === 'dream_claim' && (Number(run.flow_version)>=2 || review || ![0, '0', false].includes(node.selected)));
     const selectedClaims = new Set(claims.map(node => key(node.id)));
     const allConcepts = new Map(full.filter(isConcept).map(node => [key(node.id), node]));
     const edgeOwners = edge => allConcepts.has(key(edge.claim_id)) ? [key(edge.claim_id)] : [];
@@ -76,7 +77,7 @@
       }
       return null;
     }
-    const questions = full.filter(node => node.type === 'question' && selectedClaims.has(claimAncestor(node.id)));
+    const questions = full.filter(node => node.type !== 'dream_claim' && isConcept(node) && (Number(run.flow_version)>=2 || selectedClaims.has(claimAncestor(node.id))));
     const visibleIds = new Set([...claims, ...questions].map(node => key(node.id)));
     function parentFor(node) {
       const parent = nearest(node.parent_id);
@@ -110,7 +111,7 @@
     for (const request of pending) {
       const targetId = [request.path_node_id, request.claim_id, request.node_id].map(nearest).find(id => id !== 'root') || 'root';
       const targets = targetId === 'root' ? concepts.filter(node => node.type === 'dream_claim' && ![0, '0', false].includes(node.selected)) : [conceptsById.get(targetId)].filter(Boolean);
-      const activity = ['dream', 'exploration'].includes(request.kind) ? 'discovery' : request.kind === 'plan' ? 'planning' : request.kind === 'evidence' ? 'evidence' : 'verification';
+      const activity = ['dream', 'exploration','model_explore'].includes(request.kind) ? 'discovery' : request.kind === 'plan' ? 'planning' : request.kind === 'evidence' ? 'evidence' : 'verification';
       for (const node of targets) Object.assign(node, {working: true, activity, activity_text: request.activity || request.worker_role || request.kind});
       if (targetId === 'root' && !targets.length) Object.assign(root, {working: true, activity, activity_text: request.activity || request.worker_role || request.kind});
     }
@@ -177,7 +178,7 @@
       }
       return result;
     }
-    const projected = [root, ...ordered(selectedConcepts), ...details.sort((a, b) => compare(a.id, b.id))];
+    const projected = [root, ...ordered(selectedConcepts), ...details.sort((a, b) => compare(a.id, b.id))].map(node=>({...node,layer:Math.max(0,Math.min(2,Number(node.layer)||0)),origin:node.origin||(['source','passage','edge'].includes(node.type)?'web_evidence':null)}));
     const projectedIds = new Set(projected.map(node => node.id));
     const edges = projected.filter(node => node.parent_id && projectedIds.has(node.parent_id)).map(node => ({from: node.parent_id, to: node.id, kind: 'concept', weight: Number(node.path_weight) || 50}));
     for (const source of sources) {
@@ -185,7 +186,7 @@
       for (let a = 0; a < related.length; a++) for (let b = a + 1; b < related.length; b++) edges.push({from: related[a], to: related[b], kind: 'shared_source', source_id: sourceId(source.id), weight: 25});
     }
     edges.sort((a, b) => compare(a.from, b.from) || compare(a.to, b.to) || compare(a.kind, b.kind) || compare(a.source_id || '', b.source_id || ''));
-    const detailCount = filter === 'question' ? selectedConcepts.filter(node => node.type === 'question').length : filter === 'dream_claim' ? selectedConcepts.length : filter === 'all' ? selectedConcepts.length : details.length;
+    const detailCount = filter === 'question' ? selectedConcepts.filter(node => node.type !== 'dream_claim').length : filter === 'dream_claim' ? selectedConcepts.length : filter === 'all' ? selectedConcepts.length : details.length;
     const reasons = {all: review ? 'No concepts have been proposed for review yet.' : 'No selected concepts are available for this run yet.', dream_claim: 'No selected claims are available for this run yet.', question: 'No questions have grown from the selected concepts yet.', source: 'No sources are stored for the selected concepts yet.', passage: 'No passages are stored for the selected concepts yet.', edge: 'No evidence relations are stored for the selected concepts yet.', dead_end: 'No dead ends are stored for the selected concepts yet.', open: 'No open verdicts are stored for the selected concepts yet.'};
     return {nodes: projected, edges, filter, empty: detailCount === 0, empty_reason: detailCount === 0 ? reasons[filter] : '', detail_count: detailCount, concept_count: selectedConcepts.length};
   }

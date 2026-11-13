@@ -120,7 +120,7 @@ trait ResearchFlow
     }
     private function growthAfterSearch(int $id,string $next): string
     {
-        $run=$this->run($id);if(!(int)$run['flow_version'])return $next;
+        $run=$this->run($id);if(!(int)$run['flow_version']||(int)$run['flow_version']>=2)return $next;
         $index=(int)$run['evidence_index'];$pending=(int)$this->rows("SELECT COUNT(*) n FROM research_nodes WHERE run_id=? AND type='plan_step' AND status='pending'",[$id])[0]['n'];
         if($index%2===0&&(int)$run['explore_count']<2&&($pending>0||(int)$run['growth_remaining']>0)&&$this->requestBudget()['remaining']>=$pending+4){
             $this->execute('UPDATE research_runs SET resume_phase=? WHERE id=?',[$next,$id]);return 'exploration';

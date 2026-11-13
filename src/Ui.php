@@ -34,7 +34,8 @@ final class AIcontrolWorkspaceUi
   };
   const ids = value => [...new Set(list(value).map(key).filter(id => id !== null))].sort(compare);
   const sourceId = value => /^\d+$/.test(String(value)) && Number.isSafeInteger(Number(value)) ? Number(value) : value;
-  const isConcept = node => node && ['dream_claim', 'question'].includes(node.type);
+  const ideaTypes = ['dream_claim','question','model_idea','association','counter','edge_case','reframing'];
+  const isConcept = node => node && ideaTypes.includes(node.type);
   function index(snapshot) {
     const input = isObject(snapshot) ? snapshot : {}, ledger = object(input.ledger);
     const nodes = records(input.nodes), byId = new Map(nodes.map(node => [key(node.id), node]));
@@ -67,7 +68,7 @@ final class AIcontrolWorkspaceUi
     const state = index(snapshot), {run, nodes: full, byId, sources, passages} = state;
     const nearest = id => resolveOwner(byId, id);
     const review = run.phase === 'dream_review';
-    const claims = full.filter(node => node.type === 'dream_claim' && (review || ![0, '0', false].includes(node.selected)));
+    const claims = full.filter(node => node.type === 'dream_claim' && (Number(run.flow_version)>=2 || review || ![0, '0', false].includes(node.selected)));
     const selectedClaims = new Set(claims.map(node => key(node.id)));
     const allConcepts = new Map(full.filter(isConcept).map(node => [key(node.id), node]));
     const edgeOwners = edge => allConcepts.has(key(edge.claim_id)) ? [key(edge.claim_id)] : [];
@@ -85,7 +86,7 @@ final class AIcontrolWorkspaceUi
       }
       return null;
     }
-    const questions = full.filter(node => node.type === 'question' && selectedClaims.has(claimAncestor(node.id)));
+    const questions = full.filter(node => node.type !== 'dream_claim' && isConcept(node) && (Number(run.flow_version)>=2 || selectedClaims.has(claimAncestor(node.id))));
     const visibleIds = new Set([...claims, ...questions].map(node => key(node.id)));
     function parentFor(node) {
       const parent = nearest(node.parent_id);
@@ -119,7 +120,7 @@ final class AIcontrolWorkspaceUi
     for (const request of pending) {
       const targetId = [request.path_node_id, request.claim_id, request.node_id].map(nearest).find(id => id !== 'root') || 'root';
       const targets = targetId === 'root' ? concepts.filter(node => node.type === 'dream_claim' && ![0, '0', false].includes(node.selected)) : [conceptsById.get(targetId)].filter(Boolean);
-      const activity = ['dream', 'exploration'].includes(request.kind) ? 'discovery' : request.kind === 'plan' ? 'planning' : request.kind === 'evidence' ? 'evidence' : 'verification';
+      const activity = ['dream', 'exploration','model_explore'].includes(request.kind) ? 'discovery' : request.kind === 'plan' ? 'planning' : request.kind === 'evidence' ? 'evidence' : 'verification';
       for (const node of targets) Object.assign(node, {working: true, activity, activity_text: request.activity || request.worker_role || request.kind});
       if (targetId === 'root' && !targets.length) Object.assign(root, {working: true, activity, activity_text: request.activity || request.worker_role || request.kind});
     }
@@ -186,7 +187,7 @@ final class AIcontrolWorkspaceUi
       }
       return result;
     }
-    const projected = [root, ...ordered(selectedConcepts), ...details.sort((a, b) => compare(a.id, b.id))];
+    const projected = [root, ...ordered(selectedConcepts), ...details.sort((a, b) => compare(a.id, b.id))].map(node=>({...node,layer:Math.max(0,Math.min(2,Number(node.layer)||0)),origin:node.origin||(['source','passage','edge'].includes(node.type)?'web_evidence':null)}));
     const projectedIds = new Set(projected.map(node => node.id));
     const edges = projected.filter(node => node.parent_id && projectedIds.has(node.parent_id)).map(node => ({from: node.parent_id, to: node.id, kind: 'concept', weight: Number(node.path_weight) || 50}));
     for (const source of sources) {
@@ -194,7 +195,7 @@ final class AIcontrolWorkspaceUi
       for (let a = 0; a < related.length; a++) for (let b = a + 1; b < related.length; b++) edges.push({from: related[a], to: related[b], kind: 'shared_source', source_id: sourceId(source.id), weight: 25});
     }
     edges.sort((a, b) => compare(a.from, b.from) || compare(a.to, b.to) || compare(a.kind, b.kind) || compare(a.source_id || '', b.source_id || ''));
-    const detailCount = filter === 'question' ? selectedConcepts.filter(node => node.type === 'question').length : filter === 'dream_claim' ? selectedConcepts.length : filter === 'all' ? selectedConcepts.length : details.length;
+    const detailCount = filter === 'question' ? selectedConcepts.filter(node => node.type !== 'dream_claim').length : filter === 'dream_claim' ? selectedConcepts.length : filter === 'all' ? selectedConcepts.length : details.length;
     const reasons = {all: review ? 'No concepts have been proposed for review yet.' : 'No selected concepts are available for this run yet.', dream_claim: 'No selected claims are available for this run yet.', question: 'No questions have grown from the selected concepts yet.', source: 'No sources are stored for the selected concepts yet.', passage: 'No passages are stored for the selected concepts yet.', edge: 'No evidence relations are stored for the selected concepts yet.', dead_end: 'No dead ends are stored for the selected concepts yet.', open: 'No open verdicts are stored for the selected concepts yet.'};
     return {nodes: projected, edges, filter, empty: detailCount === 0, empty_reason: detailCount === 0 ? reasons[filter] : '', detail_count: detailCount, concept_count: selectedConcepts.length};
   }
@@ -536,7 +537,7 @@ document.addEventListener('submit', event => {
       if (card.dataset.serial !== serial) {
         const old = card.querySelector('input'); const checked = old ? old.checked : Number(claim.selected ?? 1) === 1;
         const focused = old === document.activeElement;
-        const data = claimData(claim), label = element('label', undefined, 'claim-selection');
+        const data = claimData(claim), label = element('label', undefined, 'claim-selection');label.hidden=Number(snapshot.run.flow_version)>=2;
         const checkbox = element('input'); checkbox.type = 'checkbox'; checkbox.name = 'claim_ids[]'; checkbox.value = claim.id; checkbox.checked = checked;
         label.append(checkbox, element('span', `Include claim #${claim.id}`));
         const badges = element('p', undefined, 'claim-badges'), confidence = element('span', `${data.confidence} prior confidence`, 'claim-badge'); confidence.dataset.confidence = data.confidence; badges.append(confidence);
@@ -544,7 +545,7 @@ document.addEventListener('submit', event => {
         const uncertainty = element('p'); uncertainty.append(element('strong', 'Uncertainty: '), document.createTextNode(data.uncertainty));
         const verify = element('p'); verify.append(element('strong', 'Verify: '), document.createTextNode(data.verify));
         card.replaceChildren(element('div', `PRIOR / ${String(claim.id).padStart(2, '0')}`, 'claim-number'), label, element('h4', data.claim), badges, uncertainty, verify);
-        if (Number(claim.selected ?? 1) === 0) card.append(element('p', 'Excluded from verification'));
+        if (Number(claim.selected ?? 1) === 0) card.append(element('p', Number(snapshot.run.flow_version)>=2?'Available in the living map; outside the current grounding selection.':'Excluded from verification'));
         const trail = element('div', undefined, 'claim-trail'), descendants = new Set([Number(claim.id)]);
         for (const node of snapshot.nodes) if (descendants.has(Number(node.parent_id))) {
           descendants.add(Number(node.id));
@@ -575,7 +576,7 @@ document.addEventListener('submit', event => {
     for (const claim of claims) {
       const verdict = snapshot.nodes.filter(node => node.type === 'synthesis' && Number(node.parent_id) === Number(claim.id)).at(-1);
       let data = {}; try { data = JSON.parse(verdict?.data_json || '{}'); } catch (_) { /* Legacy title. */ }
-      const outcome = Number(claim.selected ?? 1) === 0 ? 'Excluded from verification' : (data.verdict || verdict?.title.split(' · ')[0] || 'open');
+      const outcome = Number(claim.selected ?? 1) === 0 && Number(snapshot.run.flow_version)<2 ? 'Excluded from verification' : (data.verdict || verdict?.title.split(' · ')[0] || 'open');
       const tr = element('tr'), th = element('th', claimData(claim).claim); th.scope = 'row';
       const sources = claimSources(snapshot, claim.id).filter(source => safeUrl(source.url) && (!data.source_ids || data.source_ids.includes(Number(source.id))));
       const td = element('td', sources.length ? '' : 'No useful source');
@@ -590,13 +591,13 @@ document.addEventListener('submit', event => {
     root.querySelector('[data-dream-skeleton]').hidden = !generating || claims.length > 0;
     const plans = snapshot.nodes.filter(node => node.type === 'plan_step');
     root.querySelector('[data-live-progress]').textContent = snapshot.run.phase === 'evidence' ? `Verification search ${Math.min(Number(snapshot.run.evidence_index || 0) + 1, plans.length)} of ${plans.length} · ${snapshot.run.busy_since ? 'request in progress' : 'ready for the next step'}` : (review ? 'Dream complete — choose what to verify before continuing.' : '');
-    const stages = ['dream', 'dream_review', 'plan', 'evidence', Number(snapshot.run.rigour_version)===1?'verification':'reconciliation'];
+    const stages = Number(snapshot.run.flow_version)>=2?['dream','exploring','plan','evidence','verification']:['dream', 'dream_review', 'plan', 'evidence', Number(snapshot.run.rigour_version)===1?'verification':'reconciliation'];
     root.querySelectorAll('[data-phase-rail] li').forEach((item, index) => {
       item.removeAttribute('aria-current');
       if (stages[index] === snapshot.run.phase) item.setAttribute('aria-current', 'step');
       const done = snapshot.nodes.some(node => node.type === 'phase' && node.title.toLowerCase() === stages[index] && node.status === 'complete') || (stages[index] === 'dream_review' && stages.indexOf(snapshot.run.phase) > index);
       item.dataset.done = done ? '1' : '0';
-      const link = item.querySelector('a'); link.setAttribute('aria-disabled', String(!done)); link.tabIndex = done ? 0 : -1;
+      const link = item.querySelector('a');if(Number(snapshot.run.flow_version)>=2&&index===1)link.textContent='Explore (model only)'; link.setAttribute('aria-disabled', String(!done)); link.tabIndex = done ? 0 : -1;
     });
     const metrics = root.querySelector('[data-research-metrics]');
     metrics.querySelectorAll('strong').forEach((item, index) => item.textContent = [claims.length, snapshot.sources.length, snapshot.run.status][index]);
@@ -619,7 +620,7 @@ document.addEventListener('submit', event => {
     const current=snapshot.requests.filter(q=>q.status==='pending').at(-1);
     root.dataset.requestStarted=String(current?.created_at||snapshot.run.busy_since||0);
     root.dataset.providerHeartbeat=String(current?.heartbeat_at||0);
-    const activity=current?`${current.worker_role||current.kind} · ${current.model||snapshot.run.model||'model pending'} · ${current.activity||'Waiting for provider'}${current.output_chars?' · '+Number(current.output_chars).toLocaleString()+' response characters received':''}. Tokens are confirmed when the API finishes.`:snapshot.run.phase==='dream_review'?'Paused for your claim selection.':snapshot.run.phase==='verification_review'?'Verification finished. Review the findings, then finish or review gaps once.':snapshot.run.status==='running'?(snapshot.run.phase==='evidence'&&!Number(snapshot.run.auto_search)?'Paused for search direction. Continue the planned search or choose a path.':'Preparing the next specialist request…'):`${snapshot.run.status} · ${snapshot.run.stop_reason||'Saved findings are available.'}`;
+    const activity=current?`${current.worker_role||current.kind} · ${current.model||snapshot.run.model||'model pending'} · ${current.activity||'Waiting for provider'}${current.output_chars?' · '+Number(current.output_chars).toLocaleString()+' response characters received':''}. Tokens are confirmed when the API finishes.`:snapshot.run.phase==='exploring'?'Model-only exploration is ready. Choose branches to grow or lock with Evidence.':snapshot.run.phase==='dream_review'?'Paused for your claim selection.':snapshot.run.phase==='verification_review'?'Verification finished. Review the findings, then finish or review gaps once.':snapshot.run.status==='running'?(snapshot.run.phase==='evidence'&&!Number(snapshot.run.auto_search)?'Paused for search direction. Continue the planned search or choose a path.':'Preparing the next specialist request…'):`${snapshot.run.status} · ${snapshot.run.stop_reason||'Saved findings are available.'}`;
     document.querySelectorAll('[data-live-activity]').forEach(node=>{if(node.textContent!==activity)node.textContent=activity;});
     if(!snapshot.usage)return;
     const usage=snapshot.usage,project=usage.project;
@@ -662,6 +663,29 @@ document.addEventListener('submit', event => {
     // Source library passages remain available without requiring a supporting edge.
     root.querySelectorAll('[data-source-id]').forEach(card=>{card.querySelector('[data-source-passages]')?.remove();const group=element('section');group.dataset.sourcePassages='1';group.append(element('h5','Captured passages'));const passages=ledger.passages.filter(p=>Number(p.source_id)===Number(card.dataset.sourceId));for(const passage of passages)group.append(passageView(passage));const source=ledger.sources.find(s=>Number(s.id)===Number(card.dataset.sourceId));if(source?.shared_origin)group.append(element('p',source.shared_origin));if(!passages.length)group.append(element('p','No exact source passage was returned.'));card.append(group);});
   }
+  let livingSnapshot;
+  function renderLiving(snapshot) {
+    livingSnapshot=snapshot;
+    const types=['dream_claim','question','model_idea','association','counter','edge_case','reframing'];
+    const ideas=snapshot.nodes.filter(n=>types.includes(n.type));
+    for(const form of document.querySelectorAll('[data-living-controls]')){
+      const picker=form.querySelector('[data-living-nodes]'),stamp=JSON.stringify(ideas.map(n=>[n.id,n.title,n.layer,n.provenance_tag]));
+      if(picker.dataset.stamp!==stamp){const selected=new Set([...picker.selectedOptions].map(o=>o.value));picker.replaceChildren();for(const node of ideas){const option=document.createElement('option');option.value=node.id;option.textContent=`#${node.id} · ${node.title} · ${['Active','Secondary','Tertiary'][Number(node.layer)||0]} · ${node.provenance_tag||'legacy'}`;option.selected=selected.has(String(node.id));picker.append(option);}picker.dataset.stamp=stamp;}
+      const validate=()=>{
+        const action=form.elements.action.value,chosen=[...picker.selectedOptions].map(o=>ideas.find(n=>String(n.id)===o.value)).filter(Boolean);
+        const idle=snapshot.run.status==='running'&&!snapshot.run.busy_since&&['exploring','verification_review'].includes(snapshot.run.phase);
+        let reason='';
+        if(chosen.length>5)reason='Select at most five branches.';
+        else if(action!=='research_explore'&&!chosen.length)reason='Select at least one branch.';
+        else if(['research_explore','research_lock_evidence'].includes(action)&&!idle)reason='Wait for an idle exploration or verification-review stage; stopped/frozen runs cannot grow.';
+        else if(action==='research_lock_evidence'&&chosen.some(n=>Number(n.layer)>1||n.locked_at!==null||n.origin!=='model_latent'))reason='Lock only unlocked Active or Secondary model branches.';
+        else if(action==='research_lock_evidence'&&snapshot.budget.remaining<chosen.length+4)reason=`Lock-in needs ${chosen.length+4} available requests for planning, searches, extraction and verification.`;
+        else if(action==='research_explore'&&snapshot.budget.remaining<1)reason='Hourly request limit reached.';
+        form.querySelector('button').disabled=!!reason;form.querySelector('[data-living-help]').textContent=reason|| (action==='research_lock_evidence'?'This explicitly starts a bounded Evidence plan for the selected branches only. Unselected ideas stay on the map.':action==='research_explore'?'Model-only growth: provisional ideas, no web tools or sources.':'Metadata only: no AI call and no deleted nodes.');
+      };
+      form.onchange=validate;validate();
+    }
+  }
   function render(snapshot) {
     if (!root || !snapshot.run) return;
     const serial = JSON.stringify({...snapshot,server_time:undefined});
@@ -684,7 +708,8 @@ document.addEventListener('submit', event => {
     root.querySelector('[data-research-summary]').textContent = `${run.status} · ${review ? 'Dream complete — review claims' : run.phase} · ${run.token_input} input / ${run.token_output} output tokens confirmed${run.usage_unknown ? ' · some usage unknown' : ''}`;
     root.querySelector('[data-research-reason]').textContent = run.stop_reason;
     root.querySelector('[data-stop-control]').hidden = !(active || pending);
-    root.querySelector('[data-step-control]').hidden = !active || !!run.busy_since || review || run.phase === 'verification_review';
+    root.querySelector('[data-step-control]').hidden = !active || !!run.busy_since || review || ['verification_review','exploring'].includes(run.phase);
+    renderLiving(snapshot);
     const tree = root.querySelector('[data-research-tree]');
     const existing = new Map([...tree.querySelectorAll('[data-node-id]')].map(node => [Number(node.dataset.nodeId), node]));
     const parents = new Map();
@@ -747,7 +772,7 @@ document.addEventListener('submit', event => {
     return data;
   }
   async function advance(manual = false) {
-    if (!root || stepping || halted || root.dataset.status !== 'running' || root.dataset.busy === '1' || root.dataset.review === '1' || root.dataset.phase === 'verification_review') return;
+    if (!root || stepping || halted || root.dataset.status !== 'running' || root.dataset.busy === '1' || root.dataset.review === '1' || ['verification_review','exploring'].includes(root.dataset.phase)) return;
     if (!manual && root.dataset.phase === 'evidence' && root.dataset.autoSearch !== '1') return;
     const form = root.querySelector('[data-research-action=research_step]');
     stepping = true;
@@ -787,9 +812,9 @@ document.addEventListener('submit', event => {
         const url = new URL(form.getAttribute('action'), location.href); url.searchParams.set('project', snapshot.run.project_id); url.searchParams.set('run', snapshot.run.id); if(form.dataset.researchFromMap==='1')url.searchParams.set('map','1'); location.assign(url); return;
       }
       render(snapshot); error('');
-      if (action === 'research_continue' || form.hasAttribute('data-map-focus')) { halted = false; advance(); }
+      if (action === 'research_continue' || (action==='research_living'&&form.elements.action.value==='research_lock_evidence') || form.hasAttribute('data-map-focus')) { halted = false; advance(); }
     } catch (failure) { diagnosticFailure(action, failure); error(failure.message);  }
-    finally { button.disabled = false; root?.dispatchEvent(new Event('research:controls')); }
+    finally { button.disabled = false;if(livingSnapshot)renderLiving(livingSnapshot); root?.dispatchEvent(new Event('research:controls')); }
   });
   root?.addEventListener('click', event => {
     const quick = event.target.closest('[data-keep]');
@@ -928,6 +953,8 @@ document.addEventListener('submit', event => {
   const map = root.querySelector('[data-mindmap]'), world = map.querySelector('[data-map-world]');
   const viewport = map.querySelector('[data-map-viewport]'), space = map.querySelector('[data-map-space]');
   const inspector = map.querySelector('[data-map-inspector-content]');
+  const conceptTypes=['dream_claim','question','model_idea','association','counter','edge_case','reframing'];
+  const shownLayers=new Set([0,1,2]);
   const collapsed = new Set(), selectedSources = new Set();
   let positions=new Map(),layoutSignature='',initialCamera=true;const sizes=new Map(),reading=new Engine.ReadingQueue();
   const debug=new URLSearchParams(location.search).get('map_debug')==='1';
@@ -953,6 +980,9 @@ document.addEventListener('submit', event => {
   actions.append(screenButton('▶ Start research','start','btn-primary'),screenButton('■ Stop research','stop','btn-outline-danger'),screenButton('Continue planned search','step'),screenButton('Finish and freeze','finish','btn-primary'),screenButton('Review gaps once','repair'),screenButton('Project menu','menu'),screenButton('Details','details'),screenButton('List','list'));
   actions.children[0].setAttribute('aria-label','Start research');actions.children[1].setAttribute('aria-label','Stop research');actions.children[1].setAttribute('aria-keyshortcuts','Alt+S');
   tray.append(actions,map.querySelector('.mindmap-toolbar'),map.querySelector('[data-map-outcomes]'));
+  const layerControls=el('div',undefined,'map-layer-controls');layerControls.setAttribute('role','group');layerControls.setAttribute('aria-label','Map layers');
+  for(const [layer,label] of [[1,'Show Secondary'],[2,'Show Tertiary']]){const button=el('button',label,'btn btn-outline-secondary');button.type='button';button.setAttribute('aria-pressed','true');button.addEventListener('click',()=>{shownLayers.has(layer)?shownLayers.delete(layer):shownLayers.add(layer);button.setAttribute('aria-pressed',String(shownLayers.has(layer)));draw();});layerControls.append(button);}
+  const activeFocus=el('button','Focus Active','btn btn-outline-secondary');activeFocus.type='button';activeFocus.addEventListener('click',()=>{const node=visible.find(n=>n.type!=='root'&&Number(n.layer||0)===0)||visible[0];if(node){inspect(node.id);world.querySelector(`[data-map-node="${node.id}"] button`)?.focus();}});layerControls.append(activeFocus);tray.append(layerControls);
   const live=el('p');live.dataset.liveActivity='1';live.setAttribute('role','status');const clock=el('small');clock.dataset.liveClock='1';clock.setAttribute('aria-live','off');const spend=el('p');spend.dataset.projectSpend='1';
   const history=el('details',undefined,'map-idea-history'),historyTitle=el('summary','Idea history'),historyList=el('ol');history.append(historyTitle,historyList);tray.append(live,clock,spend,map.querySelector('[data-map-evidence-help]'),history);
   header.append(heading,ticker,handle,tray);map.prepend(header);
@@ -978,9 +1008,9 @@ document.addEventListener('submit', event => {
     const findings=[...(snapshot.findings||[])].filter(f=>f.status!=='collecting');
     const preview=finding=>(finding.provisional?'Provisional idea: ':({'supported':'Evidence suggests: ','weakened':'Reconsidering: ','contradicted':'Counter-evidence: ','open':'Open question: '}[finding.status]||finding.status+': '))+finding.text;
     if(firstIdeas)for(const finding of findings)reading.add(preview(finding));
-    for(const node of snapshot.nodes.filter(n=>['dream_claim','question'].includes(n.type))){if(!knownIdeas.has(node.id)&&(!firstIdeas||!findings.length))reading.add((node.type==='question'?'Untested idea: ':'Idea to test: ')+(data(node).claim||node.title));knownIdeas.add(node.id);}
+    for(const node of snapshot.nodes.filter(n=>conceptTypes.includes(n.type))){if(!knownIdeas.has(node.id)&&(!firstIdeas||!findings.length))reading.add((node.type==='question'?'Untested idea: ':'Idea to test: ')+(data(node).claim||node.title));knownIdeas.add(node.id);}
     if(!firstIdeas)for(const finding of findings.reverse())reading.add(preview(finding));
-    firstIdeas=false;historyTitle.textContent='Idea history · '+reading.items.length+' queued';historyList.replaceChildren();for(const text of reading.history)historyList.append(el('li',text));
+    firstIdeas=false;historyTitle.textContent='Idea history · '+reading.items.length+' queued';historyList.replaceChildren();for(const text of reading.history){const item=el('li',text);const idea=snapshot.nodes.find(n=>conceptTypes.includes(n.type)&&text.includes(Engine.sentence(data(n).claim||n.title)));if(idea){const button=el('button','Focus idea','btn btn-outline-secondary');button.type='button';button.addEventListener('click',()=>{inspect(String(idea.id));world.querySelector(`[data-map-node="${idea.id}"] button`)?.focus();});item.append(button);}historyList.append(item);}
   }
   const side=map.querySelector('[data-map-inspector]');side.hidden=true;const closeSide=el('button','×','map-inspector-close btn');closeSide.type='button';closeSide.setAttribute('aria-label','Close details');closeSide.addEventListener('click',()=>{details(false);viewport.focus();});side.prepend(closeSide);
   let underlay=[],previousFocus=null,manualViewport=false;
@@ -1006,6 +1036,7 @@ document.addEventListener('submit', event => {
     actions.querySelector('[data-map-screen-action=stop]').disabled=!(active||pending);
     actions.querySelector('[data-map-screen-action=step]').hidden=!active||!!snapshot.run.busy_since||snapshot.run.phase!=='evidence';
     const verificationReview=active&&snapshot.run.phase==='verification_review';
+    map.querySelector('[data-map-focus]').hidden=Number(snapshot.run.flow_version)>=2;
     for(const action of ['finish','repair']){const button=actions.querySelector(`[data-map-screen-action=${action}]`);button.hidden=!verificationReview;button.disabled=root.querySelector(`[data-research-action=research_${action}] button`).disabled||pending;}
     map.querySelector('[data-map-evidence-help]').textContent=Number(snapshot.run.flow_version)?'Choose a direction for the next remaining planned search. Priority and model budgets still apply.':Number(snapshot.run.rigour_version)===1?'Choose a direction or continue the planned search. The reserved Challenge always seeks counter-evidence, including when redirected.':'Choose a direction or continue the planned search. Each uses a remaining slot; at most two searches per run.';
     heading.querySelector('strong').textContent=`${projectName} · #${snapshot.run.id}`;
@@ -1026,7 +1057,7 @@ document.addEventListener('submit', event => {
     if(event.altKey&&event.key.toLowerCase()==='s'){event.preventDefault();root.querySelector('[data-research-action=research_stop]')?.requestSubmit();return;}
     if(event.key==='Escape'){event.preventDefault();if(!tray.hidden){controls(false);handle.focus();}else if(!side.hidden){details(false);viewport.focus();}else showView('list');return;}
     if(event.key!=='Tab')return;
-    const stops=[...map.querySelectorAll('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),a[href],[tabindex="0"]')].filter(node=>node.getClientRects().length);
+    const stops=[...map.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],[tabindex="0"]')].filter(node=>node.getClientRects().length);
     const first=stops[0],last=stops.at(-1);
     if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}
     else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
@@ -1073,7 +1104,7 @@ document.addEventListener('submit', event => {
       const node = nodes.find(item => item.id === card.dataset.mapNode)||visible.find(item=>item.id===card.dataset.mapNode);
       const input = card.querySelector('[data-map-claim]');
       if (input) { input.checked = checked.has(node.id); input.disabled = !reviewing(); }
-      card.dataset.excluded = String(node.type === 'dream_claim' && !(reviewing() ? checked.has(node.id) : Number(node.selected ?? 1) === 1));
+      card.dataset.excluded = String(Number(snapshot.run.flow_version)<2 && node.type === 'dream_claim' && !(reviewing() ? checked.has(node.id) : Number(node.selected ?? 1) === 1));
     }
     map.querySelector('[data-map-review]').hidden = !reviewing();
     map.querySelector('[data-map-selection-count]').textContent = `${checked.size} of ${inputs.length} claims selected · ${Number(snapshot.run.rigour_version)===1?'up to '+snapshot.run.normal_search_limit+' normal searches + 1 challenge':'up to two searches'}`;
@@ -1086,7 +1117,7 @@ document.addEventListener('submit', event => {
     for(const node of graph.nodes)if(node.parent_id&&children.has(node.parent_id))children.get(node.parent_id).push(node);
     const active=pathIds(nodes.find(n=>n.id===selected)||nodes[0]);active.add(Engine.owner(snapshot,selected));
     visible=[];const visited=new Set();
-    function collect(node){if(!node||visited.has(node.id))return;visited.add(node.id);visible.push(node);if(!collapsed.has(node.id))for(const child of children.get(node.id)||[])collect(child);}
+    function collect(node){if(!node||visited.has(node.id))return;visited.add(node.id);if(node.type==='root'||shownLayers.has(Number(node.layer)||0))visible.push(node);if(!collapsed.has(node.id))for(const child of children.get(node.id)||[])collect(child);}
     collect(byId.get('root'));
     world.querySelector('svg')?.remove();
     for (const card of [...world.querySelectorAll('[data-map-node]')]) if (!visible.some(node => node.id === card.dataset.mapNode)) card.remove();
@@ -1096,16 +1127,17 @@ document.addEventListener('submit', event => {
         card = el('article',undefined,'map-node'); card.dataset.mapNode=node.id;
         const button=el('button',undefined,'map-node-button'); button.type='button'; button.append(el('span','','map-node-type'),el('strong','','map-node-title'),el('span','','map-node-status')); card.append(button); world.append(card);
       }
-      card.dataset.type=node.type;card.dataset.working=String(!!node.working);card.dataset.activity=node.activity||''; card.dataset.status=node.status; card.dataset.path=String(active.has(node.id));
+      card.dataset.layer=String(node.layer||0);card.dataset.origin=node.origin||'';card.dataset.type=node.type;card.dataset.working=String(!!node.working);card.dataset.activity=node.activity||''; card.dataset.status=node.status; card.dataset.path=String(active.has(node.id));
       const priority=Number(node.path_weight||50);card.dataset.priority=priority>=75?'high':priority<40?'low':'normal';card.dataset.speculative=String(Number(node.speculative||0));
       const button=card.querySelector('button'); button.setAttribute('aria-pressed',String(node.id===selected));
       button.querySelector('.map-node-type').textContent=(node.type==='dream_claim'?'concept':node.type==='root'?'project':node.type.replaceAll('_',' ')) + (collapsed.has(node.id)?' · collapsed':'');
       button.querySelector('.map-node-title').textContent=node.title;
       const source=snapshot.sources.find(source => sourceIds(node).includes(Number(source.id)));
       button.querySelector('.map-node-status').textContent=source?`${source.domain} · ${links(node).map(id=>'claim #'+id).join(', ')}`:`${node.status}${node.confidence?' · '+node.confidence+' prior confidence':''}`;
-      if(['dream_claim','question'].includes(node.type))button.querySelector('.map-node-status').textContent+=(node.type==='question'?' · untested':'')+' · priority '+priority;
+      if(conceptTypes.includes(node.type))button.querySelector('.map-node-status').textContent+=(node.type==='question'?' · untested':'')+' · priority '+priority;
       if(node.type==='root'&&node.working)button.querySelector('.map-node-status').textContent=({planning:'Planning concepts',evidence:'Researching',discovery:'Discovering concepts',verification:'Checking findings'}[node.activity]||'Working');
-      if(['dream_claim','question'].includes(node.type)){button.querySelector('.map-node-status').textContent=(node.working?({planning:'Planning',evidence:'Researching',discovery:'Exploring',verification:'Checking'}[node.activity]||'Working')+' · ':node.verdict?node.verdict+' · ':'')+((node.source_ids||[]).length?node.source_ids.length+' sources · ':'')+'priority '+priority+(Number(node.speculative)?' · untested':'');}
+      if(conceptTypes.includes(node.type)){button.querySelector('.map-node-status').textContent=(node.working?({planning:'Planning',evidence:'Researching',discovery:'Exploring',verification:'Checking'}[node.activity]||'Working')+' · ':node.verdict?node.verdict+' · ':'')+((node.source_ids||[]).length?node.source_ids.length+' sources · ':'')+'priority '+priority+(Number(node.speculative)?' · untested':'');}
+      if(Number(snapshot.run.flow_version)>=2&&conceptTypes.includes(node.type)){button.querySelector('.map-node-status').textContent=`${['Active','Secondary','Tertiary'][Number(node.layer)||0]} · ${node.origin||'legacy'} · ${node.provenance_tag||'unchecked'}`;}
       if (node.type==='dream_claim' && !card.querySelector('[data-map-claim]')) {
         const label=el('label',undefined,'map-node-check'),input=el('input');input.type='checkbox';input.dataset.mapClaim=node.id;
         label.append(input,document.createTextNode(`Keep claim #${node.id}`));card.append(label);
@@ -1120,7 +1152,7 @@ document.addEventListener('submit', event => {
     if(map.hidden)return false;
     const cards=new Map([...world.querySelectorAll('[data-map-node]')].map(card=>[card.dataset.mapNode,card]));
     for(const node of visible){let size=sizes.get(node.id);if(!size){const card=cards.get(node.id);size={w:card.offsetWidth||194,h:card.offsetHeight||110};sizes.set(node.id,size);}Object.assign(node,size);}
-    const linksToDraw=graph.edges.filter(e=>visited.has(e.from)&&visited.has(e.to));
+    const visibleIDs=new Set(visible.map(n=>n.id));const linksToDraw=graph.edges.filter(e=>visibleIDs.has(e.from)&&visibleIDs.has(e.to));
     // Layout inputs are structure and viewport only. Usage, stage badges and title updates do not move cards.
     const nextLayout=JSON.stringify([visible.map(n=>n.id).sort(),linksToDraw.map(e=>[e.from,e.to,e.kind]).sort(),viewport.clientWidth,viewport.clientHeight]);
     const layoutRan=nextLayout!==layoutSignature;
@@ -1150,12 +1182,15 @@ document.addEventListener('submit', event => {
     const stages=snapshot.nodes.filter(n=>['plan_step','search','dead_end','synthesis'].includes(n.type)&&Engine.owner(snapshot,n.id)===node.id);
     // Keep open details and keyboard focus stable on heartbeats, token accounting and pending-request updates.
     const {working,activity,activity_text,status,...savedNode}=node;
+    const living=map.querySelector('[data-living-controls]');
+    if(living&&living.dataset.selectedNode!==node.id){living.dataset.selectedNode=node.id;for(const option of living.querySelector('[data-living-nodes]').options)option.selected=option.value===String(node.id);living.dispatchEvent(new Event('change'));}
     const stamp=JSON.stringify([savedNode,sources,passages,edges,stages,[...selectedSources].sort()]);
     if(inspector.dataset.stamp!==stamp){
       const opened=new Set([...inspector.querySelectorAll('details[open]')].map(item=>item.querySelector('summary')?.textContent));
       const title=el('h3',node.title),detail=el('p',`${node.type.replaceAll('_',' ')} · ${node.status}`,'map-inspector-status');
       inspector.replaceChildren(title,detail,el('p',node.dead_end_reason||node.content||'No details saved yet.','map-inspector-text'));
-      if(['dream_claim','question'].includes(node.type))inspector.append(el('p',`Priority ${node.path_weight||50} · ${node.model_tier||'primary'} model tier. ${node.weight_reason||'Priority is separate from evidence strength.'}${Number(node.speculative)?' Untested idea — may be wrong.':''}`));
+      if(conceptTypes.includes(node.type))inspector.append(el('p',`Priority ${node.path_weight||50} · ${node.model_tier||'primary'} model tier. ${node.weight_reason||'Priority is separate from evidence strength.'}${Number(node.speculative)?' Untested idea — may be wrong.':''}`));
+      if(Number(snapshot.run.flow_version)>=2)inspector.append(el('p',`${['Active','Secondary','Tertiary'][Number(node.layer)||0]} · ${node.origin||'legacy'} · ${node.provenance_tag||'unchecked'}${node.park_reason?' · Park reason: '+node.park_reason:''}`));
       if(stages.length){const history=el('details');history.append(el('summary','Planning, evidence and findings history'));for(const stage of stages)history.append(el('h4',stage.title+' · '+stage.status),el('p',stage.content));inspector.append(history);}
       const usage=el('p');usage.dataset.mapPathUsage='1';inspector.append(usage);
       if(linked.length)inspector.append(el('p',`Linked claims: ${linked.map(id=>'#'+id).join(', ')}`));
@@ -1263,7 +1298,7 @@ document.addEventListener('submit', event => {
     const laidOut=draw();
     if(laidOut&&!manualViewport)requestAnimationFrame(()=>{fit();initialCamera=false;});
     if(count!==nodes.length){count=nodes.length;map.querySelector('[data-map-announcement]').textContent=`${snapshot.nodes.length} saved nodes · ${snapshot.sources.length} citation sources. ${snapshot.run.phase==='evidence'?'Choose the direction for your next search.':''}`;}
-    map.querySelector('[data-map-evidence-help]').hidden=snapshot.run.status!=='running'||snapshot.run.phase!=='evidence';
+    map.querySelector('[data-map-evidence-help]').hidden=Number(snapshot.run.flow_version)>=2||snapshot.run.status!=='running'||snapshot.run.phase!=='evidence';
     const strip=map.querySelector('[data-map-outcomes]');strip.replaceChildren();
     for(const verdict of ['supported','weakened','contradicted','open']){
       const latest=new Map();for(const node of nodes.filter(n=>n.type==='synthesis'&&n.parent_id&&nodes.some(c=>c.id===n.parent_id&&c.type==='dream_claim')))latest.set(node.parent_id,node);
@@ -1975,6 +2010,21 @@ body.research-map-open { overflow:hidden; }
 .project-json-select { display:flex; flex-wrap:wrap; gap:10px; align-items:end; margin:18px 0; }.project-json-select label { width:100%; margin-bottom:0; }.project-json-select select { flex:1 1 240px; min-width:0; }
 .project-json-report,.project-json-checks { padding:14px; border:1px solid #e0e4ec; border-radius:8px; margin:12px 0; }.project-json-report>summary,.project-json-checks>summary { font-weight:600; cursor:pointer; }.project-json-text { font-family:monospace; font-size:.8rem; white-space:pre; }.project-json-downloads { display:flex; flex-wrap:wrap; gap:10px; margin-top:18px; }
 #project-json-inspector .btn { transition:none; }
+
+/* Muted layer surfaces retain opaque text for readable contrast. */
+.living-controls { display:grid; gap:.5rem; padding:1rem; border:1px solid #a8b1bf; border-radius:.5rem; margin-block:1rem; }
+.living-controls select,.living-controls textarea { max-width:100%; min-width:0; }
+.map-layer-controls { display:flex; gap:.5rem; flex-wrap:wrap; }
+.map-node[data-layer="1"] { background:#e8ebef!important; border-color:#a1a9b4!important; box-shadow:none; }
+.map-node[data-layer="2"] { background:#f4f5f7!important; border-color:#c2c7cf!important; box-shadow:none; }
+.map-node[data-layer="1"] .map-node-button,.map-node[data-layer="2"] .map-node-button { color:#263244!important; }
+.map-node[data-layer="1"] .map-node-type,.map-node[data-layer="2"] .map-node-type,.map-node[data-layer="1"] .map-node-status,.map-node[data-layer="2"] .map-node-status { color:#455266!important; }
+.living-controls .btn { transition:none; }
+.map-node[data-layer="1"]::after,.map-node[data-layer="2"]::after { content:""; position:absolute; inset:0 auto 0 0; width:4px; background:#68768a; pointer-events:none; }
+.map-node[data-layer="1"]::after { opacity:.6; }
+.map-node[data-layer="2"]::after { opacity:.35; }
+.map-node[data-layer="1"] .map-node-button[aria-pressed=true] { background:#e1e6ed; }
+.map-node[data-layer="2"] .map-node-button[aria-pressed=true] { background:#edf0f4; }
 
 AICONTROL_UI_CSS;
     }

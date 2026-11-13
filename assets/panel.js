@@ -251,7 +251,7 @@ document.addEventListener('submit', event => {
       if (card.dataset.serial !== serial) {
         const old = card.querySelector('input'); const checked = old ? old.checked : Number(claim.selected ?? 1) === 1;
         const focused = old === document.activeElement;
-        const data = claimData(claim), label = element('label', undefined, 'claim-selection');
+        const data = claimData(claim), label = element('label', undefined, 'claim-selection');label.hidden=Number(snapshot.run.flow_version)>=2;
         const checkbox = element('input'); checkbox.type = 'checkbox'; checkbox.name = 'claim_ids[]'; checkbox.value = claim.id; checkbox.checked = checked;
         label.append(checkbox, element('span', `Include claim #${claim.id}`));
         const badges = element('p', undefined, 'claim-badges'), confidence = element('span', `${data.confidence} prior confidence`, 'claim-badge'); confidence.dataset.confidence = data.confidence; badges.append(confidence);
@@ -259,7 +259,7 @@ document.addEventListener('submit', event => {
         const uncertainty = element('p'); uncertainty.append(element('strong', 'Uncertainty: '), document.createTextNode(data.uncertainty));
         const verify = element('p'); verify.append(element('strong', 'Verify: '), document.createTextNode(data.verify));
         card.replaceChildren(element('div', `PRIOR / ${String(claim.id).padStart(2, '0')}`, 'claim-number'), label, element('h4', data.claim), badges, uncertainty, verify);
-        if (Number(claim.selected ?? 1) === 0) card.append(element('p', 'Excluded from verification'));
+        if (Number(claim.selected ?? 1) === 0) card.append(element('p', Number(snapshot.run.flow_version)>=2?'Available in the living map; outside the current grounding selection.':'Excluded from verification'));
         const trail = element('div', undefined, 'claim-trail'), descendants = new Set([Number(claim.id)]);
         for (const node of snapshot.nodes) if (descendants.has(Number(node.parent_id))) {
           descendants.add(Number(node.id));
@@ -290,7 +290,7 @@ document.addEventListener('submit', event => {
     for (const claim of claims) {
       const verdict = snapshot.nodes.filter(node => node.type === 'synthesis' && Number(node.parent_id) === Number(claim.id)).at(-1);
       let data = {}; try { data = JSON.parse(verdict?.data_json || '{}'); } catch (_) { /* Legacy title. */ }
-      const outcome = Number(claim.selected ?? 1) === 0 ? 'Excluded from verification' : (data.verdict || verdict?.title.split(' · ')[0] || 'open');
+      const outcome = Number(claim.selected ?? 1) === 0 && Number(snapshot.run.flow_version)<2 ? 'Excluded from verification' : (data.verdict || verdict?.title.split(' · ')[0] || 'open');
       const tr = element('tr'), th = element('th', claimData(claim).claim); th.scope = 'row';
       const sources = claimSources(snapshot, claim.id).filter(source => safeUrl(source.url) && (!data.source_ids || data.source_ids.includes(Number(source.id))));
       const td = element('td', sources.length ? '' : 'No useful source');
@@ -305,13 +305,13 @@ document.addEventListener('submit', event => {
     root.querySelector('[data-dream-skeleton]').hidden = !generating || claims.length > 0;
     const plans = snapshot.nodes.filter(node => node.type === 'plan_step');
     root.querySelector('[data-live-progress]').textContent = snapshot.run.phase === 'evidence' ? `Verification search ${Math.min(Number(snapshot.run.evidence_index || 0) + 1, plans.length)} of ${plans.length} · ${snapshot.run.busy_since ? 'request in progress' : 'ready for the next step'}` : (review ? 'Dream complete — choose what to verify before continuing.' : '');
-    const stages = ['dream', 'dream_review', 'plan', 'evidence', Number(snapshot.run.rigour_version)===1?'verification':'reconciliation'];
+    const stages = Number(snapshot.run.flow_version)>=2?['dream','exploring','plan','evidence','verification']:['dream', 'dream_review', 'plan', 'evidence', Number(snapshot.run.rigour_version)===1?'verification':'reconciliation'];
     root.querySelectorAll('[data-phase-rail] li').forEach((item, index) => {
       item.removeAttribute('aria-current');
       if (stages[index] === snapshot.run.phase) item.setAttribute('aria-current', 'step');
       const done = snapshot.nodes.some(node => node.type === 'phase' && node.title.toLowerCase() === stages[index] && node.status === 'complete') || (stages[index] === 'dream_review' && stages.indexOf(snapshot.run.phase) > index);
       item.dataset.done = done ? '1' : '0';
-      const link = item.querySelector('a'); link.setAttribute('aria-disabled', String(!done)); link.tabIndex = done ? 0 : -1;
+      const link = item.querySelector('a');if(Number(snapshot.run.flow_version)>=2&&index===1)link.textContent='Explore (model only)'; link.setAttribute('aria-disabled', String(!done)); link.tabIndex = done ? 0 : -1;
     });
     const metrics = root.querySelector('[data-research-metrics]');
     metrics.querySelectorAll('strong').forEach((item, index) => item.textContent = [claims.length, snapshot.sources.length, snapshot.run.status][index]);
@@ -334,7 +334,7 @@ document.addEventListener('submit', event => {
     const current=snapshot.requests.filter(q=>q.status==='pending').at(-1);
     root.dataset.requestStarted=String(current?.created_at||snapshot.run.busy_since||0);
     root.dataset.providerHeartbeat=String(current?.heartbeat_at||0);
-    const activity=current?`${current.worker_role||current.kind} · ${current.model||snapshot.run.model||'model pending'} · ${current.activity||'Waiting for provider'}${current.output_chars?' · '+Number(current.output_chars).toLocaleString()+' response characters received':''}. Tokens are confirmed when the API finishes.`:snapshot.run.phase==='dream_review'?'Paused for your claim selection.':snapshot.run.phase==='verification_review'?'Verification finished. Review the findings, then finish or review gaps once.':snapshot.run.status==='running'?(snapshot.run.phase==='evidence'&&!Number(snapshot.run.auto_search)?'Paused for search direction. Continue the planned search or choose a path.':'Preparing the next specialist request…'):`${snapshot.run.status} · ${snapshot.run.stop_reason||'Saved findings are available.'}`;
+    const activity=current?`${current.worker_role||current.kind} · ${current.model||snapshot.run.model||'model pending'} · ${current.activity||'Waiting for provider'}${current.output_chars?' · '+Number(current.output_chars).toLocaleString()+' response characters received':''}. Tokens are confirmed when the API finishes.`:snapshot.run.phase==='exploring'?'Model-only exploration is ready. Choose branches to grow or lock with Evidence.':snapshot.run.phase==='dream_review'?'Paused for your claim selection.':snapshot.run.phase==='verification_review'?'Verification finished. Review the findings, then finish or review gaps once.':snapshot.run.status==='running'?(snapshot.run.phase==='evidence'&&!Number(snapshot.run.auto_search)?'Paused for search direction. Continue the planned search or choose a path.':'Preparing the next specialist request…'):`${snapshot.run.status} · ${snapshot.run.stop_reason||'Saved findings are available.'}`;
     document.querySelectorAll('[data-live-activity]').forEach(node=>{if(node.textContent!==activity)node.textContent=activity;});
     if(!snapshot.usage)return;
     const usage=snapshot.usage,project=usage.project;
@@ -377,6 +377,29 @@ document.addEventListener('submit', event => {
     // Source library passages remain available without requiring a supporting edge.
     root.querySelectorAll('[data-source-id]').forEach(card=>{card.querySelector('[data-source-passages]')?.remove();const group=element('section');group.dataset.sourcePassages='1';group.append(element('h5','Captured passages'));const passages=ledger.passages.filter(p=>Number(p.source_id)===Number(card.dataset.sourceId));for(const passage of passages)group.append(passageView(passage));const source=ledger.sources.find(s=>Number(s.id)===Number(card.dataset.sourceId));if(source?.shared_origin)group.append(element('p',source.shared_origin));if(!passages.length)group.append(element('p','No exact source passage was returned.'));card.append(group);});
   }
+  let livingSnapshot;
+  function renderLiving(snapshot) {
+    livingSnapshot=snapshot;
+    const types=['dream_claim','question','model_idea','association','counter','edge_case','reframing'];
+    const ideas=snapshot.nodes.filter(n=>types.includes(n.type));
+    for(const form of document.querySelectorAll('[data-living-controls]')){
+      const picker=form.querySelector('[data-living-nodes]'),stamp=JSON.stringify(ideas.map(n=>[n.id,n.title,n.layer,n.provenance_tag]));
+      if(picker.dataset.stamp!==stamp){const selected=new Set([...picker.selectedOptions].map(o=>o.value));picker.replaceChildren();for(const node of ideas){const option=document.createElement('option');option.value=node.id;option.textContent=`#${node.id} · ${node.title} · ${['Active','Secondary','Tertiary'][Number(node.layer)||0]} · ${node.provenance_tag||'legacy'}`;option.selected=selected.has(String(node.id));picker.append(option);}picker.dataset.stamp=stamp;}
+      const validate=()=>{
+        const action=form.elements.action.value,chosen=[...picker.selectedOptions].map(o=>ideas.find(n=>String(n.id)===o.value)).filter(Boolean);
+        const idle=snapshot.run.status==='running'&&!snapshot.run.busy_since&&['exploring','verification_review'].includes(snapshot.run.phase);
+        let reason='';
+        if(chosen.length>5)reason='Select at most five branches.';
+        else if(action!=='research_explore'&&!chosen.length)reason='Select at least one branch.';
+        else if(['research_explore','research_lock_evidence'].includes(action)&&!idle)reason='Wait for an idle exploration or verification-review stage; stopped/frozen runs cannot grow.';
+        else if(action==='research_lock_evidence'&&chosen.some(n=>Number(n.layer)>1||n.locked_at!==null||n.origin!=='model_latent'))reason='Lock only unlocked Active or Secondary model branches.';
+        else if(action==='research_lock_evidence'&&snapshot.budget.remaining<chosen.length+4)reason=`Lock-in needs ${chosen.length+4} available requests for planning, searches, extraction and verification.`;
+        else if(action==='research_explore'&&snapshot.budget.remaining<1)reason='Hourly request limit reached.';
+        form.querySelector('button').disabled=!!reason;form.querySelector('[data-living-help]').textContent=reason|| (action==='research_lock_evidence'?'This explicitly starts a bounded Evidence plan for the selected branches only. Unselected ideas stay on the map.':action==='research_explore'?'Model-only growth: provisional ideas, no web tools or sources.':'Metadata only: no AI call and no deleted nodes.');
+      };
+      form.onchange=validate;validate();
+    }
+  }
   function render(snapshot) {
     if (!root || !snapshot.run) return;
     const serial = JSON.stringify({...snapshot,server_time:undefined});
@@ -399,7 +422,8 @@ document.addEventListener('submit', event => {
     root.querySelector('[data-research-summary]').textContent = `${run.status} · ${review ? 'Dream complete — review claims' : run.phase} · ${run.token_input} input / ${run.token_output} output tokens confirmed${run.usage_unknown ? ' · some usage unknown' : ''}`;
     root.querySelector('[data-research-reason]').textContent = run.stop_reason;
     root.querySelector('[data-stop-control]').hidden = !(active || pending);
-    root.querySelector('[data-step-control]').hidden = !active || !!run.busy_since || review || run.phase === 'verification_review';
+    root.querySelector('[data-step-control]').hidden = !active || !!run.busy_since || review || ['verification_review','exploring'].includes(run.phase);
+    renderLiving(snapshot);
     const tree = root.querySelector('[data-research-tree]');
     const existing = new Map([...tree.querySelectorAll('[data-node-id]')].map(node => [Number(node.dataset.nodeId), node]));
     const parents = new Map();
@@ -462,7 +486,7 @@ document.addEventListener('submit', event => {
     return data;
   }
   async function advance(manual = false) {
-    if (!root || stepping || halted || root.dataset.status !== 'running' || root.dataset.busy === '1' || root.dataset.review === '1' || root.dataset.phase === 'verification_review') return;
+    if (!root || stepping || halted || root.dataset.status !== 'running' || root.dataset.busy === '1' || root.dataset.review === '1' || ['verification_review','exploring'].includes(root.dataset.phase)) return;
     if (!manual && root.dataset.phase === 'evidence' && root.dataset.autoSearch !== '1') return;
     const form = root.querySelector('[data-research-action=research_step]');
     stepping = true;
@@ -502,9 +526,9 @@ document.addEventListener('submit', event => {
         const url = new URL(form.getAttribute('action'), location.href); url.searchParams.set('project', snapshot.run.project_id); url.searchParams.set('run', snapshot.run.id); if(form.dataset.researchFromMap==='1')url.searchParams.set('map','1'); location.assign(url); return;
       }
       render(snapshot); error('');
-      if (action === 'research_continue' || form.hasAttribute('data-map-focus')) { halted = false; advance(); }
+      if (action === 'research_continue' || (action==='research_living'&&form.elements.action.value==='research_lock_evidence') || form.hasAttribute('data-map-focus')) { halted = false; advance(); }
     } catch (failure) { diagnosticFailure(action, failure); error(failure.message);  }
-    finally { button.disabled = false; root?.dispatchEvent(new Event('research:controls')); }
+    finally { button.disabled = false;if(livingSnapshot)renderLiving(livingSnapshot); root?.dispatchEvent(new Event('research:controls')); }
   });
   root?.addEventListener('click', event => {
     const quick = event.target.closest('[data-keep]');

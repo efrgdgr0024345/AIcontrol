@@ -1,5 +1,17 @@
 # Private admin vault and research projects
 
+## Exploration-first living map (2026-11-13 AWST)
+
+New runs use flow version 2: tool-free provisional seed → user-steered model
+exploration → explicit selected-branch Evidence lock-in → verification/review.
+This supersedes earlier new-run defaults in this document; existing runs keep
+their persisted workflow. Active/Secondary/Tertiary metadata never deletes ideas.
+Map and List provide model exploration, layer/park controls and scoped lock-in;
+Admin JSON and Markdown expose the stored provenance. See
+[EXPLORATION_FIRST.md](EXPLORATION_FIRST.md) for exact behavior, milestones,
+limitations and tests, and [the supplied plan](EXPLORATION_FIRST_PLAN.md).
+
+
 Open **Admin** using the existing workspace PIN session. No separate account or
 password is introduced. Everyone who can enter this testing workspace can manage
 its vault. Add or replace named entries (lowercase letters, digits, underscores).

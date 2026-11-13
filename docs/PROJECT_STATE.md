@@ -1,9 +1,35 @@
 # AIcontrol — current project state
 
+## Exploration-first living map (2026-11-13 AWST)
+
+New runs use flow version 2: tool-free provisional seed → user-steered model
+exploration → explicit selected-branch Evidence lock-in → verification/review.
+This supersedes earlier new-run defaults in this document; existing runs keep
+their persisted workflow. Active/Secondary/Tertiary metadata never deletes ideas.
+Map and List provide model exploration, layer/park controls and scoped lock-in;
+Admin JSON and Markdown expose the stored provenance. See
+[EXPLORATION_FIRST.md](EXPLORATION_FIRST.md) for exact behavior, milestones,
+limitations and tests, and [the supplied plan](EXPLORATION_FIRST_PLAN.md).
+
+
 This file is the repository handover for new chat sessions. Read it together with
 AGENTS.md and DEPLOYMENT_DEFAULTS.md. Git history and Actions identify exact code
 revisions; do not infer a live hosting revision from the latest source commit.
 
+
+Validation for this release: PHP 8.4.24 host/syntax checks, all seventeen PHP
+application/installer suites (including 40 new exploration assertions), all seven
+Python HTTP suites, 29 pure map-engine checks and the complete Chromium UI suite
+pass locally. New Chromium coverage uses real local PHP actions and synthetic
+provider replies for model growth, layer/reason controls, exact position memory,
+visibility, scoped Evidence through verification, disabled lock explanations,
+CSRF rejection, keyboard/no-JS actions and desktop/mobile axe. Prior legacy flow,
+Admin JSON, installation, brief-writing and workspace UI checks remain covered.
+A 300-node, three-layer pure projection/layout plus growth cloud check measured
+11.2 ms in one local run; DOM rendering is excluded and this is not a host/device
+performance guarantee. No billed AI call or live-host activation was performed;
+live billed validation remains host-side. Exact release CI must still be checked
+on the published commit.
 
 ## Stable research Map (current UI)
 

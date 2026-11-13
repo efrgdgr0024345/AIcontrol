@@ -10,12 +10,14 @@ require_once __DIR__.'/UsageMeter.php';
 require_once __DIR__.'/ResponseStream.php';
 require_once __DIR__.'/ResearchFlow.php';
 require_once __DIR__.'/ProviderGate.php';
+require_once __DIR__.'/ExplorationFlow.php';
 
 /** A persisted, bounded phase machine; no shell worker or automatic retry. */
 final class Investigation
 {
     use EvidenceLedger;
     use ResearchFlow;
+    use ExplorationFlow;
     private PDO $db;
     private string $directory;
     private int $transactionDepth=0;
@@ -51,6 +53,7 @@ final class Investigation
             CREATE INDEX IF NOT EXISTS research_request_window ON research_requests(created_at);');
         self::migrateLedger($db);
         self::migrateFlow($db);
+        self::migrateExploration($db);
         $columns = array_column($db->query('PRAGMA table_info(research_nodes)')->fetchAll(PDO::FETCH_ASSOC), 'name');
         if (!in_array('data_json', $columns, true)) $db->exec("ALTER TABLE research_nodes ADD COLUMN data_json TEXT NOT NULL DEFAULT '{}'");
         if (!in_array('selected', $columns, true)) $db->exec('ALTER TABLE research_nodes ADD COLUMN selected INTEGER NOT NULL DEFAULT 1');
@@ -106,24 +109,30 @@ final class Investigation
         $model = $this->credentials();
         return $this->transaction(function () use ($project, $model): int {
             $this->idle(); $this->budget();
-            $remaining=$this->requestBudget()['remaining'];if($remaining<6)throw new RuntimeException('At least six requests must remain to start a verified investigation.');
+            $remaining=$this->requestBudget()['remaining'];
             $settings=$this->rows('SELECT * FROM research_projects WHERE id=?', [$project])[0]??throw new RuntimeException('Research project not found.');
             $model=getenv('AICONTROL_OPENAI_MODEL')?:$settings['primary_model'];
+            if(!(int)$settings['exploration_first']&&$remaining<6)throw new RuntimeException('At least six requests must remain to start a verified investigation.');
             $this->execute("INSERT INTO research_runs(project_id,status,phase,started_at,model) VALUES(?,'running','dream',?,?)", [$project,time(),$model]);
             $this->execute("UPDATE research_runs SET rigour_version=1,verification_status='pending',normal_search_limit=? WHERE id=?",[$remaining>=7?2:1,(int)$this->db->lastInsertId()]);
             $newId=(int)$this->db->lastInsertId();
-            $this->execute('UPDATE research_runs SET flow_version=1,auto_search=?,growth_remaining=? WHERE id=?',[(int)$settings['auto_search'],(int)$settings['growth_searches'],$newId]);
+            $this->execute('UPDATE research_runs SET flow_version=?,exploration_first=?,auto_search=?,growth_remaining=? WHERE id=?',[(int)$settings['exploration_first']?2:1,(int)$settings['exploration_first'],(int)$settings['exploration_first']?0:(int)$settings['auto_search'],(int)$settings['exploration_first']?0:(int)$settings['growth_searches'],$newId]);
             return $newId;
         });
     }
     public function appendNode(int $run, ?int $parent, string $type, string $status, string $title, string $content = ''): int
     {
         if($type!=='learn'&&(int)$this->run($run)['rigour_version']===1)$this->writableLedger($run);
-        if (!in_array($type, ['phase','dream_claim','plan_step','search','source','dead_end','synthesis','learn','question'], true)
+        if (!in_array($type, ['phase','dream_claim','plan_step','search','source','dead_end','synthesis','learn','question','model_idea','association','counter','edge_case','reframing'], true)
             || !in_array($status,['pending','running','complete','failed','incomplete','uncertain','interrupted','dead_end'],true)) { throw new RuntimeException('Invalid research node.'); }
         if ($parent !== null && !$this->rows('SELECT id FROM research_nodes WHERE id=? AND run_id=?', [$parent,$run])) { throw new RuntimeException('Invalid node parent.'); }
         $this->execute('INSERT INTO research_nodes(run_id,parent_id,type,status,title,content,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)', [$run,$parent,$type,$status,mb_strcut($title,0,300,'UTF-8'),mb_strcut($content,0,24000,'UTF-8'),time(),time()]);
-        return (int)$this->db->lastInsertId();
+        $node=(int)$this->db->lastInsertId();
+        if((int)$this->run($run)['flow_version']>=2){
+            $origin=in_array($type,['source','search'],true)?'web_evidence':($type==='synthesis'?'synthesis':(in_array($type,self::ideaTypes(),true)?'model_latent':null));
+            $this->execute('UPDATE research_nodes SET origin=?,provenance_tag=? WHERE id=?',[$origin,$origin==='model_latent'?'provisional_model':null,$node]);
+        }
+        return $node;
     }
     public static function sourceUrl(string $url): bool
     {
@@ -272,6 +281,7 @@ final class Investigation
     {
         $this->transaction(function () use ($id, $selected): void {
             $run = $this->run($id);
+            if((int)$run['flow_version']>=2)throw new RuntimeException('Use model exploration or explicitly Lock in with Evidence on selected branches.');
             if ($run['status'] !== 'running' || $run['phase'] !== 'dream_review' || $run['busy'] !== null) {
                 throw new RuntimeException('This run is not awaiting claim review.');
             }
@@ -324,7 +334,7 @@ final class Investigation
             $base['instructions'] .= ' Plan phase: derive one or two concrete verification searches from these unchecked claims. Return steps; each claim_id must reference a supplied dream node ID. No tools.';
             $base['input'] .= "\nDream nodes: ".json_encode($this->activeClaims($snapshot),JSON_THROW_ON_ERROR);
             $base['text'] = self::jsonText(self::objectSchema(['steps'=>['type'=>'array','minItems'=>1,'maxItems'=>2,'items'=>self::objectSchema(['claim_id'=>['type'=>'integer'],'query'=>$string])]]));
-            if((int)$run['rigour_version']===1){$base['instructions'].=' Reserve an additional challenge search: target the strongest or highest-priority selected claim and seek counter-evidence or an alternative explanation.';$schema=$base['text']['format']['schema'];$schema['properties']['steps']['maxItems']=(int)$run['normal_search_limit'];$schema['properties']['challenge']=self::objectSchema(['claim_id'=>['type'=>'integer'],'query'=>$string]);$schema['required'][]='challenge';$base['text']=self::jsonText($schema);}
+            if((int)$run['rigour_version']===1){$base['instructions'].=' Reserve an additional challenge search: target the strongest or highest-priority selected claim and seek counter-evidence or an alternative explanation.';$schema=$base['text']['format']['schema'];$schema['properties']['steps']['maxItems']=(int)$run['normal_search_limit'];if((int)$run['flow_version']>=2){$schema['properties']['steps']['minItems']=count($this->activeClaims($snapshot));$base['instructions'].=' Include exactly one normal search for EVERY selected grounding target, plus the reserved challenge. No other branch may be searched.';}$schema['properties']['challenge']=self::objectSchema(['claim_id'=>['type'=>'integer'],'query'=>$string]);$schema['required'][]='challenge';$base['text']=self::jsonText($schema);}
         } elseif ($phase === 'evidence') {
             $plans = array_values(array_filter($snapshot['nodes'],static fn(array $n):bool=>$n['type']==='plan_step'));
             $plan = $this->nextPlan($run,$snapshot);
@@ -399,12 +409,15 @@ final class Investigation
     {
         return ProviderGate::run($this->directory,fn()=> $this->stepWork($id,$focusNode,$note));
     }
-    private function stepWork(int $id, ?int $focusNode = null, string $note = ''): array
+    private function stepWork(int $id, ?int $focusNode = null, string $note = '', ?array $explore=null): array
     {
         $this->credentials();
         if(strlen($note)>1000||!mb_check_encoding($note,'UTF-8')||($focusNode===null&&$note!==''))throw new RuntimeException('Invalid focus note.');
-        $job = $this->transaction(function () use ($id,$focusNode,$note): ?array {
+        $job = $this->transaction(function () use ($id,$focusNode,$note,$explore): ?array {
             $run=$this->run($id);
+            if($explore!==null){$this->livingIdle($id);$this->livingNodes($id,$explore['ids'],true);$run['phase']='model_explore';}
+            elseif($run['phase']==='exploring')return null;
+            if((int)$run['flow_version']>=2&&$focusNode!==null)throw new RuntimeException('Evidence is restricted to the explicitly locked branches.');
             $focus=null;
             if($focusNode!==null){
                 if($run['status']!=='running'||$run['phase']!=='evidence'||$run['busy']!==null)throw new RuntimeException('Focus requires an idle Evidence phase with a remaining search.');
@@ -417,20 +430,20 @@ final class Investigation
             }
             if ($run['status']!=='running' || $run['busy']!==null || in_array($run['phase'],['dream_review','verification_review'],true)) { return null; }
             try { $this->budget(); } catch (Throwable $e) { $this->updateRunStatus($id,'incomplete',$e->getMessage()); return null; }
-            $phase=$run['phase'];$token=bin2hex(random_bytes(16));
+            $phase=$run['phase'];$this->execute('UPDATE research_runs SET phase=? WHERE id=?',[$phase,$id]);$token=bin2hex(random_bytes(16));
             $this->execute('UPDATE research_runs SET busy=?,busy_since=? WHERE id=?',[$token,time(),$id]);
-            $node=$this->appendNode($id,$focus!==null?(int)$focus['focus_node_id']:null,'phase','running',ucfirst($phase),$phase==='dream'?'Model’s prior thoughts — not yet checked.':'Phase request in progress.');
+            $node=$this->appendNode($id,$explore!==null?($explore['ids'][0]??null):($focus!==null?(int)$focus['focus_node_id']:null),'phase','running',ucfirst($phase),$phase==='dream'?'Model’s prior thoughts — not yet checked.':'Phase request in progress.');
             if($focus!==null)$this->execute('UPDATE research_nodes SET data_json=? WHERE id=?',[json_encode($focus,JSON_THROW_ON_ERROR),$node]);
-            $worker=$this->worker($run,$phase,$focus);
+            $worker=$this->worker($run,$phase,$focus);if($explore!==null){$worker['path']=$explore['ids'][0]??null;$worker['role']='Model-only '.$explore['mode'];$this->execute('UPDATE research_nodes SET data_json=? WHERE id=?',[json_encode($explore,JSON_THROW_ON_ERROR),$node]);}
             $request=$this->request($id,$node,$phase);
             $this->execute('UPDATE research_requests SET model=?,claim_id=?,path_node_id=?,worker_role=?,activity=?,heartbeat_at=? WHERE id=?',[$worker['model'],$worker['claim'],$worker['path'],$worker['role'],'Preparing request',time(),$request]);
-            return compact('run','phase','token','node','request','focus','worker');
+            return compact('run','phase','token','node','request','focus','worker','explore');
         });
         if ($job===null) { return $this->getRunSnapshot($id); }
         Diagnostics::record('research.phase.started',['run_id'=>$id,'phase'=>$job['phase']??'learn','node_id'=>$job['node'],'provider_request_id'=>$job['request']]);
         $dispatched=false;
         try {
-            $body=$this->phaseBody($job['run'],$job['phase'],$this->getRunSnapshot($id),$job['focus']);$body['model']=$job['worker']['model'];
+            $body=$job['explore']!==null?$this->explorationBody($job['run'],$job['explore']):$this->phaseBody($job['run'],$job['phase'],$this->getRunSnapshot($id),$job['focus']);$body['model']=$job['worker']['model'];
             if((int)$job['run']['flow_version'])$body['max_output_tokens']=3200;
             $allowed=$this->transaction(function()use($id,$job,$body):bool{
                 $run=$this->run($id);if($run['status']!=='running'||$run['busy']!==$job['token'])return false;
@@ -473,6 +486,7 @@ final class Investigation
     private function apply(array $job, array $result): void
     {
         $id=(int)$job['run']['id'];$parent=(int)$job['node'];$phase=$job['phase'];$next='';
+        if($phase==='model_explore'){$this->applyExploration($job,$result);return;}
         if($phase==='exploration'){$this->applyGrowth($job,$result);return;}
         if(in_array($phase,['extraction','verification','repair'],true)&& (int)$job['run']['rigour_version']===1){$this->applyLedger($job,$result);return;}
         if ($phase==='dream') {
@@ -496,10 +510,11 @@ final class Investigation
                 $node = $this->appendNode($id,$parent,'dream_claim','complete',$c['claim'],"Unchecked prior. Claim: ".$c['claim']."\nConfidence: ".$c['confidence']."\nUncertainty: ".$c['uncertainty']."\nVerify: ".$c['verify']."\nPriority: ".$c['priority']);
                 $this->execute('UPDATE research_nodes SET data_json=?,path_weight=? WHERE id=?',[json_encode($c,JSON_THROW_ON_ERROR),$c['priority']==='high'?85:55,$node]);
             }
-            $next='dream_review';
+            $next=(int)$job['run']['flow_version']>=2?'exploring':'dream_review';
         } elseif ($phase==='plan') {
             $data=json_decode($result['text'],true,32,JSON_THROW_ON_ERROR);
             if (!is_array($data['steps']??null) || count($data['steps'])<1 || count($data['steps'])>((int)$job['run']['rigour_version']===1?(int)$job['run']['normal_search_limit']:2)) { throw new RuntimeException('Invalid plan.'); }
+            if((int)$job['run']['flow_version']>=2){$expected=array_map('intval',array_column($this->activeClaims(['nodes'=>$this->rows('SELECT * FROM research_nodes WHERE run_id=?',[$id])]),'id'));$actual=array_column($data['steps'],'claim_id');sort($expected);sort($actual);if($actual!==$expected)throw new RuntimeException('Every locked branch requires one focused plan.');}
             foreach($data['steps'] as $s) {
                 $claim=$this->rows("SELECT id FROM research_nodes WHERE id=? AND run_id=? AND type='dream_claim' AND selected=1",[$s['claim_id']??0,$id]);
                 if (!$claim || !is_int($s['claim_id']??null) || !is_string($s['query']??null) || trim($s['query'])==='' || strlen($s['query'])>2000) { throw new RuntimeException('Invalid verification step.'); }
@@ -539,6 +554,7 @@ final class Investigation
             if($focus!==null)$this->execute("UPDATE research_nodes SET status='incomplete',content=content||? WHERE id=?",["\nThis planned slot was replaced by a focused search of node #".$focus['focus_node_id'].'. The original query was not executed.',$plan['id']]);
             $index=(int)$job['run']['evidence_index']+1;
             $this->execute('UPDATE research_runs SET evidence_index=? WHERE id=?',[$index,$id]);$next=$index<count($plans)?'evidence':((int)$job['run']['rigour_version']===1?'extraction':'reconciliation');$next=$this->growthAfterSearch($id,$next);
+            if((int)$job['run']['flow_version']>=2)$next=$this->rows("SELECT id FROM research_nodes WHERE run_id=? AND type='plan_step' AND status='pending'",[$id])?'evidence':'extraction';
         } else {
             $data=json_decode($result['text'],true,32,JSON_THROW_ON_ERROR);
             $claims=$this->rows("SELECT id FROM research_nodes WHERE run_id=? AND type='dream_claim' AND selected=1",[$id]);$ids=array_map('intval',array_column($claims,'id'));
@@ -634,7 +650,7 @@ final class Investigation
             $data=self::claimData($claim);$id=(int)$claim['id'];
             $out.="\n### Claim #".$id.': '.$data['claim']."\n\nUnchecked prior · ".$data['confidence']." confidence · ".$data['priority']." priority\n";
             $out.="\nUncertainty: ".$data['uncertainty']."\nVerification angle: ".$data['verify']."\n";
-            if(!(int)($claim['selected']??1))$out.="\nExcluded from this run's verification.\n";
+            if(!(int)($claim['selected']??1))$out.=(int)$r['flow_version']>=2?"\nAvailable in the living map; outside the current grounding selection.\n":"\nExcluded from this run's verification.\n";
             $descendants=[$id];
             foreach($s['nodes'] as $node)if(in_array((int)$node['parent_id'],$descendants,true)){
                 $descendants[]=(int)$node['id'];
@@ -659,11 +675,11 @@ final class Investigation
             $out.="\n## Claim assessment history\n";foreach($ledger['claim_versions'] as $version)$out.="\n- Claim #".$version['claim_id'].' · '.$version['status'].' · '.$version['created_by'].' · '.$version['rationale']."\n";
             $out.="\n## Verification findings (retained history)\n";foreach($s['nodes'] as $node)if($node['type']==='phase'&&in_array($node['title'],['Verification','Repair'],true)){$out.="\n### ".$node['title'].' · '.$node['status']."\n";$record=json_decode($node['data_json'],true)??[];foreach($record['defects']??[] as $defect)$out.='- '.$defect['severity'].' · '.$defect['kind'].' · '.$defect['description']."\n";foreach($record['calculations']??[] as $calculation)$out.='Arithmetic on supplied operands: '.json_encode($calculation,JSON_THROW_ON_ERROR)."\n";}
         }
-        $ideas=array_filter($s['nodes'],static fn(array $n):bool=>$n['type']==='question');
+        $ideas=array_filter($s['nodes'],static fn(array $n):bool=>in_array($n['type'],['question','model_idea','association','counter','edge_case','reframing'],true));
         if($ideas)$out.="\n## Untested questions — may be wrong\n";
-        foreach($ideas as $idea)$out.="\n### ".$idea['title']."\nPriority ".$idea['path_weight'].' · '.$idea['model_tier']." model tier\n".$idea['content']."\n";
+        foreach($ideas as $idea)$out.="\n### ".$idea['title']."\nLayer ".($idea['layer']??0).' · '.($idea['origin']??'legacy').' · '.($idea['provenance_tag']??'unchecked')."\nPark reason: ".($idea['park_reason']??'')."\nPriority ".$idea['path_weight'].' · '.$idea['model_tier']." model tier\n".$idea['content']."\n";
         $out.="\n## Map outline (node → parent)\n";
-        foreach($s['nodes'] as $node){$out.="\n- #".$node['id'].' → '.($node['parent_id']===null?'Run root':'#'.$node['parent_id']).' · '.$node['type'].' / '.$node['status'].' · '.$node['title']."\n";if($node['type']==='search'&&$node['data_json']!=='{}')$out.='  Focus: '.$node['data_json']."\n";}
+        foreach($s['nodes'] as $node){$out.="\n- #".$node['id'].' → '.($node['parent_id']===null?'Run root':'#'.$node['parent_id']).' · '.$node['type'].' / '.$node['status'].' · '.$node['title'].((int)$r['flow_version']>=2?' · layer '.($node['layer']??0).' · '.($node['origin']??'process').' · '.($node['provenance_tag']??'unassessed').' · locked_at '.($node['locked_at']??'none').' · park reason '.($node['park_reason']??''):'')."\n";if($node['type']==='search'&&$node['data_json']!=='{}')$out.='  Focus: '.$node['data_json']."\n";}
         return $out;
     }
 }

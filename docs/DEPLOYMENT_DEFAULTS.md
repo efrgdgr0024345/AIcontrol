@@ -20,13 +20,14 @@ private records persist on the hosting server.
 | Update detection | Signed 15-minute cache; browser checks local endpoint every 5 minutes; explicit refresh at most once/minute |
 | Loader replacement | Checked manifest bootstrap hash, atomic replacement and private verified backup |
 | Signing | Server-generated Ed25519; domain `AIcontrol/receipt/v1` plus zero byte |
+| New research investigations | Exploration-first `flow_version=2`: provisional model growth, explicit selected-branch Evidence lock-in; saved runs retain their flow |
 | Task/chat model | `gpt-4.1-mini`, overridden only by server `AICONTROL_OPENAI_MODEL` |
 | AI key | Server `AICONTROL_OPENAI_API_KEY`; never browser/source/chat |
 | Task agent bounds | One active run, three requests/hour, 1,000 output tokens/call |
 | Research bounds | One active investigation/pending request; 30 calls/hour shared with chat/Learn; 3,200 output tokens for new specialist flows, 1,600 for legacy/Learn; 60 seconds |
-| Verified investigation | Start needs six calls remaining; up to six searches including Challenge and growth, two creative passes, extraction/verifier; one optional repair |
+| Evidence lock-in | New flow: N selected branches need N+4 available calls (plan, N searches + Challenge, extraction, verifier); searches advance explicitly; one optional repair per round. Saved version-one runs retain prior bounds |
 | Research map | Stable structural concept layout and position memory; camera-only Fit and explicit Reset; evidence on demand; static activity, one fading idea sentence and on-demand controls; no extra provider calls |
-| Research models | Primary/high-impact/verifier GPT-4.1; economy GPT-4.1 mini; tool-free divergent thinker GPT-4.1 nano; server primary-model override retained |
+| Research models | Primary/high-impact/verifier GPT-4.1; economy GPT-4.1 mini; new model-only exploration uses the project primary model; saved version-one divergent thinker retains GPT-4.1 nano; server primary-model override retained |
 | Research spend cap | $5 USD tracked per project by default; adjustable in Project menu; saved API-usage estimates + conservative reservations, not an invoice cap |
 | Rate provenance | Official standard USD prices checked 2026-11-10, saved per request; missing/historical unpriced usage stays unknown |
 

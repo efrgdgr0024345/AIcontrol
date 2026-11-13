@@ -227,4 +227,16 @@ check('Reading backlog is bounded with an accessible history', () => {
   const queue = new ReadingQueue(); for (let i = 0; i < 150; i++) queue.add('Concept ' + i + '.');
   assert.equal(queue.items.length, 50); assert.equal(queue.history.length, 100);
 });
+check('Living ideas retain all layers and unchecked provenance after evidence selection',()=>{
+  const snapshot={run:{flow_version:2,phase:'exploring'},nodes:[{id:1,type:'dream_claim',selected:0,layer:2,origin:'model_latent',provenance_tag:'provisional_model'},...['model_idea','association','counter','edge_case','reframing'].map((type,i)=>({id:i+2,parent_id:i+1,type,layer:i%3,origin:'model_latent',provenance_tag:'provisional_model'}))]};
+  const graph=project(snapshot);assert.equal(graph.concept_count,6);for(let id=1;id<=6;id++){assert.equal(find(graph,id).origin,'model_latent');assert.equal(find(graph,id).provenance_tag,'provisional_model');assert.equal(owner(snapshot,id),String(id));}
+  assert.equal(project(snapshot,'question').detail_count,5);assert.equal(find(graph,1).layer,2);
+  const first=layout(sized(graph),graph.edges,900,600);snapshot.nodes[0].layer=0;const promoted=project(snapshot),after=layout(sized(promoted),promoted.edges,900,600,first.positions);for(const [id,p]of first.positions)assert.deepEqual(after.positions.get(id),p);
+});
+check('Larger living map projects deterministically and preserves old positions on growth',()=>{
+  const types=['model_idea','association','counter','edge_case','reframing'];
+  const snapshot={run:{flow_version:2,phase:'exploring'},nodes:Array.from({length:300},(_,i)=>({id:i+1,parent_id:i<5?null:Math.floor((i-5)/5)+1,type:types[i%5],layer:i%3,origin:'model_latent',title:'Provisional idea '+i}))};
+  const start=performance.now(),graph=project(snapshot),packed=layout(sized(graph),graph.edges,1000,700);assert.equal(graph.concept_count,300);assert.equal(packed.positions.size,301);noOverlap(packed);
+  snapshot.nodes.push({id:301,parent_id:6,type:'counter',layer:0,origin:'model_latent'});const grown=project(snapshot),next=layout(sized(grown),grown.edges,1000,700,packed.positions);for(const [id,p]of packed.positions)assert.deepEqual(next.positions.get(id),p);console.log(`Living map 300 nodes + growth: ${(performance.now()-start).toFixed(1)} ms (pure projection/layout, cloud CPU; excludes DOM)`);
+});
 console.log(`PASS: ${checks} synthetic-fixture projection, ownership, stable-layout and reading-queue checks`);

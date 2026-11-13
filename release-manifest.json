@@ -2,8 +2,8 @@
     "version": 2,
     "files": {
         "app.php": "031b76861c650413202b1c66a125b488e2986709cd99cce26f2f32762b850284",
-        "assets/panel.css": "a0c30134e867244112dd2cf81c0e925424a1f1ba3a76b7f7ca9a3ee6c7e40305",
-        "assets/panel.js": "e6397f0e6736ee0a0fda2dd0b820f2475676cc978b77421d17bb83a3d1ab5622",
+        "assets/panel.css": "916039c4fc3648489d22d9126511667ba6284cacfe20b38ebd866f627eeec1c7",
+        "assets/panel.js": "9b16c5e41bb0e08306de71662f1240bf6473c52cd59acb5bdde3b538f23fcbcd",
         "src/AccessPolicy.php": "44469fc613bb1704d857e06e6d70d484d44083b33753e99feaec93baed561cd8",
         "src/AdminData.php": "0175786a3f50530d0b95714362398bb9d101b7b5c44d777503904f376cf9d7c6",
         "src/AdminDataView.php": "2c868c1a39f190c9c066c9f14bd1f8cbd6c5b821403b2bdb87e525226d0d69ae",
@@ -11,27 +11,28 @@
         "src/Bootstrap.php": "68184329531c1526cb67b6e8068d98e238b3571feaccd4ff6c81d1f012245409",
         "src/BriefSuggestions.php": "6c56af22ddbc51295968db00a63babb45f53a2cbf822bdd67f94518e32f0dc11",
         "src/Diagnostics.php": "14bf1f35023ac1d035d2d5e5b0d5cea57cda2d8857e3d8e4a167752f13856072",
-        "src/EvidenceLedger.php": "ba7da6e55c332601b4828f51e81f232d9100ec580b0f2a0b63f783a48b94c41c",
+        "src/EvidenceLedger.php": "ff0e21311e5869648a35c3f99b5227c6f11db9f16e26b308d9323fbdbd8ebce0",
+        "src/ExplorationFlow.php": "c910957574062928352cdba48422b46e6f4238a210b89980aed557140b64ba7a",
         "src/HostingRequirements.php": "7d062f0a54c10dc206ce731d31ad7b7efb9993900d3f87c24a7bc5cb110e655b",
-        "src/Investigation.php": "1b0232c3d83f9e637c11f802f969e5783e064715519ec1402593747fa3227f3f",
-        "src/Panel.php": "d40da4eee0659c78d482027a344983e378590915fad91ca1d0bc668ca35d0d34",
+        "src/Investigation.php": "53f5758c1fab7042885c4f36820495afe9fbca379638d3e5632a2f20ffef0747",
+        "src/Panel.php": "4b94af32f84e14004ccb59696be237b6c02e1ef55d032217280c53f746473af8",
         "src/PanelStore.php": "65548cfa672db568b48e7ba98931ff776ffa3c8174de8bdf394958c97824a536",
         "src/PanelView.php": "d09268c03b5f1f45478d7d52d3d38ff79b96b7bb653b3124e3adb823a32698be",
         "src/PrivateStorage.php": "2b8dc6200eb49b248dfe2908de331a583d9ef0b3c324c8cfd2fc8159734c7836",
-        "src/ProjectInspector.php": "758ace1989c5a0e73276cc9b82eb9ebd7a7417effbbe43f10957c79e5a3b59cc",
+        "src/ProjectInspector.php": "cf246c57c31ad7cb020187c97979fe9acfa49c7fd4c0ee3a76ebe68e312414cb",
         "src/ProviderGate.php": "25e0df576173e46d97de4bf8dd655dd2d76075c7abe8283233bb36c6e1fa9703",
         "src/Research.php": "3e596c64b44a729f5eff07f8f7abc26492a2b4af70620b45246c2b70ed737f66",
-        "src/ResearchApi.php": "844856a176a21def0c944aee3a79b5df3f5d475960f9bcabf67ceba267f1abbf",
-        "src/ResearchFlow.php": "1aeab6af9b464ae14fd927ef99d3a7ba6ef629e05f52a9997cd7f1d518a8bc11",
-        "src/ResearchView.php": "1f8a980026435ed08aa140679c6b9696783174b758c60947eec61527823fff8d",
+        "src/ResearchApi.php": "94bb447855082108ca9b18e7af271f8d556a75a1a487c4fab1ad1ad8f9f0d0eb",
+        "src/ResearchFlow.php": "2c2df045f99039eba1f8dc3a96b0b2d9bfc9f52a5765afade0b121318e1e18c2",
+        "src/ResearchView.php": "9e6a7c28ab998515f4cb37abebeaa8c99d08f2525a34d06ce9829e7a6d368e67",
         "src/ResponseStream.php": "f1434215df77eecc5b8501f5e95ddf5cd581f92096eeb4d3a71ae120b125ea34",
-        "src/Ui.php": "f7c6582370521b8ef8bbb156b5068f5fac711c8c8b185e523285994f9ed8ee6f",
+        "src/Ui.php": "1736807a245e6c60e1f6b9c44805a25a29882eaaad224bee74615db3f2b74daf",
         "src/UsageMeter.php": "71b6b2af9377430023dd20b42ac48cce17c98ae0cae987c6ca557a90c8b7e48a",
         "src/Vault.php": "67293540cbcc1dcd8f97033789e9a9b1c9688f0462f2720cc6c1cd83ec3fbded",
         "src/WorkspaceView.php": "d0b63d0f5cd4df8c9e65fc875c90dcd1506ab39d96829cf5af3e9cf39ff02d94"
     },
     "bootstrap": {
         "path": "loader.php",
-        "sha256": "434435b855d6c657475d988739c317c7f6333aa3f23e9438030d174731fcc83d"
+        "sha256": "d5c3733029102b6c4e8c303c9b83cccbff64a9ae81ebda71ba9ebfd2ef44835a"
     }
 }

@@ -134,6 +134,14 @@ trait EvidenceLedger
             'defects'=>['type'=>'array','maxItems'=>6,'items'=>self::objectSchema(['claim_id'=>$nullableId,'severity'=>['type'=>'string','enum'=>['high','low']],'kind'=>['type'=>'string','enum'=>['unsupported_wording','citation_mismatch','scope','dependence','calculation','missing_passage','other']],'description'=>$string])],
             'calculations'=>['type'=>'array','maxItems'=>4,'items'=>self::objectSchema(['claim_id'=>['type'=>'integer'],'operation'=>['type'=>'string','enum'=>['add','subtract','multiply','divide']],'a'=>['type'=>'number'],'b'=>['type'=>'number'],'reported'=>['type'=>'number']])]]);
         $ledger=$this->getEvidenceLedger((int)$run['id']);$ledger['claims']=array_values(array_filter($ledger['claims'],static fn(array $c):bool=>(int)$c['selected']===1));
+        if((int)$run['flow_version']>=2){
+            $claimIds=array_map('intval',array_column($ledger['claims'],'id'));
+            $ledger['edges']=array_values(array_filter($ledger['edges'],static fn(array $e):bool=>in_array((int)$e['claim_id'],$claimIds,true)));
+            $ledger['claim_versions']=array_values(array_filter($ledger['claim_versions'],static fn(array $v):bool=>in_array((int)$v['claim_id'],$claimIds,true)));
+            $ledger['sources']=array_values(array_filter($ledger['sources'],static function(array $s)use($claimIds):bool{$m=json_decode($s['meta_json'],true)??[];return (bool)array_intersect($claimIds,array_map('intval',$m['claim_ids']??(isset($m['claim_id'])?[$m['claim_id']]:[])));}));
+            $sourceIds=array_map('intval',array_column($ledger['sources'],'id'));
+            $ledger['passages']=array_values(array_filter($ledger['passages'],static fn(array $p):bool=>in_array((int)$p['source_id'],$sourceIds,true)));
+        }
         // Send bounded evidence fields once; omit duplicate provider snippets and unchecked prior notes.
         $ledger['claims']=array_map(static fn(array $claim):array=>['id'=>(int)$claim['id'],'claim'=>self::claimData($claim)['claim']],$ledger['claims']);
         $ledger['sources']=array_map(static fn(array $source):array=>array_intersect_key($source,array_flip(['id','url','title','domain','retrieved_at','shared_origin','dependence_flag'])),$ledger['sources']);
@@ -203,7 +211,16 @@ trait EvidenceLedger
         $record=['assessments'=>$applied,'defects'=>$defects,'calculations'=>$checks,'evidence_version'=>(int)$job['run']['evidence_version'],'review_scope'=>'Grouped model check; not independent source validation.'];
         $this->execute('UPDATE research_nodes SET data_json=? WHERE id=?',[json_encode($record,JSON_THROW_ON_ERROR),$job['node']]);
         if($phase==='extraction')$this->execute("UPDATE research_runs SET phase='verification' WHERE id=?",[$id]);
-        else $this->execute("UPDATE research_runs SET phase='verification_review',verification_status='complete' WHERE id=?",[$id]);
+        else {
+            $this->execute("UPDATE research_runs SET phase='verification_review',verification_status='complete' WHERE id=?",[$id]);
+            if((int)$job['run']['flow_version']>=2)foreach($applied as $assessment){
+                $claim=$this->rows('SELECT data_json FROM research_nodes WHERE id=? AND run_id=?',[$assessment['claim_id'],$id])[0];
+                $original=json_decode($claim['data_json'],true)['grounding_node_id']??null;
+                $tag=$assessment['status']==='supported'?'grounded':'locked';
+                $this->execute('UPDATE research_nodes SET provenance_tag=? WHERE id=? AND run_id=?',[$tag,$assessment['claim_id'],$id]);
+                if($original)$this->execute('UPDATE research_nodes SET provenance_tag=? WHERE id=? AND run_id=?',[$tag,$original,$id]);
+            }
+        }
     }
 
 }
