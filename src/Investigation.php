@@ -132,6 +132,9 @@ final class Investigation
             $origin=in_array($type,['source','search'],true)?'web_evidence':($type==='synthesis'?'synthesis':(in_array($type,self::ideaTypes(),true)?'model_latent':null));
             $this->execute('UPDATE research_nodes SET origin=?,provenance_tag=? WHERE id=?',[$origin,$origin==='model_latent'?'provisional_model':null,$node]);
         }
+        $line=$parent!==null?($this->rows('SELECT knowledge_line_id FROM research_nodes WHERE id=? AND run_id=?',[$parent,$run])[0]['knowledge_line_id']??null):null;
+        if($line===null&&in_array($type,self::ideaTypes(),true))$line='line-'.$run.'-'.$node;
+        if($line!==null)$this->execute('UPDATE research_nodes SET knowledge_line_id=? WHERE id=?',[$line,$node]);
         return $node;
     }
     public static function sourceUrl(string $url): bool

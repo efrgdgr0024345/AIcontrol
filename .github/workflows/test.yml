@@ -39,6 +39,7 @@ jobs:
           php tests/rigour.php
           php tests/research_flow.php
           php tests/exploration.php
+          php tests/star_map.php
           php tests/map_steering.php
           python3 -B -m unittest -v tests/investigation_http.py
           python3 -B -m unittest -v tests/http_smoke.py

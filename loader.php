@@ -196,6 +196,7 @@ final class AIcontrolUi
       return result;
     }
     const projected = [root, ...ordered(selectedConcepts), ...details.sort((a, b) => compare(a.id, b.id))].map(node=>({...node,layer:Math.max(0,Math.min(2,Number(node.layer)||0)),origin:node.origin||(['source','passage','edge'].includes(node.type)?'web_evidence':null)}));
+    const projectedIndex=new Map(projected.map(n=>[n.id,n]));for(const node of projected){node.knowledge_line_id=node.type==='root'?'root':familyFor(node,projectedIndex);node.weight=Math.max(.1,Math.min(4,Number(node.weight)||1));}
     const projectedIds = new Set(projected.map(node => node.id));
     const edges = projected.filter(node => node.parent_id && projectedIds.has(node.parent_id)).map(node => ({from: node.parent_id, to: node.id, kind: 'concept', weight: Number(node.path_weight) || 50}));
     for (const source of sources) {
@@ -207,7 +208,8 @@ final class AIcontrolUi
     const reasons = {all: review ? 'No concepts have been proposed for review yet.' : 'No selected concepts are available for this run yet.', dream_claim: 'No selected claims are available for this run yet.', question: 'No questions have grown from the selected concepts yet.', source: 'No sources are stored for the selected concepts yet.', passage: 'No passages are stored for the selected concepts yet.', edge: 'No evidence relations are stored for the selected concepts yet.', dead_end: 'No dead ends are stored for the selected concepts yet.', open: 'No open verdicts are stored for the selected concepts yet.'};
     return {nodes: projected, edges, filter, empty: detailCount === 0, empty_reason: detailCount === 0 ? reasons[filter] : '', detail_count: detailCount, concept_count: selectedConcepts.length};
   }
-  function layout(nodes, edges, width, height, previous = new Map()) {
+  function layout(nodes, edges, width, height, previous = new Map(), options={}) {
+    if(options.constellations)return constellationLayout(nodes,edges,width,height,previous);
     const viewportW = Math.max(1, Number(width) || 1), viewportH = Math.max(1, Number(height) || 1), margin = 24, gapX = 24, gapY = 28;
     const rows = records(nodes).map(node => ({...node, id: key(node.id), w: Math.max(1, Number(node.w) || 194), h: Math.max(1, Number(node.h) || 84)}));
     if (!rows.length) return {positions: new Map(), width: viewportW, height: viewportH, reused: 0, new_count: 0};
@@ -278,6 +280,65 @@ final class AIcontrolUi
     }
     return {positions, width: Math.max(viewportW, ...[...positions.values()].map(node => node.x + node.w + margin)), height: Math.max(viewportH, ...[...positions.values()].map(node => node.y + node.h + margin)), reused, new_count: fresh.length};
   }
+  function familyFor(node,byId,seen=new Set()) {
+    if(!node||seen.has(String(node.id)))return 'root';
+    if(typeof node.knowledge_line_id==='string'&&node.knowledge_line_id.trim())return node.knowledge_line_id;
+    seen.add(String(node.id));const parent=byId.get(String(node.parent_id));
+    return !parent||parent.type==='root'?'line-'+node.id:familyFor(parent,byId,seen);
+  }
+  const hash=value=>{let n=2166136261;for(const c of String(value)){n^=c.charCodeAt(0);n=Math.imul(n,16777619);}return n>>>0;};
+  function constellationLayout(nodes,edges,width,height,previous=new Map()) {
+    const rows=records(nodes).map(n=>({...n,id:String(n.id),w:Number(n.w)||194,h:Number(n.h)||100})),byId=new Map(rows.map(n=>[n.id,n]));
+    const root=rows.find(n=>n.id==='root'||n.type==='root')||rows[0];if(!root)return {positions:new Map(),width,height,reused:0,new_count:0};
+    const memory=previous instanceof Map?previous:new Map(),positions=new Map(),buckets=new Map(),cell=280;
+    const keys=p=>{const result=[];for(let x=Math.floor((p.x-16)/cell);x<=Math.floor((p.x+p.w+16)/cell);x++)for(let y=Math.floor((p.y-16)/cell);y<=Math.floor((p.y+p.h+16)/cell);y++)result.push(x+':'+y);return result;};
+    const reserve=p=>{for(const k of keys(p)){if(!buckets.has(k))buckets.set(k,[]);buckets.get(k).push(p);}};
+    const collides=p=>{const seen=new Set();for(const k of keys(p))for(const q of buckets.get(k)||[])if(!seen.has(q)){seen.add(q);if(p.x<q.x+q.w+22&&p.x+p.w+22>q.x&&p.y<q.y+q.h+22&&p.y+p.h+22>q.y)return true;}return false;};
+    for(const [id,p]of memory)if(p&&[p.x,p.y,p.w,p.h].every(Number.isFinite)){reserve(p);if(byId.has(String(id)))positions.set(String(id),{...p,w:byId.get(String(id)).w,h:byId.get(String(id)).h});}
+    const reused=positions.size;
+    if(!positions.has(root.id)){const p={x:Math.max(0,width/2-root.w/2),y:Math.max(0,height/2-root.h/2),w:root.w,h:root.h};positions.set(root.id,p);reserve(p);}
+    const rp=positions.get(root.id),cx=rp.x+rp.w/2,cy=rp.y+rp.h/2;
+    const families=new Map();
+    for(const node of rows)if(node!==root){const family=familyFor(node,byId);node._family=family;if(!families.has(family))families.set(family,[]);families.get(family).push(node);}
+    const anchors=new Map();
+    for(const [family,members]of families){
+      const saved=members.filter(n=>positions.has(n.id)),angle=(hash(family)%360)*Math.PI/180,radius=440+hash(family+'radius')%230;
+      anchors.set(family,saved.length?{x:saved.reduce((s,n)=>s+positions.get(n.id).x,0)/saved.length,y:saved.reduce((s,n)=>s+positions.get(n.id).y,0)/saved.length,fixed:true}:{x:cx+Math.cos(angle)*radius,y:cy+Math.sin(angle)*radius*.8,fixed:false});
+    }
+    // A fixed six-pass, heavily damped constellation separation. Never a running simulation.
+    const groups=[...anchors.values()];for(let pass=0;pass<6;pass++)for(let i=0;i<groups.length;i++)for(let j=i+1;j<groups.length;j++){
+      const a=groups[i],b=groups[j],dx=b.x-a.x||.1,dy=b.y-a.y||.1,d=Math.hypot(dx,dy);if(d>=380)continue;const force=(380-d)*.08;if(!a.fixed){a.x-=dx/d*force;a.y-=dy/d*force;}if(!b.fixed){b.x+=dx/d*force;b.y+=dy/d*force;}
+    }
+    const pending=rows.filter(n=>!positions.has(n.id));
+    while(pending.length){const at=pending.findIndex(n=>!byId.has(String(n.parent_id))||positions.has(String(n.parent_id))),node=pending.splice(at<0?0:at,1)[0];
+      const parent=positions.get(String(node.parent_id)),anchor=anchors.get(node._family)||{x:cx,y:cy};let x=anchor.x,y=anchor.y;
+      if(parent&&String(node.parent_id)!==root.id&&byId.get(String(node.parent_id))?._family===node._family){const angle=(hash(node.id+'orbit')%360)*Math.PI/180;const attraction=Math.min(.28,.12*Math.max(.1,Math.min(4,Number(node.weight)||1)));x=(parent.x+Math.cos(angle)*270)*(1-attraction)+anchor.x*attraction;y=(parent.y+Math.sin(angle)*210)*(1-attraction)+anchor.y*attraction;}
+      let chosen=null;
+      for(let attempt=0;attempt<80;attempt++){const r=attempt?Math.sqrt(attempt)*130:0,a=attempt*2.3999632297;const p={x:x+Math.cos(a)*r,y:y+Math.sin(a)*r,w:node.w,h:node.h};if(!collides(p)){chosen=p;break;}}
+      if(!chosen){let bottom=Math.max(cy,...[...positions.values()].map(p=>p.y+p.h))+80;chosen={x,y:bottom,w:node.w,h:node.h};while(collides(chosen))chosen.y+=node.h+40;}
+      positions.set(node.id,chosen);reserve(chosen);
+    }
+    return {positions,width:Math.max(width,...[...positions.values()].map(p=>p.x+p.w)),height:Math.max(height,...[...positions.values()].map(p=>p.y+p.h)),reused,new_count:rows.length-reused};
+  }
+  function starPresentation(nodes,positions,camera,viewport,options={}) {
+    const byId=new Map(nodes.map(n=>[String(n.id),n])),focus=byId.get(String(camera.focusNodeId))||byId.get('root'),line=new Set(),seen=new Set();
+    let walk=focus;while(walk&&!seen.has(String(walk.id))){seen.add(String(walk.id));if(walk===focus||Number(walk.layer||0)===0)line.add(String(walk.id));walk=byId.get(String(walk.parent_id));}
+    const family=focus?familyFor(focus,byId):'root',span=Math.max(200,Math.hypot(viewport.width,viewport.height)/(camera.scale||1));
+    const out=new Map(),latest=Math.max(1,...nodes.map(n=>Number(n.id)||0)),zoomContext=Math.sqrt(Math.max(.04,Math.min(1,camera.scale||1)));
+    for(const node of nodes){
+      const id=String(node.id),p=positions.get(id);if(!p)continue;
+      const current=line.has(id),related=familyFor(node,byId)===family,layer=Math.max(0,Math.min(2,Number(node.layer)||0));
+      const priority=Math.max(.1,Math.min(1,(Number(node.path_weight)||50)/100)),weight=Math.max(.25,Math.min(2,Number(node.weight)||1));
+      const distance=Math.hypot(p.x+p.w/2-camera.x,p.y+p.h/2-camera.y)/span;
+      const falloff=1/(1+distance*distance*2.8),base=layer<=1?.82-(.82-.56)*layer:.56-(.56-.33)*(layer-1);
+      const receded=options.receded?.has(id)||options.dimLayers?.has(layer),recency=.88+.12*Math.max(0,Math.min(1,(Number(node.id)||latest)/latest));
+      const size=current?1:Math.max(.12,Math.min(.9,base*(.78+priority*.3)*Math.sqrt(weight)*(related?1:.82)*falloff*zoomContext*recency*(receded?.48:1)));
+      const brightness=current?1:Math.max(.06,Math.min(.88,(.28+size*.68)*falloff*(receded?.62:1)));
+      const colour=node.locked_at||node.origin==='web_evidence'||['source','passage','edge'].includes(node.type)?'#ffd38b':layer===2?'#b3bdcc':node.type==='association'?'#a8ebbf':['counter','edge_case','dead_end'].includes(node.type)?'#efbe7d':node.type==='reframing'?'#c8b7f0':'#9ddcec';
+      out.set(id,{size_factor:size,brightness_factor:brightness,logic_line:current,related,colour,distant:!current&&size<.4});
+    }
+    return out;
+  }
   function sentence(text) {
     const clean = String(text || '').replace(/https?:\/\/\S+/g, '').replace(/[*_#`]/g, '').replace(/\b(?:Completed search\.|No completed search reported\.)\s*/g, '').replace(/\s+/g, ' ').trim();
     const first = clean.match(/^.*?[.!?](?=\s+[A-Z]|$)/)?.[0] || clean;
@@ -289,7 +350,88 @@ final class AIcontrolUi
     add(text) { text = sentence(text); if (!text || this.seen.has(text)) return; this.seen.add(text); this.items.push(text); this.history.push(text); if (this.items.length > 50) this.items.shift(); if (this.history.length > 100) this.history.shift(); }
     tick(now, visible = true) { const elapsed = this.last ? now - this.last : 0; this.last = now; if (!visible || this.paused) { this.until += elapsed; return null; } if (!this.items.length || this.current && now < this.until) return null; this.current = this.items.shift(); this.until = now + Math.max(5000, Math.min(10000, this.current.split(/\s+/).length * 260 + 2000)); return this.current; }
   }
-  return {owner, project, layout, sentence, ReadingQueue};
+  return {owner, project, layout, constellationLayout, starPresentation, sentence, ReadingQueue};
+});
+
+/* DOM-free camera. World coordinates are read, never changed. */
+(function(scope,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else scope.AIcontrolCamera=api;})(typeof globalThis!=='undefined'?globalThis:this,()=>{
+  'use strict';
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)),finite=(v,fallback)=>Number.isFinite(Number(v))?Number(v):fallback;
+  // CSS cubic-bezier(.4,0,.2,1), solved in x so travel matches the specified easing.
+  function ease(t){let lo=0,hi=1,u=t;for(let i=0;i<12;i++){u=(lo+hi)/2;const x=3*(1-u)**2*u*.4+3*(1-u)*u*u*.2+u**3;if(x<t)lo=u;else hi=u;}return 3*(1-u)*u*u+u**3;}
+  class CameraController {
+    constructor(options={}){
+      this.state={x:0,y:0,scale:1,depth:0,focusNodeId:'root',growthScale:1};this.viewport={width:1,height:1};this.positions=new Map();
+      this.now=options.now||(()=>performance.now());this.raf=options.requestFrame||(f=>requestAnimationFrame(f));this.caf=options.cancelFrame||(id=>cancelAnimationFrame(id));
+      this.reducedMotion=options.reducedMotion||(()=>false);this.onChange=options.onChange||(()=>{});this.frame=null;this.transition=null;this.manualUntil=0;this.pendingGrowth=null;this.serial=0;this.destroyed=false;
+    }
+    setGeometry(positions,width,height){this.positions=positions;this.viewport={width:Math.max(1,finite(width,1)),height:Math.max(1,finite(height,1))};}
+    getState(){return {...this.state,transitioning:!!this.transition,transitionType:this.transition?.type||null,userNavigating:this.now()<this.manualUntil};}
+    emit(extra={}){this.onChange(this.getState(),extra);}
+    cancel(){if(this.frame!==null)this.caf(this.frame);this.frame=null;this.transition=null;this.serial++;}
+    move(target,{animate=true,duration=600,type='focus'}={}){
+      this.cancel();if(this.destroyed)return false;
+      const to={...this.state,...target,scale:clamp(finite(target.scale,this.state.scale),.06,2.4)};
+      if(![to.x,to.y,to.scale].every(Number.isFinite))return false;
+      if(!animate||this.reducedMotion()){this.state=to;this.emit({reducedMotion:!!animate&&this.reducedMotion()});this.flushGrowth();return true;}
+      const from={...this.state},start=this.now(),ticket=this.serial;
+      this.transition={type,start,duration};this.state.focusNodeId=to.focusNodeId;this.emit();
+      const tick=()=>{
+        if(ticket!==this.serial||this.destroyed)return;
+        const t=clamp((this.now()-start)/duration,0,1),p=ease(t);
+        for(const field of ['x','y','scale','depth','growthScale'])this.state[field]=from[field]+(to[field]-from[field])*p;
+        if(t>=1){this.state=to;this.transition=null;this.frame=null;this.emit();this.flushGrowth();}
+        else{this.emit();this.frame=this.raf(tick);}
+      };this.frame=this.raf(tick);return true;
+    }
+    focus(nodeId,{animate=true,fitPadding=.2}={}){
+      const p=this.positions.get(String(nodeId));if(!p)return false;
+      this.manualUntil=0;this.pendingGrowth=null;
+      const x=p.x+p.w/2,y=p.y+p.h/2,distance=Math.hypot(this.state.x-x,this.state.y-y)*this.state.scale;
+      const scale=Math.min(1,(this.viewport.width*(1-clamp(fitPadding,0,.4)*2))/p.w,(this.viewport.height*.7)/p.h);
+      return this.move({x,y,scale,focusNodeId:String(nodeId)},{animate,duration:clamp(450+distance*.13,450,750),type:'focus'});
+    }
+    fitGroup(nodeIds,{animate=true,fitPadding=.12}={}){
+      const ids=[...nodeIds].map(String),rows=ids.map(id=>this.positions.get(id)).filter(Boolean);if(!rows.length)return false;
+      const left=Math.min(...rows.map(p=>p.x)),right=Math.max(...rows.map(p=>p.x+p.w)),top=Math.min(...rows.map(p=>p.y)),bottom=Math.max(...rows.map(p=>p.y+p.h));
+      const padding=1-clamp(fitPadding,0,.4)*2,scale=Math.min(1,(this.viewport.width*padding)/(right-left||1),(this.viewport.height*padding)/(bottom-top||1));
+      this.manualUntil=0;this.pendingGrowth=null;return this.move({x:(left+right)/2,y:(top+bottom)/2,scale,focusNodeId:ids.includes(this.state.focusNodeId)?this.state.focusNodeId:ids[0]},{animate,type:'fit',duration:650});
+    }
+    interact(emit=true){this.cancel();this.manualUntil=this.now()+4000;if(emit)this.emit();}
+    panBy(dx,dy){this.interact(false);this.state.x-=finite(dx,0)/this.state.scale;this.state.y-=finite(dy,0)/this.state.scale;this.emit();}
+    zoomBy(factor,anchor={x:this.viewport.width/2,y:this.viewport.height/2}){
+      this.interact(false);const old=this.state.scale,next=clamp(old*finite(factor,1),.06,2.4),ax=finite(anchor.x,this.viewport.width/2)-this.viewport.width/2,ay=finite(anchor.y,this.viewport.height/2)-this.viewport.height/2;
+      this.state.x+=ax/old-ax/next;this.state.y+=ay/old-ay/next;this.state.scale=next;this.emit();
+    }
+    release(vx=0,vy=0){
+      if(this.reducedMotion()||Math.hypot(vx,vy)<.03)return;
+      this.cancel();let velocityX=clamp(vx,-1.5,1.5),velocityY=clamp(vy,-1.5,1.5),last=this.now(),elapsed=0;const ticket=this.serial;
+      this.transition={type:'momentum'};
+      const tick=()=>{if(ticket!==this.serial||this.destroyed)return;const now=this.now(),dt=Math.min(32,Math.max(1,now-last));last=now;elapsed+=dt;velocityX*=Math.exp(-dt/75);velocityY*=Math.exp(-dt/75);this.state.x-=velocityX*dt/this.state.scale;this.state.y-=velocityY*dt/this.state.scale;
+        if(elapsed>=300||Math.hypot(velocityX,velocityY)<.01){this.transition=null;this.frame=null;this.emit();}else{this.emit();this.frame=this.raf(tick);}};this.frame=this.raf(tick);
+    }
+    growthFor(nodeIds){
+      const rows=[...nodeIds].map(id=>this.positions.get(String(id))).filter(Boolean);if(!rows.length)return false;
+      const rx=Math.max(...rows.map(p=>Math.max(Math.abs(p.x-this.state.x),Math.abs(p.x+p.w-this.state.x)))),ry=Math.max(...rows.map(p=>Math.max(Math.abs(p.y-this.state.y),Math.abs(p.y+p.h-this.state.y))));
+      const factor=Math.min(1,this.viewport.width*.45/(rx||1),this.viewport.height*.45/(ry||1));return this.setGrowthScale(factor);
+    }
+    setGrowthScale(factor){
+      if(!Number.isFinite(factor)||factor<=0)return false;
+      // No zoom-in or repeated heartbeat adjustment; each growth pass has one gentle bound.
+      const target=Math.max(.06,Math.min(this.state.scale,factor));if(target>=this.state.scale*.98){this.pendingGrowth=null;return false;}
+      this.pendingGrowth=target;return this.flushGrowth();
+    }
+    flushGrowth(){
+      if(this.pendingGrowth===null||this.transition||this.now()<this.manualUntil||this.destroyed)return false;
+      const scale=this.pendingGrowth;this.pendingGrowth=null;return this.move({scale,growthScale:scale},{animate:true,duration:2200,type:'growth'});
+    }
+    restoreState(value){
+      if(!value||![value.x,value.y,value.scale].every(v=>typeof v==='number'&&Number.isFinite(v)))return false;
+      this.manualUntil=0;this.pendingGrowth=null;return this.move({x:value.x,y:value.y,scale:value.scale,depth:finite(value.depth,0),focusNodeId:typeof value.focusNodeId==='string'?value.focusNodeId:'root'},{animate:false,type:'restore'});
+    }
+    destroy(){this.cancel();this.destroyed=true;this.pendingGrowth=null;}
+  }
+  return {CameraController,ease};
 });
 
 (() => {
@@ -964,8 +1106,13 @@ document.addEventListener('submit', event => {
   const originLabel=value=>({model_latent:'Model idea',web_evidence:'Web evidence',user:'Your idea',synthesis:'Model assessment'}[value]||'Historical record');
   const provenanceLabel=value=>({provisional_model:'Provisional / unchecked',locked:'Locked for Evidence',grounded:'Grounded within source scope'}[value]||'Unchecked');
   const conceptTypes=['dream_claim','question','model_idea','association','counter','edge_case','reframing'];
-  const shownLayers=new Set([0,1,2]);
+  const dimLayers=new Set(),receded=new Set();
   const collapsed = new Set(), selectedSources = new Set();
+  let lastCameraPaint=0,framePressure=0;
+  let sceneCards=new Map(),edgeElements=[],presentation=new Map(),growthTimer=null,skipClick=false;
+  const motion=matchMedia('(prefers-reduced-motion: reduce)');
+  const camera=new window.AIcontrolCamera.CameraController({reducedMotion:()=>motion.matches,onChange:(state,extra)=>renderCamera(state,extra)});
+  map.camera=camera;
   let positions=new Map(),layoutSignature='',initialCamera=true;const sizes=new Map(),reading=new Engine.ReadingQueue();
   const debug=new URLSearchParams(location.search).get('map_debug')==='1';
   let snapshot, nodes = [], visible = [], selected = 'root', filter = 'all', scale = 1, width = 600, height = 400, count = -1;
@@ -991,8 +1138,11 @@ document.addEventListener('submit', event => {
   actions.children[0].setAttribute('aria-label','Start research');actions.children[1].setAttribute('aria-label','Stop research');actions.children[1].setAttribute('aria-keyshortcuts','Alt+S');
   tray.append(actions,map.querySelector('.mindmap-toolbar'),map.querySelector('[data-map-outcomes]'));
   const layerControls=el('div',undefined,'map-layer-controls');layerControls.setAttribute('role','group');layerControls.setAttribute('aria-label','Map layers');
-  for(const [layer,label] of [[1,'Show Secondary'],[2,'Show Tertiary']]){const button=el('button',label,'btn btn-outline-secondary');button.type='button';button.setAttribute('aria-pressed','true');button.addEventListener('click',()=>{shownLayers.has(layer)?shownLayers.delete(layer):shownLayers.add(layer);button.setAttribute('aria-pressed',String(shownLayers.has(layer)));draw();});layerControls.append(button);}
-  const activeFocus=el('button','Focus Active','btn btn-outline-secondary');activeFocus.type='button';activeFocus.addEventListener('click',()=>{const node=visible.find(n=>n.type!=='root'&&Number(n.layer||0)===0)||visible[0];if(node){inspect(node.id);world.querySelector(`[data-map-node="${node.id}"] button`)?.focus();}});layerControls.append(activeFocus);tray.append(layerControls);
+  for(const [layer,label] of [[1,'Dim Secondary'],[2,'Dim Tertiary']]){const button=el('button',label,'btn btn-outline-secondary');button.type='button';button.setAttribute('aria-pressed','false');button.addEventListener('click',()=>{dimLayers.has(layer)?dimLayers.delete(layer):dimLayers.add(layer);button.setAttribute('aria-pressed',String(dimLayers.has(layer)));renderCamera(camera.getState());});layerControls.append(button);}
+  const activeFocus=el('button','Focus Active','btn btn-outline-secondary');activeFocus.type='button';activeFocus.addEventListener('click',()=>{const node=visible.find(n=>n.type!=='root'&&Number(n.layer||0)===0)||visible[0];if(node){inspect(node.id);world.querySelector(`[data-map-node="${node.id}"] button`)?.focus({preventScroll:true});}});layerControls.append(activeFocus);tray.append(layerControls);
+  const navigator=el('div',undefined,'map-star-navigator'),findLabel=el('label','Find an idea or evidence card');findLabel.htmlFor='map-star-target';const targetPicker=el('select',undefined,'form-select');targetPicker.id='map-star-target';const focusButton=el('button','Focus selected star','btn btn-outline-secondary');focusButton.type='button';focusButton.addEventListener('click',()=>inspect(targetPicker.value));navigator.append(findLabel,targetPicker,focusButton);tray.append(navigator);
+  const legend=el('p','Brightest: current logic line. Other ideas recede; none are deleted. Drag to pan · wheel or +/− to zoom. Size and light indicate attention, not truth.','map-star-legend');legend.id='map-star-help';map.append(legend);viewport.setAttribute('aria-describedby','map-star-help');
+
   const live=el('p');live.dataset.liveActivity='1';live.setAttribute('role','status');const clock=el('small');clock.dataset.liveClock='1';clock.setAttribute('aria-live','off');const spend=el('p');spend.dataset.projectSpend='1';
   const history=el('details',undefined,'map-idea-history'),historyTitle=el('summary','Idea history'),historyList=el('ol');history.append(historyTitle,historyList);tray.append(live,clock,spend,map.querySelector('[data-map-evidence-help]'),history);
   header.append(heading,ticker,handle,tray);map.prepend(header);
@@ -1020,19 +1170,19 @@ document.addEventListener('submit', event => {
     if(firstIdeas)for(const finding of findings)reading.add(preview(finding));
     for(const node of snapshot.nodes.filter(n=>conceptTypes.includes(n.type))){if(!knownIdeas.has(node.id)&&(!firstIdeas||!findings.length))reading.add((node.type==='question'?'Untested idea: ':'Idea to test: ')+(data(node).claim||node.title));knownIdeas.add(node.id);}
     if(!firstIdeas)for(const finding of findings.reverse())reading.add(preview(finding));
-    firstIdeas=false;historyTitle.textContent='Idea history · '+reading.items.length+' queued';historyList.replaceChildren();for(const text of reading.history){const item=el('li',text);const idea=snapshot.nodes.find(n=>conceptTypes.includes(n.type)&&text.includes(Engine.sentence(data(n).claim||n.title)));if(idea){const button=el('button','Focus idea','btn btn-outline-secondary');button.type='button';button.addEventListener('click',()=>{inspect(String(idea.id));world.querySelector(`[data-map-node="${idea.id}"] button`)?.focus();});item.append(button);}historyList.append(item);}
+    firstIdeas=false;historyTitle.textContent='Idea history · '+reading.items.length+' queued';historyList.replaceChildren();for(const text of reading.history){const item=el('li',text);const idea=snapshot.nodes.find(n=>conceptTypes.includes(n.type)&&text.includes(Engine.sentence(data(n).claim||n.title)));if(idea){const button=el('button','Focus idea','btn btn-outline-secondary');button.type='button';button.addEventListener('click',()=>{inspect(String(idea.id));world.querySelector(`[data-map-node="${idea.id}"] button`)?.focus({preventScroll:true});});item.append(button);}historyList.append(item);}
   }
   const side=map.querySelector('[data-map-inspector]');side.hidden=true;const closeSide=el('button','×','map-inspector-close btn');closeSide.type='button';closeSide.setAttribute('aria-label','Close details');closeSide.addEventListener('click',()=>{details(false);viewport.focus();});side.prepend(closeSide);
   let underlay=[],previousFocus=null,manualViewport=false;
   function showView(next) {
-    view=next;map.hidden=view!=='map';root.querySelector('[data-investigate-list]').hidden=view!=='list';
+    view=next;map.hidden=view!=='map';if(view!=='map'){camera.cancel();clearTimeout(growthTimer);}root.querySelector('[data-investigate-list]').hidden=view!=='list';
     root.querySelectorAll('[data-investigate-view]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.investigateView===view)));
     if(view==='map'){
       controls(false);details(false);previousFocus=document.activeElement;document.body.append(map);document.body.classList.add('research-map-open');
       map.setAttribute('role','dialog');map.setAttribute('aria-modal','true');map.setAttribute('aria-label','Full screen research map');
       underlay=[...document.body.children].filter(node=>node!==map).map(node=>({node,inert:node.inert,hidden:node.getAttribute('aria-hidden')}));
       underlay.forEach(({node})=>{node.inert=true;node.setAttribute('aria-hidden','true');node.classList.add('map-underlay');});
-      viewport.focus({preventScroll:true});requestAnimationFrame(()=>{if(snapshot)draw();if(initialCamera){fit();initialCamera=false;}});
+      viewport.focus({preventScroll:true});requestAnimationFrame(()=>{if(snapshot)draw();if(initialCamera&&visible.length){fit(false);initialCamera=false;}});
     }else{
       underlay.forEach(({node,inert,hidden})=>{node.inert=inert;hidden===null?node.removeAttribute('aria-hidden'):node.setAttribute('aria-hidden',hidden);node.classList.remove('map-underlay');});underlay=[];
       document.body.classList.remove('research-map-open');home.after(map);map.removeAttribute('role');map.removeAttribute('aria-modal');
@@ -1046,6 +1196,7 @@ document.addEventListener('submit', event => {
     actions.querySelector('[data-map-screen-action=stop]').disabled=!(active||pending);
     actions.querySelector('[data-map-screen-action=step]').hidden=!active||!!snapshot.run.busy_since||snapshot.run.phase!=='evidence';
     const verificationReview=active&&snapshot.run.phase==='verification_review';
+    map.querySelector('[data-map-command=collapse]').textContent=Number(snapshot.run.flow_version)>=2?'Recede all':'Collapse all';map.querySelector('[data-map-command=expand]').textContent=Number(snapshot.run.flow_version)>=2?'Restore all':'Expand all';
     map.querySelector('[data-map-focus]').hidden=Number(snapshot.run.flow_version)>=2;
     for(const action of ['finish','repair']){const button=actions.querySelector(`[data-map-screen-action=${action}]`);button.hidden=!verificationReview;button.disabled=root.querySelector(`[data-research-action=research_${action}] button`).disabled||pending;}
     map.querySelector('[data-map-evidence-help]').textContent=Number(snapshot.run.flow_version)?'Choose a direction for the next remaining planned search. Priority and model budgets still apply.':Number(snapshot.run.rigour_version)===1?'Choose a direction or continue the planned search. The reserved Challenge always seeks counter-evidence, including when redirected.':'Choose a direction or continue the planned search. Each uses a remaining slot; at most two searches per run.';
@@ -1069,10 +1220,18 @@ document.addEventListener('submit', event => {
     if(event.key!=='Tab')return;
     const stops=[...map.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],[tabindex="0"]')].filter(node=>node.getClientRects().length);
     const first=stops[0],last=stops.at(-1);
-    if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}
-    else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
+    if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus({preventScroll:true});}
+    else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus({preventScroll:true});}
   });
-  viewport.addEventListener('wheel',()=>manualViewport=true,{passive:true});viewport.addEventListener('pointerdown',()=>manualViewport=true);viewport.addEventListener('keydown',event=>{if(['PageDown','PageUp','Home','End','ArrowDown','ArrowUp','ArrowLeft','ArrowRight'].includes(event.key))manualViewport=true;});
+  viewport.addEventListener('wheel',event=>{event.preventDefault();manualViewport=true;const r=viewport.getBoundingClientRect();if(event.shiftKey)camera.panBy(-event.deltaY,-event.deltaX);else camera.zoomBy(Math.exp(-Math.max(-160,Math.min(160,event.deltaY))*.002),{x:event.clientX-r.left,y:event.clientY-r.top});queueGrowth();},{passive:false});
+  viewport.addEventListener('scroll',()=>{if(viewport.scrollLeft||viewport.scrollTop){viewport.scrollLeft=0;viewport.scrollTop=0;}},{passive:true});
+  let drag=null;
+  viewport.addEventListener('pointerdown',event=>{if(event.button!==0||event.target.closest('input,label,a'))return;manualViewport=true;camera.interact();drag={id:event.pointerId,x:event.clientX,y:event.clientY,last:performance.now(),vx:0,vy:0,moved:false};});
+  viewport.addEventListener('pointermove',event=>{if(!drag||event.pointerId!==drag.id)return;const now=performance.now(),dx=event.clientX-drag.x,dy=event.clientY-drag.y,dt=Math.max(1,now-drag.last);if(Math.abs(dx)+Math.abs(dy)>3||drag.moved){if(!drag.moved)viewport.setPointerCapture(event.pointerId);drag.moved=true;camera.panBy(dx,dy);drag.vx=dx/dt;drag.vy=dy/dt;}drag.x=event.clientX;drag.y=event.clientY;drag.last=now;});
+  const release=event=>{if(!drag||event.pointerId!==drag.id)return;if(drag.moved){skipClick=true;setTimeout(()=>skipClick=false,0);camera.release(drag.vx,drag.vy);}if(viewport.hasPointerCapture(event.pointerId))viewport.releasePointerCapture(event.pointerId);drag=null;queueGrowth();};
+  viewport.addEventListener('pointerup',release);viewport.addEventListener('pointercancel',event=>{if(drag?.id===event.pointerId){drag=null;camera.cancel();}});
+  viewport.addEventListener('keydown',event=>{if(event.target!==viewport)return;const vectors={ArrowDown:[0,-70],ArrowUp:[0,70],ArrowLeft:[70,0],ArrowRight:[-70,0],PageDown:[0,-250],PageUp:[0,250]};if(vectors[event.key]){event.preventDefault();manualViewport=true;camera.panBy(...vectors[event.key]);queueGrowth();}if(['+','=','-','Home'].includes(event.key)){event.preventDefault();if(event.key==='Home')fit();else camera.zoomBy(event.key==='-'?1/1.2:1.2);}});
+  world.addEventListener('focusin',event=>{const card=event.target.closest('[data-map-node]');if(card&&event.target.matches('.map-node-button:focus-visible')&&card.dataset.mapNode!==selected){selected=card.dataset.mapNode;renderCamera(camera.getState());camera.focus(selected);}});
   root.querySelector('[data-mindmap-switch]').hidden = false;
   root.querySelectorAll('[data-investigate-view]').forEach(button => button.addEventListener('click', () => showView(button.dataset.investigateView)));
   function normalize() {
@@ -1097,11 +1256,30 @@ document.addEventListener('submit', event => {
     for(const edge of snapshot.ledger.edges)if(sourceIds(node).includes(Number(edge.source_id)))ids.add(Number(edge.claim_id));
     return [...ids].filter(id=>persisted.get(String(id))?.type==='dream_claim').sort((a,b)=>a-b);
   }
-  function setScale(value) {
-    scale = Math.max(.65, Math.min(2.2, value));
-    world.style.setProperty('--map-scale',scale); world.style.transform = `scale(${scale})`; space.style.width = `${width * scale}px`; space.style.height = `${height * scale}px`;
+  function geometry(){camera.setGeometry(positions,Math.max(280,viewport.clientWidth),Math.max(200,viewport.clientHeight));}
+  function setScale(value){camera.zoomBy(value/camera.getState().scale);}
+  function fit(animate=true){if(!map.hidden){geometry();camera.fitGroup(visible.map(n=>n.id),{animate,fitPadding:.1});}}
+  function queueGrowth(){clearTimeout(growthTimer);if(camera.pendingGrowth!==null&&!map.hidden)growthTimer=setTimeout(()=>{camera.flushGrowth();if(camera.pendingGrowth!==null)queueGrowth();},4200);}
+  function renderCamera(state,extra={}){
+    if(map.hidden||!visible.length)return;
+    const paintStarted=performance.now(),gap=paintStarted-lastCameraPaint;lastCameraPaint=paintStarted;if(state.transitioning&&gap>28&&gap<250)framePressure=Math.min(8,framePressure+1);else if(gap<23)framePressure=Math.max(0,framePressure-.25);
+    if(selected!==state.focusNodeId&&nodes.some(n=>n.id===state.focusNodeId)){selected=state.focusNodeId;updateInspector();}
+    scale=state.scale;const w=camera.viewport.width,h=camera.viewport.height;
+    world.style.transform=`translate(${w/2-state.x*scale}px, ${h/2-state.y*scale}px)`;world.querySelector('svg')?.style.setProperty('transform',`scale(${scale})`);
+    map.dataset.cameraTransition=state.transitionType||'idle';map.dataset.cameraFocus=state.focusNodeId;
+    if(extra.reducedMotion){world.classList.remove('map-short-crossfade');void world.offsetWidth;world.classList.add('map-short-crossfade');}
+    map.dataset.detailLevel=visible.length>300||framePressure>=2?'compact':'full';
+    presentation=Engine.starPresentation(visible,positions,state,camera.viewport,{receded,dimLayers});
+    const labelBoxes=[],labelHidden=new Set();
+    const labels=visible.filter(n=>{const light=presentation.get(n.id);return light&&!light.distant;}).sort((a,b)=>(b.id===state.focusNodeId)-(a.id===state.focusNodeId)||(presentation.get(b.id).logic_line?1:0)-(presentation.get(a.id).logic_line?1:0)||presentation.get(b.id).size_factor-presentation.get(a.id).size_factor);
+    for(const node of labels){const p=positions.get(node.id),light=presentation.get(node.id),x=(p.x+p.w/2-state.x)*scale+w/2,y=(p.y+p.h/2-state.y)*scale+h/2,f=light.size_factor,box={left:x-115*f,right:x+115*f,top:y+14*f,bottom:y+75*f};if(x < -230||x>w+230||y < -150||y>h+150)continue;if(labelBoxes.some(b=>box.left<b.right+4&&box.right+4>b.left&&box.top<b.bottom+4&&box.bottom+4>b.top))labelHidden.add(node.id);else labelBoxes.push(box);}
+    const cards=sceneCards;
+    for(const node of visible){const card=cards.get(node.id),light=presentation.get(node.id);if(!card||!light)continue;const p=positions.get(node.id);card.style.transform=`translate(${(p.x+p.w/2)*(scale-1)}px, ${(p.y+p.h/2)*(scale-1)}px)`;const sx=(p.x+p.w/2-state.x)*scale+w/2,sy=(p.y+p.h/2-state.y)*scale+h/2;if(!light.logic_line&&(sx < -230||sx>w+230||sy < -150||sy>h+150))continue;if(reviewing()&&node.type==='dream_claim'){light.size_factor=1;light.brightness_factor=1;light.distant=false;}
+      card.querySelector('.map-node-button').setAttribute('aria-pressed',String(node.id===state.focusNodeId));if(card._size===undefined||Math.abs(card._size-light.size_factor)>.015){card._size=light.size_factor;card.style.setProperty('--star-size',Math.max(.28,light.size_factor));card.style.setProperty('--star-glyph-size',light.size_factor/Math.max(.28,light.size_factor));}if(card._light===undefined||Math.abs(card._light-light.brightness_factor)>.025){card._light=light.brightness_factor;card.style.setProperty('--star-light',light.brightness_factor);}if(card._colour!==light.colour){card._colour=light.colour;card.style.setProperty('--star-colour',light.colour);}card.dataset.starSize=light.size_factor.toFixed(4);card.dataset.starBrightness=light.brightness_factor.toFixed(4);card.dataset.logicLine=String(light.logic_line);card.dataset.distant=String(light.distant);card.dataset.labelSuppressed=String(labelHidden.has(node.id));card.style.zIndex=node.id===state.focusNodeId?'3':light.logic_line?'2':'1';
+    }
+    for(const {path,edge}of edgeElements){const a=presentation.get(edge.from),b=presentation.get(edge.to);if(!a||!b)continue;const active=a.logic_line&&b.logic_line;path.style.stroke=b.colour;path.style.opacity=String(active?.85:Math.max(.06,Math.min(a.brightness_factor,b.brightness_factor)*.55));path.style.strokeWidth=String(active?1.7:1);}
+    map.lastCameraPaintMs=performance.now()-paintStarted;
   }
-  function fit() { if (!map.hidden) { setScale(Math.min(1, (viewport.clientWidth - 32) / width, (viewport.clientHeight - 32) / height)); viewport.scrollTo(0, 0); } }
   function pathIds(node) {
     const path = new Set([node.id, ...links(node).map(String)]);
     for (const id of sourceIds(node)) for (const source of snapshot.sources) if (Number(source.id) === id) path.add(String(source.node_id));
@@ -1126,8 +1304,8 @@ document.addEventListener('submit', event => {
     for(const node of graph.nodes){const saved=nodes.find(n=>n.id===node.id);if(!saved)nodes.push({...node});else if(!['root','dream_claim','question'].includes(node.type)){saved.source_ids=node.source_ids;saved.linked_claim_ids=node.linked_claim_ids;}}
     for(const node of graph.nodes)if(node.parent_id&&children.has(node.parent_id))children.get(node.parent_id).push(node);
     const active=pathIds(nodes.find(n=>n.id===selected)||nodes[0]);active.add(Engine.owner(snapshot,selected));
-    visible=[];const visited=new Set();
-    function collect(node){if(!node||visited.has(node.id))return;visited.add(node.id);if(node.type==='root'||shownLayers.has(Number(node.layer)||0))visible.push(node);if(!collapsed.has(node.id))for(const child of children.get(node.id)||[])collect(child);}
+    visible=[];receded.clear();const visited=new Set();
+    function collect(node,dim=false){if(!node||visited.has(node.id))return;visited.add(node.id);visible.push(node);if(dim)receded.add(node.id);if(!collapsed.has(node.id)||Number(snapshot.run.flow_version)>=2)for(const child of children.get(node.id)||[])collect(child,dim||collapsed.has(node.id));}
     collect(byId.get('root'));
     world.querySelector('svg')?.remove();
     for (const card of [...world.querySelectorAll('[data-map-node]')]) if (!visible.some(node => node.id === card.dataset.mapNode)) card.remove();
@@ -1137,11 +1315,11 @@ document.addEventListener('submit', event => {
         card = el('article',undefined,'map-node'); card.dataset.mapNode=node.id;
         const button=el('button',undefined,'map-node-button'); button.type='button'; button.append(el('span','','map-node-type'),el('strong','','map-node-title'),el('span','','map-node-status')); card.append(button); world.append(card);
       }
-      card.dataset.layer=String(node.layer||0);card.dataset.origin=node.origin||'';card.dataset.type=node.type;card.dataset.working=String(!!node.working);card.dataset.activity=node.activity||''; card.dataset.status=node.status; card.dataset.path=String(active.has(node.id));
+      card.dataset.locked=String(!!node.locked_at);card.dataset.layer=String(node.layer||0);card.dataset.origin=node.origin||'';card.dataset.type=node.type;card.dataset.working=String(!!node.working);card.dataset.activity=node.activity||''; card.dataset.status=node.status; card.dataset.path=String(active.has(node.id));
       const priority=Number(node.path_weight||50);card.dataset.priority=priority>=75?'high':priority<40?'low':'normal';card.dataset.speculative=String(Number(node.speculative||0));
       const button=card.querySelector('button'); button.setAttribute('aria-pressed',String(node.id===selected));
-      button.querySelector('.map-node-type').textContent=(node.type==='dream_claim'?'concept':node.type==='root'?'project':node.type.replaceAll('_',' ')) + (collapsed.has(node.id)?' · collapsed':'');
-      button.querySelector('.map-node-title').textContent=node.title;
+      button.querySelector('.map-node-type').textContent=(node.type==='dream_claim'?'concept':node.type==='root'?'project':node.type.replaceAll('_',' ')) + (collapsed.has(node.id)?(Number(snapshot.run.flow_version)>=2?' · receded':' · collapsed'):'');
+      button.querySelector('.map-node-title').textContent=node.title;button.setAttribute('aria-label',`${node.title}. ${node.type.replaceAll('_',' ')}. ${node.status}. ${originLabel(node.origin)}. ${provenanceLabel(node.provenance_tag)}`);
       const source=snapshot.sources.find(source => sourceIds(node).includes(Number(source.id)));
       button.querySelector('.map-node-status').textContent=source?`${source.domain} · ${links(node).map(id=>'claim #'+id).join(', ')}`:`${node.status}${node.confidence?' · '+node.confidence+' prior confidence':''}`;
       if(conceptTypes.includes(node.type))button.querySelector('.map-node-status').textContent+=(node.type==='question'?' · untested':'')+' · priority '+priority;
@@ -1158,10 +1336,11 @@ document.addEventListener('submit', event => {
       }
     }
     syncSelection();updateInspector();
+    const pickerStamp=JSON.stringify([...new Map([...Engine.project(snapshot).nodes,...graph.nodes].map(n=>[n.id,n])).values()].map(n=>[n.id,n.title]));if(targetPicker.dataset.stamp!==pickerStamp){const old=targetPicker.value;targetPicker.replaceChildren();for(const node of [...new Map([...Engine.project(snapshot).nodes,...graph.nodes].map(n=>[n.id,n])).values()]){const option=el('option',node.title);option.value=node.id;option.selected=node.id===old;targetPicker.append(option);}targetPicker.dataset.stamp=pickerStamp;}
     const empty=map.querySelector('[data-map-empty]');if(empty){empty.hidden=!graph.empty;empty.textContent=graph.empty_reason||'No matching records stored for this run yet.';}
     if(map.hidden)return false;
-    const cards=new Map([...world.querySelectorAll('[data-map-node]')].map(card=>[card.dataset.mapNode,card]));
-    for(const node of visible){let size=sizes.get(node.id);if(!size){const card=cards.get(node.id);size={w:card.offsetWidth||194,h:card.offsetHeight||110};sizes.set(node.id,size);}Object.assign(node,size);}
+    const cards=new Map([...world.querySelectorAll('[data-map-node]')].map(card=>[card.dataset.mapNode,card]));sceneCards=cards;
+    for(const node of visible){let size=sizes.get(node.id);if(!size){const card=cards.get(node.id);size={w:210,h:126};sizes.set(node.id,size);}Object.assign(node,size);}
     const visibleIDs=new Set(visible.map(n=>n.id));const linksToDraw=graph.edges.filter(e=>visibleIDs.has(e.from)&&visibleIDs.has(e.to));
     // Layout inputs are structure and viewport only. Usage, stage badges and title updates do not move cards.
     const nextLayout=JSON.stringify([visible.map(n=>n.id).sort(),linksToDraw.map(e=>[e.from,e.to,e.kind]).sort(),viewport.clientWidth,viewport.clientHeight]);
@@ -1169,18 +1348,17 @@ document.addEventListener('submit', event => {
     if(layoutRan){
       layoutSignature=nextLayout;
       const layoutStart=performance.now();
-      const packed=Engine.layout(visible,linksToDraw,Math.max(280,viewport.clientWidth-12),Math.max(260,viewport.clientHeight-(reviewing()?88:12)),positions);
+      const packed=Engine.layout(visible,linksToDraw,Math.max(280,viewport.clientWidth-12),Math.max(260,viewport.clientHeight-(reviewing()?88:12)),positions,{constellations:true});
       for(const [id,position] of packed.positions)positions.set(id,position);
       width=packed.width;height=packed.height;
       if(debug)console.debug('Research map layout',JSON.stringify({nodes:visible.length,edges:linksToDraw.length,reused:packed.reused,new_count:packed.new_count,layout_ms:Number((performance.now()-layoutStart).toFixed(2))}));
     }
     for(const node of visible){const p=positions.get(node.id);if(!p)continue;Object.assign(node,p);const card=cards.get(node.id);card.style.left=p.x+'px';card.style.top=p.y+'px';card.style.width=p.w+'px';card.style.height=p.h+'px';}
-    visible.sort((a,b)=>a.y-b.y||a.x-b.x);world.style.width=width+'px';world.style.height=height+'px';
-    const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('width',width);svg.setAttribute('height',height);svg.setAttribute('aria-hidden','true');
-    for(const edge of linksToDraw){const a=positions.get(edge.from),b=positions.get(edge.to);if(!a||!b)continue;const ax=a.x+a.w/2,ay=a.y+a.h/2,bx=b.x+b.w/2,by=b.y+b.h/2,dx=bx-ax,dy=by-ay;
-      const start=Math.min(Math.abs((a.w/2)/(dx||.001)),Math.abs((a.h/2)/(dy||.001))),end=Math.min(Math.abs((b.w/2)/(dx||.001)),Math.abs((b.h/2)/(dy||.001)));
-      const line=document.createElementNS(svg.namespaceURI,'path');line.setAttribute('d',`M${ax+dx*start},${ay+dy*start} Q${(ax+bx)/2-dy*.04},${(ay+by)/2+dx*.04} ${bx-dx*end},${by-dy*end}`);line.style.strokeWidth=String(Math.max(1,Math.min(3,edge.weight/30)));line.setAttribute('class','map-edge'+(active.has(edge.from)&&active.has(edge.to)?' map-edge-active':'')+(edge.kind==='shared_source'?' map-edge-shared':''));svg.append(line);}
-    world.prepend(svg);setScale(scale);
+    visible.sort((a,b)=>a.y-b.y||a.x-b.x);world.style.width='1px';world.style.height='1px';geometry();
+    const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('width','1');svg.setAttribute('height','1');svg.setAttribute('aria-hidden','true');edgeElements=[];
+    for(const edge of linksToDraw){const a=positions.get(edge.from),b=positions.get(edge.to);if(!a||!b)continue;const ax=a.x+a.w/2,ay=a.y+a.h/2,bx=b.x+b.w/2,by=b.y+b.h/2;
+      const line=document.createElementNS(svg.namespaceURI,'path');line.setAttribute('d',`M${ax},${ay} Q${(ax+bx)/2-(by-ay)*.05},${(ay+by)/2+(bx-ax)*.05} ${bx},${by}`);line.setAttribute('class','map-edge'+(edge.kind==='shared_source'?' map-edge-shared':''));svg.append(line);edgeElements.push({path:line,edge});}
+    world.prepend(svg);renderCamera(camera.getState());
     if(debug)console.debug('Research map projection',JSON.stringify({nodes:graph.nodes.length,edges:graph.edges.length,layout_ran:layoutRan,cached_positions:positions.size,total_ms:Number((performance.now()-projectionStart).toFixed(2))}));
     return layoutRan;
   }
@@ -1257,7 +1435,7 @@ document.addEventListener('submit', event => {
     else if(capped)reason='The tracked project spend cap has been reached.';
     else if(!slots)reason='No planned Evidence search slots remain. This action does not add slots.';
     const canSearch=!reason,form=map.querySelector('[data-map-focus]'),help=map.querySelector('[data-map-focus-help]');
-    form.hidden=false;help.id='map-focus-help';help.textContent=reason||'Uses the next remaining planned search. The reserved Challenge still seeks counter-evidence.';
+    form.hidden=Number(snapshot.run.flow_version)>=2;help.id='map-focus-help';help.textContent=reason||'Uses the next remaining planned search. The reserved Challenge still seeks counter-evidence.';
     map.querySelector('[data-map-search]').disabled=!canSearch;map.querySelector('[name=focus_note]').disabled=!canSearch;map.querySelector('[name=focus_node_id]').value=canSearch?node.id:'';map.querySelector('[data-map-search]').setAttribute('aria-describedby',help.id);
     for(const input of map.querySelectorAll('[data-map-source]'))input.checked=selectedSources.has(Number(input.dataset.mapSource));
     const learnIds=(selectedSources.size?[...selectedSources]:sourceIDs).filter(id=>snapshot.sources.some(source=>Number(source.id)===Number(id)));
@@ -1265,24 +1443,25 @@ document.addEventListener('submit', event => {
     map.querySelector('[data-map-learn]').hidden=!learnIds.length;
     const learn=map.querySelector('[data-map-learn-button]');learn.disabled=!learnIds.length||busy||!capacity||capped||['pending','running'].includes(snapshot.run.status)||(Number(snapshot.run.rigour_version)===1&&!Number(snapshot.run.evidence_frozen));
     learn.textContent=selectedSources.size?`Learn from ${selectedSources.size} selected source${selectedSources.size===1?'':'s'}`:'Learn from this source';
-    const toggle=map.querySelector('[data-map-toggle-branch]');toggle.disabled=!nodes.some(child=>child.parent_id===node.id);toggle.hidden=toggle.disabled;toggle.textContent=collapsed.has(node.id)?'Expand branch':'Collapse branch';
+    const toggle=map.querySelector('[data-map-toggle-branch]');toggle.disabled=!nodes.some(child=>child.parent_id===node.id);toggle.hidden=toggle.disabled;toggle.textContent=Number(snapshot.run.flow_version)>=2?(collapsed.has(node.id)?'Restore branch emphasis':'Recede branch'):(collapsed.has(node.id)?'Expand branch':'Collapse branch');
     map.querySelector('[data-map-copy]').hidden=!sources.some(source=>safe(source.url));
   }
   function inspect(id) {
-    controls(false);selected=id;details(true);draw();
-    const card=[...world.querySelectorAll('[data-map-node]')].find(card=>card.dataset.mapNode===id);
-    if(card&&!map.hidden)card.scrollIntoView({block:'nearest',inline:'nearest'});
+    id=String(id);if(!nodes.some(n=>n.id===id))return;
+    let node=nodes.find(n=>n.id===id);const seen=new Set();while(node&&!seen.has(node.id)){seen.add(node.id);collapsed.delete(node.id);node=nodes.find(n=>n.id===node.parent_id);}
+    if(!visible.some(n=>n.id===id)){filter='all';map.querySelectorAll('[data-map-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.mapFilter==='all')));}
+    controls(false);selected=id;details(true);draw();geometry();camera.focus(id);targetPicker.value=id;
   }
   map.addEventListener('click',async event=>{
     const command=event.target.closest('[data-map-command]');
     if(command){const key=command.dataset.mapCommand;if(key==='fit'){manualViewport=false;fit();}if(key==='in'){manualViewport=true;setScale(scale*1.2);}if(key==='out'){manualViewport=true;setScale(scale/1.2);}if(key==='reset'){positions.clear();sizes.clear();layoutSignature='';manualViewport=false;draw();fit();}if(key==='collapse'){nodes.filter(node=>node.id!=='root').forEach(node=>collapsed.add(node.id));draw();fit();}if(key==='expand'){collapsed.clear();draw();fit();}return;}
     const chip=event.target.closest('[data-map-filter]');if(chip){filter=chip.dataset.mapFilter;controls(false);details(false);map.querySelectorAll('[data-map-filter]').forEach(button=>button.setAttribute('aria-pressed',String(button===chip)));draw();fit();return;}
     const listJump=event.target.closest('[data-map-list-node]');if(listJump){showView('list');const entry=document.getElementById('research-node-'+listJump.dataset.mapListNode);if(entry){for(let parent=entry;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;entry.setAttribute('tabindex','-1');entry.focus();entry.scrollIntoView({block:'center'});}return;}
-    const nodeButton=event.target.closest('.map-node-button');if(nodeButton){inspect(nodeButton.closest('[data-map-node]').dataset.mapNode);return;}
+    const nodeButton=event.target.closest('.map-node-button');if(nodeButton){if(skipClick)return;inspect(nodeButton.closest('[data-map-node]').dataset.mapNode);return;}
     if(event.target.closest('[data-map-toggle-branch]')){collapsed.has(selected)?collapsed.delete(selected):collapsed.add(selected);draw();return;}
     const selection=event.target.closest('[data-map-select]');if(selection){claimInputs().forEach(input=>input.checked=selection.dataset.mapSelect==='all');claimInputs()[0]?.dispatchEvent(new Event('change',{bubbles:true}));syncSelection();return;}
     if(event.target.closest('[data-map-continue]'))root.querySelector('[data-research-action=research_continue]').requestSubmit();
-    const outcome=event.target.closest('[data-map-jump]');if(outcome){collapsed.clear();filter='all';inspect(Engine.owner(snapshot,outcome.dataset.mapJump));world.querySelector(`[data-map-node="${outcome.dataset.mapJump}"] button`)?.focus();}
+    const outcome=event.target.closest('[data-map-jump]');if(outcome){collapsed.clear();filter='all';inspect(Engine.owner(snapshot,outcome.dataset.mapJump));world.querySelector(`[data-map-node="${outcome.dataset.mapJump}"] button`)?.focus({preventScroll:true});}
     if(event.target.closest('[data-map-copy]')){
       const node=nodes.find(node=>node.id===selected),source=snapshot.sources.find(source=>sourceIds(node).includes(Number(source.id))&&safe(source.url));
       try {await navigator.clipboard.writeText(source.url);map.querySelector('[data-map-announcement]').textContent='Source link copied.';}catch(_){map.querySelector('[data-map-announcement]').textContent='Copy the source URL from the inspector link.';}
@@ -1299,14 +1478,20 @@ document.addEventListener('submit', event => {
     if(event.key==='ArrowRight'){if(collapsed.has(node.id)){collapsed.delete(node.id);draw();}next=visible.find(child=>child.parent_id===node.id);}
     if(event.key==='ArrowLeft')next=visible.find(parent=>parent.id===node.parent_id);
     if(event.key==='ArrowDown')next=visible[visible.indexOf(node)+1];if(event.key==='ArrowUp')next=visible[visible.indexOf(node)-1];
-    if(next){event.preventDefault();inspect(next.id);world.querySelector(`[data-map-node="${next.id}"] button`)?.focus();}
+    if(next){event.preventDefault();inspect(next.id);world.querySelector(`[data-map-node="${next.id}"] button`)?.focus({preventScroll:true});}
   });
   root.addEventListener('research:snapshot',event=>{
-    const incoming=event.detail;
+    const incoming=event.detail,oldFocus=snapshot?.nodes.find(n=>String(n.id)===selected),newFocus=incoming.nodes?.find(n=>String(n.id)===selected);
+    const demoted=oldFocus&&newFocus&&Number(newFocus.layer)>Number(oldFocus.layer);
+    const oldIDs=new Set(snapshot?.nodes.map(n=>String(n.id))||[]);const growth=!!snapshot&&incoming.nodes.some(n=>!oldIDs.has(String(n.id))&&conceptTypes.includes(n.type));
     snapshot={...incoming,nodes:incoming.nodes||[],sources:incoming.sources||[],requests:incoming.requests||[],ledger:{...(incoming.ledger||{}),passages:incoming.ledger?.passages||[],edges:incoming.ledger?.edges||[]}};
     normalize();screenControls();enqueueIdeas();
-    const laidOut=draw();
-    if(laidOut&&!manualViewport)requestAnimationFrame(()=>{fit();initialCamera=false;});
+    if(demoted){const here=positions.get(selected);const alternatives=snapshot.nodes.filter(n=>conceptTypes.includes(n.type)&&Number(n.layer||0)===0&&String(n.id)!==selected);alternatives.sort((a,b)=>{const pa=positions.get(String(a.id))||here,pb=positions.get(String(b.id))||here;return here&&pa&&pb?Math.hypot(pa.x-here.x,pa.y-here.y)-Math.hypot(pb.x-here.x,pb.y-here.y):Number(a.id)-Number(b.id);});selected=alternatives.length?String(alternatives[0].id):'root';}
+    const handedTo=selected;draw();
+    if(!map.hidden&&initialCamera&&visible.length){fit(false);initialCamera=false;}
+    else if(demoted&&!map.hidden){geometry();camera.focus(handedTo);}
+    else if(growth&&!map.hidden){geometry();camera.growthFor(visible.map(n=>n.id));queueGrowth();}
+
     if(count!==nodes.length){count=nodes.length;map.querySelector('[data-map-announcement]').textContent=`${snapshot.nodes.length} saved nodes · ${snapshot.sources.length} citation sources. ${snapshot.run.phase==='evidence'?'Choose the direction for your next search.':''}`;}
     map.querySelector('[data-map-evidence-help]').hidden=Number(snapshot.run.flow_version)>=2||snapshot.run.status!=='running'||snapshot.run.phase!=='evidence';
     const strip=map.querySelector('[data-map-outcomes]');strip.replaceChildren();
@@ -1319,7 +1504,9 @@ document.addEventListener('submit', event => {
   root.addEventListener('research:controls',()=>{if(snapshot){updateInspector();screenControls();}});
   root.addEventListener('research:budget',event=>{if(snapshot){snapshot.budget=event.detail;updateInspector();screenControls();}});
   // Initialize after the status request; live processes are never assumed to survive navigation.
-  let resizeTimer;new ResizeObserver(()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(!map.hidden&&snapshot){draw();if(!manualViewport)fit();}},160);}).observe(viewport);
+  let resizeTimer;new ResizeObserver(()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(!map.hidden&&snapshot){draw();geometry();renderCamera(camera.getState());}},160);}).observe(viewport);
+  motion.addEventListener('change',()=>{if(motion.matches&&camera.transition){const state=camera.getState();camera.cancel();if(state.transitionType==='focus'&&positions.has(state.focusNodeId))camera.focus(state.focusNodeId);else camera.restoreState(state);}renderCamera(camera.getState());});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)camera.cancel();});
   showView(view);
 })();
 
@@ -2035,6 +2222,112 @@ body.research-map-open { overflow:hidden; }
 .map-node[data-layer="2"]::after { opacity:.35; }
 .map-node[data-layer="1"] .map-node-button[aria-pressed=true] { background:#e1e6ed; }
 .map-node[data-layer="2"] .map-node-button[aria-pressed=true] { background:#edf0f4; }
+
+/* Star-system Map: the canvas has one dark presentation, independent of the workspace theme. */
+.mindmap,.research-map-open .mindmap,.research-map-open .map-workspace,.mindmap .map-viewport,.mindmap .map-space { background:#000!important; background-image:none!important; color:#e6f1ff; }
+.mindmap .map-viewport { overflow:hidden; touch-action:none; overscroll-behavior:none; cursor:grab; }
+.mindmap .map-viewport:active { cursor:grabbing; }
+.mindmap .map-space { position:absolute; inset:0; width:100%!important; height:100%!important; min-height:0; overflow:visible; }
+.mindmap .map-world { transform-origin:0 0; position:absolute; left:0; top:0; will-change:transform; }
+.mindmap .map-world svg { position:absolute; left:0; top:0; overflow:visible; pointer-events:none; }
+.mindmap .map-edge { fill:none; stroke:#8dcbdc; }
+.mindmap .map-screen-header { background:#050a10; border-color:#243247; color:#e6f1ff; }
+.mindmap .map-project-label,.mindmap .map-screen-status { color:#c0cfe1; }
+.mindmap .map-idea-sentence,.mindmap .map-idea-sentence span { background:transparent; color:#e5f2ff; }
+.mindmap .map-controls-tray,.research-map-open .map-inspector,.research-map-open .mindmap .map-review { background:#101722; border-color:#435269; box-shadow:0 12px 40px #0009; color:#e6f1ff; }
+.mindmap .map-inspector h3,.mindmap .map-inspector h4,.mindmap .map-inspector h5,.mindmap .living-controls h3,.mindmap .map-controls-tray h3 { color:#f0f6ff; }
+.mindmap .map-inspector p,.mindmap .map-inspector small,.mindmap .map-inspector-status,.mindmap .map-controls-tray p,.mindmap .map-controls-tray small,.mindmap .map-controls-tray summary,.mindmap .map-inspector label,.mindmap .living-controls label { color:#c3d0e3; }
+.mindmap .research-source,.mindmap .map-edge-details,.mindmap .living-controls { background:#101b29; color:#e6f1ff; border-color:#435269; }
+.mindmap a { color:#a8ceff; }
+.mindmap .form-control,.mindmap .form-select { background-color:#070e18; color:#e6f1ff; border-color:#61728b; color-scheme:dark; }
+.mindmap .btn { transition:none; }
+.mindmap .btn-outline-secondary,.mindmap .btn-outline-primary,.mindmap .map-outcome,.mindmap .map-inspector-close,.mindmap .map-controls-handle { background:#131f2f; color:#d7e8fc; border-color:#61748e; }
+.mindmap .btn-outline-secondary:hover,.mindmap .btn-outline-primary:hover,.mindmap .btn[aria-pressed=true] { background:#293c55; color:#fff; }
+.mindmap .btn-primary { background:#614ac1; border-color:#a994ee; color:#fff; }
+.mindmap .btn-outline-danger { color:#ffbec5; border-color:#c16b7a; background:#30131b; }
+.mindmap .map-request-error,.mindmap .map-state-notice { background:#321c10; color:#ffdbb3; border-color:#d1a069; }
+.mindmap .map-empty { background:#111b29; color:#d2e4fa; border-color:#657c99; top:72%; }
+.mindmap .map-node { width:210px!important; height:126px!important; transform-origin:center; background:transparent!important; border:0!important; border-radius:0; outline:none!important; box-shadow:none!important; pointer-events:none; animation:star-arrive .45s ease-out; }
+.mindmap .map-node::after { display:none; }
+.mindmap .map-node-button,.mindmap .map-node[data-layer] .map-node-button,.mindmap .map-node[data-layer] .map-node-button[aria-pressed=true] { height:100%; width:100%; min-height:0; position:relative; display:block; padding:0; cursor:pointer; pointer-events:auto; background:transparent!important; color:#dcefff!important; border:0; border-radius:50%; transform:scale(var(--star-size,1)); transform-origin:center; transition:transform .42s cubic-bezier(.4,0,.2,1); }
+.mindmap .map-node-button::before { content:""; position:absolute; left:calc(50% - 5px); top:calc(50% - 5px); width:10px; height:10px; border-radius:50%; background:var(--star-colour,#9ddcec); opacity:var(--star-light,1); box-shadow:0 0 10px 3px var(--star-colour,#9ddcec),0 0 28px 4px color-mix(in srgb,var(--star-colour,#9ddcec) 22%,transparent); transition:opacity .42s ease-out; }
+.mindmap .map-node[data-logic-line=true] .map-node-button::before { width:13px; height:13px; margin:-1.5px; box-shadow:0 0 12px 4px var(--star-colour,#9ddcec),0 0 38px 8px color-mix(in srgb,var(--star-colour,#9ddcec) 25%,transparent); }
+.mindmap .map-node[data-locked=true] .map-node-button::after { content:""; position:absolute; left:calc(50% - 12px); top:calc(50% - 12px); width:24px; height:24px; border:1px solid #ffd38b; border-radius:50%; }
+.mindmap .map-node-title { position:absolute; left:-5%; right:-5%; top:calc(50% + 15px); font-size:13px; line-height:1.3; text-align:center; color:#dcefff; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; text-wrap:balance; text-shadow:0 1px 5px #000; }
+.mindmap .map-node-type,.mindmap .map-node[data-layer] .map-node-type { position:absolute; left:0; right:0; top:12px; text-align:center; color:#a8bfd5!important; font-size:10px; }
+.mindmap .map-node-status,.mindmap .map-node[data-layer] .map-node-status { position:absolute; left:-10%; right:-10%; top:calc(50% + 53px); color:#b2c8dd!important; text-align:center; font-size:10px; }
+.mindmap .map-node[data-distant=true] .map-node-type,.mindmap .map-node[data-distant=true] .map-node-title,.mindmap .map-node[data-distant=true] .map-node-status { visibility:hidden; }
+.mindmap .map-node-button:focus-visible { outline:2px solid #d9eeff; outline-offset:5px; border-radius:12px; }
+.mindmap .map-node-button:hover .map-node-title,.mindmap .map-node-button:focus-visible .map-node-title { visibility:visible; background:#000; }
+.mindmap .map-node-check { position:absolute; left:0; right:0; bottom:-26px; color:#e0edff; background:#131e2c; border:1px solid #526780; border-radius:6px; pointer-events:auto; }
+.mindmap .map-node-check:has(input:disabled) { display:none; }
+.map-star-navigator { display:grid; gap:6px; margin:12px 0; }.map-star-navigator label { color:#d2e4fa; font-size:.8rem; }
+.map-star-legend { position:absolute; z-index:2; bottom:8px; left:14px; max-width:min(70vw,560px); padding:6px 9px; margin:0; color:#b6c8dd; background:#000c; border-radius:6px; font-size:11px; pointer-events:none; }
+.map-short-crossfade { animation:camera-crossfade .12s ease-out; }
+@keyframes star-arrive { from { opacity:.25; } to { opacity:1; } }
+@keyframes camera-crossfade { from { opacity:.8; } to { opacity:1; } }
+@media(prefers-reduced-motion:reduce) { .mindmap .map-node { animation:none; }.mindmap .map-node-button,.mindmap .map-node-button::before { transition:opacity .12s; } }
+@media(max-width:760px) { .map-star-legend { font-size:10px; max-width:75vw; }.mindmap .map-idea-sentence span { font-size:13px; } }
+
+/* Star-system Map: one dark canvas, independent of the workspace theme. */
+.mindmap,.research-map-open .mindmap,.research-map-open .map-workspace,.mindmap .map-viewport,.mindmap .map-space { background:#000!important; background-image:none!important; color:#e6f1ff; }
+.mindmap .map-viewport { overflow:hidden; touch-action:none; overscroll-behavior:none; cursor:grab; }
+.mindmap .map-viewport:active { cursor:grabbing; }
+.mindmap .map-space { position:absolute; inset:0; width:100%!important; height:100%!important; min-height:0; overflow:visible; }
+.mindmap .map-world { transform-origin:0 0; position:absolute; left:0; top:0; will-change:transform; }
+.mindmap .map-world svg { position:absolute; left:0; top:0; overflow:visible; pointer-events:none; }
+.mindmap .map-edge { fill:none; stroke:#8dcbdc; }
+.mindmap .map-screen-header { background:#050a10; border-color:#243247; color:#e6f1ff; }
+.mindmap .map-project-label,.mindmap .map-screen-status { color:#c0cfe1; }
+.mindmap .map-idea-sentence,.mindmap .map-idea-sentence span { background:transparent; color:#e5f2ff; }
+.mindmap .map-controls-tray,.research-map-open .map-inspector,.research-map-open .mindmap .map-review { background:#101722; border-color:#435269; box-shadow:0 12px 40px #0009; color:#e6f1ff; }
+.mindmap .map-inspector h3,.mindmap .map-inspector h4,.mindmap .map-inspector h5,.mindmap .living-controls h3,.mindmap .map-controls-tray h3 { color:#f0f6ff; }
+.mindmap .map-inspector p,.mindmap .map-inspector small,.mindmap .map-inspector-status,.mindmap .map-controls-tray p,.mindmap .map-controls-tray small,.mindmap .map-controls-tray summary,.mindmap .map-inspector label,.mindmap .living-controls label { color:#c3d0e3; }
+.mindmap .research-source,.mindmap .map-edge-details,.mindmap .living-controls { background:#101b29; color:#e6f1ff; border-color:#435269; }
+.mindmap a { color:#a8ceff; }
+.mindmap .form-control,.mindmap .form-select { background-color:#070e18; color:#e6f1ff; border-color:#61728b; color-scheme:dark; }
+.mindmap .btn { transition:none; }
+.mindmap .btn-outline-secondary,.mindmap .btn-outline-primary,.mindmap .map-outcome,.mindmap .map-inspector-close,.mindmap .map-controls-handle { background:#131f2f; color:#d7e8fc; border-color:#61748e; }
+.mindmap .btn-outline-secondary:hover,.mindmap .btn-outline-primary:hover,.mindmap .btn[aria-pressed=true] { background:#293c55; color:#fff; }
+.mindmap .btn-primary { background:#614ac1; border-color:#a994ee; color:#fff; }
+.mindmap .btn-outline-danger { color:#ffbec5; border-color:#c16b7a; background:#30131b; }
+.mindmap .map-request-error,.mindmap .map-state-notice { background:#321c10; color:#ffdbb3; border-color:#d1a069; }
+.mindmap .map-empty { background:#111b29; color:#d2e4fa; border-color:#657c99; top:72%; }
+.mindmap .map-node { width:210px!important; height:126px!important; transform-origin:center; background:transparent!important; border:0!important; border-radius:0; outline:none!important; box-shadow:none!important; pointer-events:none; animation:star-arrive .45s ease-out; }
+.mindmap .map-node::after { display:none; }
+.mindmap .map-node-button,.mindmap .map-node[data-layer] .map-node-button,.mindmap .map-node[data-layer] .map-node-button[aria-pressed=true] { height:100%; width:100%; min-height:0; position:relative; display:block; padding:0; cursor:pointer; pointer-events:auto; background:transparent!important; color:#dcefff!important; border:0; border-radius:50%; transform:scale(var(--star-size,1)); transform-origin:center; transition:transform .42s cubic-bezier(.4,0,.2,1); }
+.mindmap .map-node-button::before { content:""; position:absolute; left:calc(50% - 5px); top:calc(50% - 5px); width:10px; height:10px; border-radius:50%; background:var(--star-colour,#9ddcec); opacity:var(--star-light,1); box-shadow:0 0 10px 3px var(--star-colour,#9ddcec),0 0 28px 4px color-mix(in srgb,var(--star-colour,#9ddcec) 22%,transparent); transition:opacity .42s ease-out; }
+.mindmap .map-node[data-logic-line=true] .map-node-button::before { width:13px; height:13px; margin:-1.5px; box-shadow:0 0 12px 4px var(--star-colour,#9ddcec),0 0 38px 8px color-mix(in srgb,var(--star-colour,#9ddcec) 25%,transparent); }
+.mindmap .map-node[data-locked=true] .map-node-button::after { content:""; position:absolute; left:calc(50% - 12px); top:calc(50% - 12px); width:24px; height:24px; border:1px solid #ffd38b; border-radius:50%; }
+.mindmap .map-node-title { position:absolute; left:-5%; right:-5%; top:calc(50% + 15px); font-size:13px; line-height:1.3; text-align:center; color:#dcefff; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; text-wrap:balance; text-shadow:0 1px 5px #000; }
+.mindmap .map-node-type,.mindmap .map-node[data-layer] .map-node-type { position:absolute; left:0; right:0; top:12px; text-align:center; color:#a8bfd5!important; font-size:10px; }
+.mindmap .map-node-status,.mindmap .map-node[data-layer] .map-node-status { position:absolute; left:-10%; right:-10%; top:calc(50% + 53px); color:#b2c8dd!important; text-align:center; font-size:10px; }
+.mindmap .map-node[data-distant=true] .map-node-type,.mindmap .map-node[data-distant=true] .map-node-title,.mindmap .map-node[data-distant=true] .map-node-status { visibility:hidden; }
+.mindmap .map-node-button:focus-visible { outline:2px solid #d9eeff; outline-offset:5px; border-radius:12px; }
+.mindmap .map-node-button:hover .map-node-title,.mindmap .map-node-button:focus-visible .map-node-title { visibility:visible; background:#000; }
+.mindmap .map-node-check { position:absolute; left:0; right:0; bottom:-26px; color:#e0edff; background:#131e2c; border:1px solid #526780; border-radius:6px; pointer-events:auto; }
+.mindmap .map-node-check:has(input:disabled) { display:none; }
+.map-star-navigator { display:grid; gap:6px; margin:12px 0; }.map-star-navigator label { color:#d2e4fa; font-size:.8rem; }
+.map-star-legend { position:absolute; z-index:2; bottom:8px; left:14px; max-width:min(70vw,560px); padding:6px 9px; margin:0; color:#b6c8dd; background:#000c; border-radius:6px; font-size:11px; pointer-events:none; }
+.map-short-crossfade { animation:camera-crossfade .12s ease-out; }
+@keyframes star-arrive { from { opacity:.25; } to { opacity:1; } }
+@keyframes camera-crossfade { from { opacity:.8; } to { opacity:1; } }
+@media(prefers-reduced-motion:reduce) { .mindmap .map-node { animation:none; }.mindmap .map-node-button,.mindmap .map-node-button::before { transition:opacity .12s; } }
+@media(max-width:760px) { .map-star-legend { font-size:10px; max-width:75vw; }.mindmap .map-idea-sentence span { font-size:13px; } }
+.mindmap .map-project-label strong { color:#d7e7fa; }
+.mindmap .map-node-button::before { transform:scale(var(--star-glyph-size,1)); }
+.mindmap[data-detail-level=compact] .map-node:not([data-logic-line=true]) .map-node-button::before { box-shadow:0 0 8px 1px var(--star-colour,#9ddcec); }
+.mindmap .map-evidence-help { background:#18243a; color:#d6e6fa; border-color:#536b8b; }
+.mindmap[data-detail-level=compact] .map-node:not([data-logic-line=true]) .map-node-button::before { box-shadow:none; }
+.mindmap[data-camera-transition=focus] .map-node:not([data-logic-line=true]) .map-node-status,.mindmap[data-camera-transition=growth] .map-node:not([data-logic-line=true]) .map-node-status { visibility:hidden; }
+
+.mindmap .map-world svg { transform-origin:0 0; }.mindmap .map-edge { vector-effect:non-scaling-stroke; }
+.mindmap .map-node { contain:layout style; will-change:transform; }
+.mindmap .map-node-button { will-change:transform; }
+.mindmap .map-node-button::before { will-change:opacity; }
+.mindmap[data-camera-transition=focus] .map-node:not([data-logic-line=true]) .map-node-title,.mindmap[data-camera-transition=focus] .map-node:not([data-logic-line=true]) .map-node-type { visibility:hidden; }
+.mindmap .map-node[data-label-suppressed=true] .map-node-title,.mindmap .map-node[data-label-suppressed=true] .map-node-status,.mindmap .map-node[data-label-suppressed=true] .map-node-type { visibility:hidden; }
+.mindmap .map-node[data-label-suppressed=true] .map-node-button:hover .map-node-title,.mindmap .map-node[data-label-suppressed=true] .map-node-button:focus-visible .map-node-title { visibility:visible; background:#000; }
 
 AICONTROL_UI_CSS;
     }

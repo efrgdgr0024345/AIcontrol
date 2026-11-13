@@ -1,5 +1,21 @@
 # Private admin vault and research projects
 
+## Living star-system Map (2026-11-14 AWST)
+
+The Map now uses a pure black canvas, continuous size/light attention, stable
+knowledge constellations and one smooth, interruptible CameraController. Current
+focus stays prominent; older ideas recede and remain reachable. Dim/recede controls
+retain ideas, and camera movement never changes their cached world coordinates.
+Only explicit Reset clears position memory. Model-only exploration and final
+user-selected Evidence lock-in retain their existing provider, budget and Stop
+contracts; saved flow-version 0/1 investigations remain readable and functional.
+
+[STAR_SYSTEM_MAP.md](STAR_SYSTEM_MAP.md) records all five milestones, public camera
+API, additive fields, controls, no-JS/legacy compatibility and exact validation
+limits. It supersedes older scroll-camera, white/grid canvas and layer-hide
+presentation descriptions below. There is no continuous physics or idle camera loop.
+
+
 ## Exploration-first living map (2026-11-13 AWST)
 
 New runs use flow version 2: tool-free provisional seed → user-steered model

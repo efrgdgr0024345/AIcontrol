@@ -12,7 +12,8 @@ trait ExplorationFlow
         UsageMeter::columns($db,'research_projects',['exploration_first'=>'INTEGER NOT NULL DEFAULT 1']);
         UsageMeter::columns($db,'research_runs',['exploration_first'=>'INTEGER NOT NULL DEFAULT 0']);
         UsageMeter::columns($db,'research_nodes',['layer'=>'INTEGER NOT NULL DEFAULT 0','origin'=>'TEXT','provenance_tag'=>'TEXT',
-            'park_reason'=>'TEXT','locked_at'=>'INTEGER','last_layer_change'=>'INTEGER']);
+            'park_reason'=>'TEXT','locked_at'=>'INTEGER','last_layer_change'=>'INTEGER','weight'=>'REAL NOT NULL DEFAULT 1.0',
+            'knowledge_line_id'=>'TEXT','last_focused_at'=>'INTEGER','size_factor'=>'REAL','brightness_factor'=>'REAL']);
     }
     private function livingIdle(int $id): array
     {
@@ -43,6 +44,14 @@ trait ExplorationFlow
             $this->run($id);$nodes=$this->livingNodes($id,$ids);
             foreach($nodes as $node){$layer=$action==='park'?2:max(0,min(2,(int)$node['layer']+($action==='promote'?-1:1)));
                 $this->execute('UPDATE research_nodes SET layer=?,park_reason=?,last_layer_change=? WHERE id=? AND run_id=?',[$layer,$action==='park'?$reason:null,time(),$node['id'],$id]);}
+        });
+    }
+    public function recordMapFocus(int $id,int $node): void
+    {
+        $this->transaction(function()use($id,$node):void{
+            $this->run($id);
+            if(!$this->rows('SELECT id FROM research_nodes WHERE id=? AND run_id=?',[$node,$id]))throw new RuntimeException('Choose a saved node from this investigation.');
+            $this->execute('UPDATE research_nodes SET last_focused_at=? WHERE id=? AND run_id=?',[time(),$node,$id]);
         });
     }
     public function explore(int $id,array $ids,string $mode='explore'): array

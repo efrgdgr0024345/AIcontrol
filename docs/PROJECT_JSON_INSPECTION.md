@@ -78,3 +78,8 @@ until its builder succeeds. A project with no runs likewise has no invented map.
 
 Tests use disposable synthetic data. A live user's reported map disconnect is
 not considered diagnosed or fixed until its actual capture is examined.
+
+Star-system note: database snapshots now include optional weight/family/focus/cache
+columns. Live size/light and camera/emphasis state belong to the Research window;
+they are not inferred from nullable cache columns or captured by Admin projection.
+See STAR_SYSTEM_MAP.md for the camera API and geometry contract.

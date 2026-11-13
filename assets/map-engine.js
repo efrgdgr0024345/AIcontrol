@@ -179,6 +179,7 @@
       return result;
     }
     const projected = [root, ...ordered(selectedConcepts), ...details.sort((a, b) => compare(a.id, b.id))].map(node=>({...node,layer:Math.max(0,Math.min(2,Number(node.layer)||0)),origin:node.origin||(['source','passage','edge'].includes(node.type)?'web_evidence':null)}));
+    const projectedIndex=new Map(projected.map(n=>[n.id,n]));for(const node of projected){node.knowledge_line_id=node.type==='root'?'root':familyFor(node,projectedIndex);node.weight=Math.max(.1,Math.min(4,Number(node.weight)||1));}
     const projectedIds = new Set(projected.map(node => node.id));
     const edges = projected.filter(node => node.parent_id && projectedIds.has(node.parent_id)).map(node => ({from: node.parent_id, to: node.id, kind: 'concept', weight: Number(node.path_weight) || 50}));
     for (const source of sources) {
@@ -190,7 +191,8 @@
     const reasons = {all: review ? 'No concepts have been proposed for review yet.' : 'No selected concepts are available for this run yet.', dream_claim: 'No selected claims are available for this run yet.', question: 'No questions have grown from the selected concepts yet.', source: 'No sources are stored for the selected concepts yet.', passage: 'No passages are stored for the selected concepts yet.', edge: 'No evidence relations are stored for the selected concepts yet.', dead_end: 'No dead ends are stored for the selected concepts yet.', open: 'No open verdicts are stored for the selected concepts yet.'};
     return {nodes: projected, edges, filter, empty: detailCount === 0, empty_reason: detailCount === 0 ? reasons[filter] : '', detail_count: detailCount, concept_count: selectedConcepts.length};
   }
-  function layout(nodes, edges, width, height, previous = new Map()) {
+  function layout(nodes, edges, width, height, previous = new Map(), options={}) {
+    if(options.constellations)return constellationLayout(nodes,edges,width,height,previous);
     const viewportW = Math.max(1, Number(width) || 1), viewportH = Math.max(1, Number(height) || 1), margin = 24, gapX = 24, gapY = 28;
     const rows = records(nodes).map(node => ({...node, id: key(node.id), w: Math.max(1, Number(node.w) || 194), h: Math.max(1, Number(node.h) || 84)}));
     if (!rows.length) return {positions: new Map(), width: viewportW, height: viewportH, reused: 0, new_count: 0};
@@ -261,6 +263,65 @@
     }
     return {positions, width: Math.max(viewportW, ...[...positions.values()].map(node => node.x + node.w + margin)), height: Math.max(viewportH, ...[...positions.values()].map(node => node.y + node.h + margin)), reused, new_count: fresh.length};
   }
+  function familyFor(node,byId,seen=new Set()) {
+    if(!node||seen.has(String(node.id)))return 'root';
+    if(typeof node.knowledge_line_id==='string'&&node.knowledge_line_id.trim())return node.knowledge_line_id;
+    seen.add(String(node.id));const parent=byId.get(String(node.parent_id));
+    return !parent||parent.type==='root'?'line-'+node.id:familyFor(parent,byId,seen);
+  }
+  const hash=value=>{let n=2166136261;for(const c of String(value)){n^=c.charCodeAt(0);n=Math.imul(n,16777619);}return n>>>0;};
+  function constellationLayout(nodes,edges,width,height,previous=new Map()) {
+    const rows=records(nodes).map(n=>({...n,id:String(n.id),w:Number(n.w)||194,h:Number(n.h)||100})),byId=new Map(rows.map(n=>[n.id,n]));
+    const root=rows.find(n=>n.id==='root'||n.type==='root')||rows[0];if(!root)return {positions:new Map(),width,height,reused:0,new_count:0};
+    const memory=previous instanceof Map?previous:new Map(),positions=new Map(),buckets=new Map(),cell=280;
+    const keys=p=>{const result=[];for(let x=Math.floor((p.x-16)/cell);x<=Math.floor((p.x+p.w+16)/cell);x++)for(let y=Math.floor((p.y-16)/cell);y<=Math.floor((p.y+p.h+16)/cell);y++)result.push(x+':'+y);return result;};
+    const reserve=p=>{for(const k of keys(p)){if(!buckets.has(k))buckets.set(k,[]);buckets.get(k).push(p);}};
+    const collides=p=>{const seen=new Set();for(const k of keys(p))for(const q of buckets.get(k)||[])if(!seen.has(q)){seen.add(q);if(p.x<q.x+q.w+22&&p.x+p.w+22>q.x&&p.y<q.y+q.h+22&&p.y+p.h+22>q.y)return true;}return false;};
+    for(const [id,p]of memory)if(p&&[p.x,p.y,p.w,p.h].every(Number.isFinite)){reserve(p);if(byId.has(String(id)))positions.set(String(id),{...p,w:byId.get(String(id)).w,h:byId.get(String(id)).h});}
+    const reused=positions.size;
+    if(!positions.has(root.id)){const p={x:Math.max(0,width/2-root.w/2),y:Math.max(0,height/2-root.h/2),w:root.w,h:root.h};positions.set(root.id,p);reserve(p);}
+    const rp=positions.get(root.id),cx=rp.x+rp.w/2,cy=rp.y+rp.h/2;
+    const families=new Map();
+    for(const node of rows)if(node!==root){const family=familyFor(node,byId);node._family=family;if(!families.has(family))families.set(family,[]);families.get(family).push(node);}
+    const anchors=new Map();
+    for(const [family,members]of families){
+      const saved=members.filter(n=>positions.has(n.id)),angle=(hash(family)%360)*Math.PI/180,radius=440+hash(family+'radius')%230;
+      anchors.set(family,saved.length?{x:saved.reduce((s,n)=>s+positions.get(n.id).x,0)/saved.length,y:saved.reduce((s,n)=>s+positions.get(n.id).y,0)/saved.length,fixed:true}:{x:cx+Math.cos(angle)*radius,y:cy+Math.sin(angle)*radius*.8,fixed:false});
+    }
+    // A fixed six-pass, heavily damped constellation separation. Never a running simulation.
+    const groups=[...anchors.values()];for(let pass=0;pass<6;pass++)for(let i=0;i<groups.length;i++)for(let j=i+1;j<groups.length;j++){
+      const a=groups[i],b=groups[j],dx=b.x-a.x||.1,dy=b.y-a.y||.1,d=Math.hypot(dx,dy);if(d>=380)continue;const force=(380-d)*.08;if(!a.fixed){a.x-=dx/d*force;a.y-=dy/d*force;}if(!b.fixed){b.x+=dx/d*force;b.y+=dy/d*force;}
+    }
+    const pending=rows.filter(n=>!positions.has(n.id));
+    while(pending.length){const at=pending.findIndex(n=>!byId.has(String(n.parent_id))||positions.has(String(n.parent_id))),node=pending.splice(at<0?0:at,1)[0];
+      const parent=positions.get(String(node.parent_id)),anchor=anchors.get(node._family)||{x:cx,y:cy};let x=anchor.x,y=anchor.y;
+      if(parent&&String(node.parent_id)!==root.id&&byId.get(String(node.parent_id))?._family===node._family){const angle=(hash(node.id+'orbit')%360)*Math.PI/180;const attraction=Math.min(.28,.12*Math.max(.1,Math.min(4,Number(node.weight)||1)));x=(parent.x+Math.cos(angle)*270)*(1-attraction)+anchor.x*attraction;y=(parent.y+Math.sin(angle)*210)*(1-attraction)+anchor.y*attraction;}
+      let chosen=null;
+      for(let attempt=0;attempt<80;attempt++){const r=attempt?Math.sqrt(attempt)*130:0,a=attempt*2.3999632297;const p={x:x+Math.cos(a)*r,y:y+Math.sin(a)*r,w:node.w,h:node.h};if(!collides(p)){chosen=p;break;}}
+      if(!chosen){let bottom=Math.max(cy,...[...positions.values()].map(p=>p.y+p.h))+80;chosen={x,y:bottom,w:node.w,h:node.h};while(collides(chosen))chosen.y+=node.h+40;}
+      positions.set(node.id,chosen);reserve(chosen);
+    }
+    return {positions,width:Math.max(width,...[...positions.values()].map(p=>p.x+p.w)),height:Math.max(height,...[...positions.values()].map(p=>p.y+p.h)),reused,new_count:rows.length-reused};
+  }
+  function starPresentation(nodes,positions,camera,viewport,options={}) {
+    const byId=new Map(nodes.map(n=>[String(n.id),n])),focus=byId.get(String(camera.focusNodeId))||byId.get('root'),line=new Set(),seen=new Set();
+    let walk=focus;while(walk&&!seen.has(String(walk.id))){seen.add(String(walk.id));if(walk===focus||Number(walk.layer||0)===0)line.add(String(walk.id));walk=byId.get(String(walk.parent_id));}
+    const family=focus?familyFor(focus,byId):'root',span=Math.max(200,Math.hypot(viewport.width,viewport.height)/(camera.scale||1));
+    const out=new Map(),latest=Math.max(1,...nodes.map(n=>Number(n.id)||0)),zoomContext=Math.sqrt(Math.max(.04,Math.min(1,camera.scale||1)));
+    for(const node of nodes){
+      const id=String(node.id),p=positions.get(id);if(!p)continue;
+      const current=line.has(id),related=familyFor(node,byId)===family,layer=Math.max(0,Math.min(2,Number(node.layer)||0));
+      const priority=Math.max(.1,Math.min(1,(Number(node.path_weight)||50)/100)),weight=Math.max(.25,Math.min(2,Number(node.weight)||1));
+      const distance=Math.hypot(p.x+p.w/2-camera.x,p.y+p.h/2-camera.y)/span;
+      const falloff=1/(1+distance*distance*2.8),base=layer<=1?.82-(.82-.56)*layer:.56-(.56-.33)*(layer-1);
+      const receded=options.receded?.has(id)||options.dimLayers?.has(layer),recency=.88+.12*Math.max(0,Math.min(1,(Number(node.id)||latest)/latest));
+      const size=current?1:Math.max(.12,Math.min(.9,base*(.78+priority*.3)*Math.sqrt(weight)*(related?1:.82)*falloff*zoomContext*recency*(receded?.48:1)));
+      const brightness=current?1:Math.max(.06,Math.min(.88,(.28+size*.68)*falloff*(receded?.62:1)));
+      const colour=node.locked_at||node.origin==='web_evidence'||['source','passage','edge'].includes(node.type)?'#ffd38b':layer===2?'#b3bdcc':node.type==='association'?'#a8ebbf':['counter','edge_case','dead_end'].includes(node.type)?'#efbe7d':node.type==='reframing'?'#c8b7f0':'#9ddcec';
+      out.set(id,{size_factor:size,brightness_factor:brightness,logic_line:current,related,colour,distant:!current&&size<.4});
+    }
+    return out;
+  }
   function sentence(text) {
     const clean = String(text || '').replace(/https?:\/\/\S+/g, '').replace(/[*_#`]/g, '').replace(/\b(?:Completed search\.|No completed search reported\.)\s*/g, '').replace(/\s+/g, ' ').trim();
     const first = clean.match(/^.*?[.!?](?=\s+[A-Z]|$)/)?.[0] || clean;
@@ -272,5 +333,5 @@
     add(text) { text = sentence(text); if (!text || this.seen.has(text)) return; this.seen.add(text); this.items.push(text); this.history.push(text); if (this.items.length > 50) this.items.shift(); if (this.history.length > 100) this.history.shift(); }
     tick(now, visible = true) { const elapsed = this.last ? now - this.last : 0; this.last = now; if (!visible || this.paused) { this.until += elapsed; return null; } if (!this.items.length || this.current && now < this.until) return null; this.current = this.items.shift(); this.until = now + Math.max(5000, Math.min(10000, this.current.split(/\s+/).length * 260 + 2000)); return this.current; }
   }
-  return {owner, project, layout, sentence, ReadingQueue};
+  return {owner, project, layout, constellationLayout, starPresentation, sentence, ReadingQueue};
 });

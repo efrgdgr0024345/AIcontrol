@@ -1,5 +1,31 @@
 # AIcontrol — current project state
 
+## Living star-system Map (2026-11-14 AWST)
+
+The Map now uses a pure black canvas, continuous size/light attention, stable
+knowledge constellations and one smooth, interruptible CameraController. Current
+focus stays prominent; older ideas recede and remain reachable. Dim/recede controls
+retain ideas, and camera movement never changes their cached world coordinates.
+Only explicit Reset clears position memory. Model-only exploration and final
+user-selected Evidence lock-in retain their existing provider, budget and Stop
+contracts; saved flow-version 0/1 investigations remain readable and functional.
+
+[STAR_SYSTEM_MAP.md](STAR_SYSTEM_MAP.md) records all five milestones, public camera
+API, additive fields, controls, no-JS/legacy compatibility and exact validation
+limits. It supersedes older scroll-camera, white/grid canvas and layer-hide
+presentation descriptions below. There is no continuous physics or idle camera loop.
+
+
+Local validation: PHP 8.4.24 host/syntax and all eighteen PHP suites, all seven
+Python HTTP suites, 29 engine checks, 11 new camera/layout groups and the full
+Chromium UI suite pass. New fixtures use synthetic provider/data only. The new
+240-star browser case includes dark desktop/mobile axe, interruption, full-size
+old focus, real deferred growth/manual cancellation, stable coordinates and
+optional focus HTTP scope. Camera frame timing is recorded with outliers in
+STAR_SYSTEM_MAP.md; sustained 60 fps, billed live research and live-host activation
+are not established by these checks. Required CI is verified on the exact release
+SHA after publication; do not infer hosting activation from a passing release.
+
 ## Exploration-first living map (2026-11-13 AWST)
 
 New runs use flow version 2: tool-free provisional seed → user-steered model
