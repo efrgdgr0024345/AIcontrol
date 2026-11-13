@@ -384,7 +384,7 @@ document.addEventListener('submit', event => {
     const ideas=snapshot.nodes.filter(n=>types.includes(n.type));
     for(const form of document.querySelectorAll('[data-living-controls]')){
       const picker=form.querySelector('[data-living-nodes]'),stamp=JSON.stringify(ideas.map(n=>[n.id,n.title,n.layer,n.provenance_tag]));
-      if(picker.dataset.stamp!==stamp){const selected=new Set([...picker.selectedOptions].map(o=>o.value));picker.replaceChildren();for(const node of ideas){const option=document.createElement('option');option.value=node.id;option.textContent=`#${node.id} · ${node.title} · ${['Active','Secondary','Tertiary'][Number(node.layer)||0]} · ${node.provenance_tag||'legacy'}`;option.selected=selected.has(String(node.id));picker.append(option);}picker.dataset.stamp=stamp;}
+      if(picker.dataset.stamp!==stamp){const selected=new Set([...picker.selectedOptions].map(o=>o.value));picker.replaceChildren();for(const node of ideas){const option=document.createElement('option');option.value=node.id;option.textContent=`#${node.id} · ${node.title} · ${['Active','Secondary','Tertiary'][Number(node.layer)||0]} · ${(node.provenance_tag||'legacy').replaceAll('_',' ')}`;option.selected=selected.has(String(node.id));picker.append(option);}picker.dataset.stamp=stamp;}
       const validate=()=>{
         const action=form.elements.action.value,chosen=[...picker.selectedOptions].map(o=>ideas.find(n=>String(n.id)===o.value)).filter(Boolean);
         const idle=snapshot.run.status==='running'&&!snapshot.run.busy_since&&['exploring','verification_review'].includes(snapshot.run.phase);

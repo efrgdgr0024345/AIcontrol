@@ -18,7 +18,7 @@ revisions; do not infer a live hosting revision from the latest source commit.
 
 
 Validation for this release: PHP 8.4.24 host/syntax checks, all seventeen PHP
-application/installer suites (including 40 new exploration assertions), all seven
+application/installer suites (including 42 new exploration assertions), all seven
 Python HTTP suites, 29 pure map-engine checks and the complete Chromium UI suite
 pass locally. New Chromium coverage uses real local PHP actions and synthetic
 provider replies for model growth, layer/reason controls, exact position memory,

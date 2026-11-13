@@ -7,6 +7,8 @@
   const map = root.querySelector('[data-mindmap]'), world = map.querySelector('[data-map-world]');
   const viewport = map.querySelector('[data-map-viewport]'), space = map.querySelector('[data-map-space]');
   const inspector = map.querySelector('[data-map-inspector-content]');
+  const originLabel=value=>({model_latent:'Model idea',web_evidence:'Web evidence',user:'Your idea',synthesis:'Model assessment'}[value]||'Historical record');
+  const provenanceLabel=value=>({provisional_model:'Provisional / unchecked',locked:'Locked for Evidence',grounded:'Grounded within source scope'}[value]||'Unchecked');
   const conceptTypes=['dream_claim','question','model_idea','association','counter','edge_case','reframing'];
   const shownLayers=new Set([0,1,2]);
   const collapsed = new Set(), selectedSources = new Set();
@@ -191,7 +193,7 @@
       if(conceptTypes.includes(node.type))button.querySelector('.map-node-status').textContent+=(node.type==='question'?' · untested':'')+' · priority '+priority;
       if(node.type==='root'&&node.working)button.querySelector('.map-node-status').textContent=({planning:'Planning concepts',evidence:'Researching',discovery:'Discovering concepts',verification:'Checking findings'}[node.activity]||'Working');
       if(conceptTypes.includes(node.type)){button.querySelector('.map-node-status').textContent=(node.working?({planning:'Planning',evidence:'Researching',discovery:'Exploring',verification:'Checking'}[node.activity]||'Working')+' · ':node.verdict?node.verdict+' · ':'')+((node.source_ids||[]).length?node.source_ids.length+' sources · ':'')+'priority '+priority+(Number(node.speculative)?' · untested':'');}
-      if(Number(snapshot.run.flow_version)>=2&&conceptTypes.includes(node.type)){button.querySelector('.map-node-status').textContent=`${['Active','Secondary','Tertiary'][Number(node.layer)||0]} · ${node.origin||'legacy'} · ${node.provenance_tag||'unchecked'}`;}
+      if(Number(snapshot.run.flow_version)>=2&&conceptTypes.includes(node.type)){button.querySelector('.map-node-status').textContent=`${['Active','Secondary','Tertiary'][Number(node.layer)||0]} · ${originLabel(node.origin)} · ${provenanceLabel(node.provenance_tag)}`;}
       if (node.type==='dream_claim' && !card.querySelector('[data-map-claim]')) {
         const label=el('label',undefined,'map-node-check'),input=el('input');input.type='checkbox';input.dataset.mapClaim=node.id;
         label.append(input,document.createTextNode(`Keep claim #${node.id}`));card.append(label);
@@ -244,7 +246,7 @@
       const title=el('h3',node.title),detail=el('p',`${node.type.replaceAll('_',' ')} · ${node.status}`,'map-inspector-status');
       inspector.replaceChildren(title,detail,el('p',node.dead_end_reason||node.content||'No details saved yet.','map-inspector-text'));
       if(conceptTypes.includes(node.type))inspector.append(el('p',`Priority ${node.path_weight||50} · ${node.model_tier||'primary'} model tier. ${node.weight_reason||'Priority is separate from evidence strength.'}${Number(node.speculative)?' Untested idea — may be wrong.':''}`));
-      if(Number(snapshot.run.flow_version)>=2)inspector.append(el('p',`${['Active','Secondary','Tertiary'][Number(node.layer)||0]} · ${node.origin||'legacy'} · ${node.provenance_tag||'unchecked'}${node.park_reason?' · Park reason: '+node.park_reason:''}`));
+      if(Number(snapshot.run.flow_version)>=2)inspector.append(el('p',`${['Active','Secondary','Tertiary'][Number(node.layer)||0]} · ${originLabel(node.origin)} · ${provenanceLabel(node.provenance_tag)}${node.park_reason?' · Park reason: '+node.park_reason:''}`));
       if(stages.length){const history=el('details');history.append(el('summary','Planning, evidence and findings history'));for(const stage of stages)history.append(el('h4',stage.title+' · '+stage.status),el('p',stage.content));inspector.append(history);}
       const usage=el('p');usage.dataset.mapPathUsage='1';inspector.append(usage);
       if(linked.length)inspector.append(el('p',`Linked claims: ${linked.map(id=>'#'+id).join(', ')}`));
