@@ -17,7 +17,7 @@ rotation/pan controls below. No provider call or database migration is added.
 Local validation passed on PHP 8.4.24: host/syntax, generated UI/manifest, all
 eighteen PHP suites, all seven HTTP suites, 32 projection groups, 14 legacy
 camera groups, 14 spatial camera groups and the complete Chromium suite. The
-33-view workspace axe report has zero violations; the new 241-star 3D desktop
+34-view workspace axe report has zero violations; the new 241-star 3D desktop
 and mobile audits also pass. Fixtures are synthetic, with no billed provider
 call or live-host activation. Verify required CI on the published release SHA.
 

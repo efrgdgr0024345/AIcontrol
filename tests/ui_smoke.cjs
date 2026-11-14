@@ -170,6 +170,15 @@ const {spawn,spawnSync}=require('child_process');
   if(stepCalls!==1||!stopped)throw new Error('Stop did not prevent phase continuation');
   await page.getByRole('button',{name:'Start a new investigation from this project',exact:true}).waitFor();
   await audit('Investigation interrupted');
+  // Audit the least opaque sentence state deterministically, including when an
+  // automatic update begins while an accessibility scan is already running.
+  const sentence=page.locator('.research-idea-sentence');
+  const wasPaused=await sentence.getAttribute('aria-pressed')==='true';
+  if(!wasPaused)await sentence.click();
+  await sentence.evaluate(n=>n.classList.add('idea-fading'));
+  await audit('Idea update contrast');
+  await sentence.evaluate(n=>n.classList.remove('idea-fading'));
+  if(!wasPaused)await sentence.click();
   investigation.run={...investigation.run,status:'complete',phase:'reconciliation',token_input:55,token_output:120,usage_unknown:0,busy_since:null};
   investigation.nodes.push({id:3,parent_id:2,type:'plan_step',status:'dead_end',title:'Verify fixture claim',content:'No useful second source.'},{id:4,parent_id:3,type:'dead_end',status:'dead_end',title:'No usable cited source',content:'The branch remains open.'});
   investigation.nodes.push({id:5,parent_id:3,type:'search',status:'complete',title:'Evidence search',content:'Completed search'},{id:6,parent_id:5,type:'source',status:'complete',title:'Collected source fixture',content:'Provider summary'},{id:7,parent_id:2,type:'synthesis',status:'complete',title:'Open · claim #2',content:'A useful source exists, but local applicability remains uncertain.',data_json:JSON.stringify({verdict:'open',reason:'A useful source exists, but local applicability remains uncertain.',source_ids:[1]})});

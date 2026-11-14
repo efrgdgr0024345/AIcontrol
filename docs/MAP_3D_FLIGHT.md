@@ -72,8 +72,10 @@ continues exporting the saved payload and display projection, not the live pose.
 Local release checks passed on PHP 8.4.24: host/syntax, generated assets/manifest,
 all eighteen PHP suites, all seven HTTP suites, 32 projection groups, 14 legacy
 camera groups, 14 spatial camera groups and the full Chromium suite. The
-workspace report covers 33 axe views with zero violations, alongside the new
-3D desktop/mobile audits.
+workspace report covers 34 axe views with zero violations, alongside the new
+3D desktop/mobile audits. Sentence updates keep readable contrast throughout
+their transition; a deterministic lowest-opacity audit covers the timing case
+that CI caught during an automatic update.
 
 The spatial unit suite covers depth/parallax, orbit geometry, fixed-eye free
 look, camera-relative held flight/stop, focus interruption, oblique-volume Fit,

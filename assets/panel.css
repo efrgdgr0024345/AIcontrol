@@ -608,7 +608,8 @@ body.research-map-open { overflow:hidden; }
 .map-idea-sentence { flex:1; }
 .map-idea-sentence span { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; transition:opacity .22s ease; }
 .research-idea-sentence span { display:block; transition:opacity .22s ease; }
-.idea-fading span { opacity:0; }
+/* Keep the changing sentence readable throughout its transition. */
+.idea-fading span { opacity:.8; }
 .map-idea-sentence[aria-pressed=true]::after,.research-idea-sentence[aria-pressed=true]::after { content:' · paused'; color:#59657a; font-size:.7rem; }
 .map-controls-handle { width:42px; height:42px; min-width:42px; padding:0; color:#344963; border:1px solid #d2dae7; border-radius:50%; background:#fff; font-size:1.2rem; }
 .map-controls-handle[data-state=running] { box-shadow:inset 0 -3px #2a8269; }
