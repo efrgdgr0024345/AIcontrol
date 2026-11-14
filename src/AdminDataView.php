@@ -31,7 +31,7 @@ final class AdminDataView
             foreach($data['tasks'] as $task)if((int)$task['project_id']===$id){$taskId=(int)$task['id'];echo '<details class="admin-record"><summary>Task #'.$taskId.' · '.Ui::e($task['title'].' · '.$task['status']).'</summary>';self::control($csrf,'reset_task',$taskId,'Clear task history','Remove this task’s AI outputs, usage and activity; reset it to draft and clear evidence. Keep title and acceptance criteria.');self::control($csrf,'delete_task',$taskId,'Delete task','Remove this task, its AI run outputs, usage and related activity.');echo '</details>';}
             self::control($csrf,'delete_project',$id,'Delete task project','Remove this project and all its tasks, agent outputs, usage and activity.');echo '</details>';
         }
-        echo '</section></div><details class="admin-bulk"><summary>Workspace cleanup and reset</summary>';
+        echo '</section></div><p><a class="text-decoration-underline" href="/loader.php?view=systems">Manage Linux systems, SSH keys and saved system task logs</a>. Systems are retained independently of project cleanup.</p><details class="admin-bulk"><summary>Workspace cleanup and reset</summary>';
         self::control($csrf,'clear_activity',0,'Clear task activity log','Remove saved task activity events. Projects, tasks and AI outputs remain.');
         self::control($csrf,'clear_diagnostics',0,'Clear diagnostic log','Clear diagnostic events. A new event records this cleanup. Projects, vault and usage remain.');
         self::control($csrf,'clear_suggestions',0,'Clear writing-help history','Remove the private suggestion usage journal and reset its local hourly allowance. Already incurred provider charges are unchanged.');

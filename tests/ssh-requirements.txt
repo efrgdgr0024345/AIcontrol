@@ -1,0 +1,2 @@
+# Only for the local SSH protocol fixture; production uses /usr/bin/ssh.
+paramiko==4.0.0

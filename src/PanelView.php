@@ -110,7 +110,7 @@ final class PanelView
             match ($view) {
                 'admin' => WorkspaceView::admin($data['vault'], $csrf), 'research' => WorkspaceView::research($data['research'], $csrf),
                 'overview' => self::overview($data), 'projects' => self::projects($data, $csrf),
-                'runs' => self::runs($data), 'systems' => self::systems($data), 'history' => self::history($data),
+                'runs' => self::runs($data), 'systems' => self::systems($data,$csrf), 'history' => self::history($data),
             };
         }
         echo '<footer class="app-footer"><span>AIcontrol · A place for the work and its evidence.</span><span>Times in AWST</span></footer></main></div></div><script nonce="' . Ui::e($data['asset_nonce']) . '">' . Ui::js() . '</script></body></html>';
@@ -208,8 +208,9 @@ final class PanelView
         echo '</div>';
     }
 
-    private static function systems(array $data): void
+    private static function systems(array $data,string $csrf): void
     {
+        SystemsView::render($data['systems'],$csrf,$data['projects']);
         $sha = getenv('AICONTROL_INSTALLED_SHA') ?: '';
         echo '<div class="connection-grid">';
         foreach ([

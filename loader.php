@@ -550,7 +550,7 @@ final class AIcontrolUi
   });
   document.querySelectorAll('[data-copy-report]').forEach(button => button.addEventListener('click', async () => {
     const report=document.getElementById(button.dataset.copyReport), status=button.parentElement.querySelector('[data-copy-report-status]');
-    try { if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(report.value);else {report.focus();report.select();if(!document.execCommand('copy'))throw new Error('copy');}status.textContent=button.dataset.copyReport==='admin-technical-report'?'Technical report copied.':'JSON copied.'; }
+    try { if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(report.value);else {report.focus();report.select();if(!document.execCommand('copy'))throw new Error('copy');}status.textContent=button.dataset.copyReport==='admin-technical-report'?'Technical report copied.':button.dataset.copyReport==='system-script'?'Setup script copied.':'JSON copied.'; }
     catch {report.focus();report.select();status.textContent='Report selected. Use your device’s Copy command.';}
   }));
   let installing = false;
@@ -1685,6 +1685,38 @@ document.addEventListener('submit', event => {
   showView(view);
 })();
 
+// Explicit, sequential system steps. Reloading never retries a dispatched step.
+(() => {
+  const area=document.querySelector('[data-system-run]');if(!area)return;
+  const key='aicontrol-system-auto-'+area.dataset.systemRun;let busy=false,stepReload=false;
+  const auto=area.querySelector('[data-system-auto]');
+  const message=document.createElement('p');message.setAttribute('role','status');area.append(message);
+  const disableAuto=()=>sessionStorage.removeItem(key);
+  window.addEventListener('pagehide',()=>{if(!stepReload)disableAuto();});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden&&!stepReload)disableAuto();});
+  const advance=async form=>{
+    const stop=form.dataset.systemAction==='system_stop';if(busy&&!stop)return;
+    if(stop)disableAuto();else busy=true;
+    const button=form.querySelector('button');button.disabled=true;
+    message.textContent=stop?'Stopping system task…':'Agent step running. Waiting for a confirmed result…';
+    const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),65000);
+    try {
+      const url=new URL(form.getAttribute('action'),location.href);url.searchParams.set('systems_api','1');
+      const response=await fetch(url,{method:'POST',body:new URLSearchParams(new FormData(form)),credentials:'same-origin',signal:controller.signal});
+      if(!(response.headers.get('content-type')||'').includes('application/json'))throw Error('Session or progress could not be verified. Sign in again if needed.');
+      const data=await response.json();if(!response.ok)throw Error(data.error||'System step failed.');
+      if(data.run?.status!=='ready')disableAuto();
+      const next=new URL(location.href);next.searchParams.set('system_run',area.dataset.systemRun);stepReload=true;location.assign(next);
+    }catch(error){disableAuto();message.textContent=error.name==='AbortError'?'Progress is uncertain. No step will be retried automatically. Stop the task and inspect the server before starting another.':error.message;button.disabled=false;}
+    finally{clearTimeout(timeout);busy=false;}
+  };
+  area.querySelectorAll('[data-system-action]').forEach(form=>form.addEventListener('submit',event=>{event.preventDefault();advance(form);}));
+  if(auto){auto.addEventListener('click',()=>{sessionStorage.setItem(key,'1');auto.disabled=true;advance(area.querySelector('[data-system-action=system_step]'));});}
+  if(area.dataset.systemStatus!=='ready'||document.hidden)disableAuto();
+  else if(sessionStorage.getItem(key)==='1')setTimeout(()=>{if(!document.hidden&&sessionStorage.getItem(key)==='1')advance(area.querySelector('[data-system-action=system_step]'));},1500);
+  area.querySelector('[data-system-download]')?.addEventListener('click',()=>{const blob=new Blob([document.getElementById('system-report').value],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='system-task-'+area.dataset.systemRun+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
+})();
+
 AICONTROL_UI_JS;
     }
     public static function css(): string
@@ -2538,6 +2570,13 @@ body.research-map-open { overflow:hidden; }
 .mindmap .map-viewport[data-space-mode=fly] { cursor:crosshair; }
 .mindmap .map-viewport[data-space-mode=orbit] { cursor:grab; }
 .map-rotation-controls output { width:100%; text-align:left; font-size:12px; }
+
+.systems-form { display:grid; gap:10px; max-width:680px; margin:18px 0; }
+.systems-form .btn { justify-self:start; }
+.systems-code { white-space:pre-wrap; overflow-wrap:anywhere; font-family:monospace; max-width:100%; }
+[data-system-action] { display:inline-block; margin:6px 8px 6px 0; }
+
+.systems-list a { text-decoration:underline; }
 
 AICONTROL_UI_CSS;
     }

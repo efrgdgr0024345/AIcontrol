@@ -97,3 +97,12 @@ CSRF-protected and typed-confirmed, with active-provider exclusion. It preserves
 PIN, encrypted vault/key, signing identity, configuration, security throttling
 and installed code. Diagnostic/suggestion cleanup is separately selected. See
 ADMIN_DATA.md for exact scopes and queried SQLite/PHP inventory fields.
+
+Systems defaults: Inspection access, per-server ED25519 keys encrypted in the
+vault, manual fingerprint verification, eight decisions/task, ten tasks/hour,
+1,000 output tokens/decision, 30-second provider/20-second local SSH limits,
+15-second remote command limit plus kill grace, 16 KB retained per output stream.
+Requires proc_open, /usr/bin/ssh, /usr/bin/ssh-keyscan and target-port access on the
+PHP host. An external relay is not included. Private systems.sqlite persists across
+updates; Admin inventories it. Disconnect/delete is explicit in Systems, separate
+from project resets. See SYSTEMS.md for exact access and uncertainty semantics.

@@ -29,6 +29,8 @@ jobs:
           php tests/agent.php
           php tests/agent_adapter.php
           php tests/workspace.php
+          php tests/systems.php
+          python3 -B -m unittest -v tests/systems_http.py
           php tests/project_inspector.php
           php tests/admin_data.php
           python3 -B -m unittest -v tests/admin_http.py
@@ -46,6 +48,11 @@ jobs:
           python3 -B -m unittest -v tests/standalone_smoke.py
           python3 -B -m unittest -v tests/passwordless_smoke.py
           python3 -B -m unittest -v tests/pin_smoke.py
+      - name: Real SSH transport integration
+        run: |
+          python3 -m venv /tmp/aicontrol-ssh-checks
+          /tmp/aicontrol-ssh-checks/bin/pip install --disable-pip-version-check -r tests/ssh-requirements.txt
+          /tmp/aicontrol-ssh-checks/bin/python -B -m unittest -v tests/systems_ssh.py
       - name: Browser UI and accessibility
         run: |
           npm ci --ignore-scripts --no-audit --no-fund

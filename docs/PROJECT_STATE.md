@@ -1,5 +1,29 @@
 # AIcontrol — current project state
 
+## Linux systems and SSH agent tasks (2026-11-14 AWST)
+
+Systems now supports per-server encrypted SSH keys, copyable account setup,
+explicit host-fingerprint verification, connection/resource inspection and bounded
+model-directed SSH tasks. Inspection uses fixed tools; optional Maintenance permits
+commands within the account's Linux permissions. One command per step, eight
+model decisions/task and ten tasks/hour. Stop, timeout and uncertain-worker guards
+retain actual command evidence; reports copy/download, disconnect and typed
+record deletion work alongside an additive private systems.sqlite database.
+
+[SYSTEMS.md](SYSTEMS.md) records exact host prerequisites, access/runner behavior,
+storage, bounds, logs, testing and limitations. This supersedes historical claims
+that no remote execution exists. The older generic task adapter remains tool-free.
+Direct SSH requires proc_open/OpenSSH on the PHP host and outbound server access;
+an external worker for restricted hosting is not implemented. No owner server or
+live-host activation is established by local test fixtures.
+
+Validation: nineteen PHP suites, eight HTTP suites, actual OpenSSH/keyscan against
+a local SSH protocol fixture (real commands, timeout, Stop, output capture and
+key cleanup), generated UI/manifest/syntax checks and full Chromium regressions
+passed locally. Systems desktop/mobile axe, sequential auto steps, Stop between
+steps, report copy/download and no-JS cleanup are covered. Model decisions are
+synthetic; no billed server task or owner-server connection is established.
+
 ## Three-dimensional orbit and flight (2026-11-14 AWST)
 
 Map now uses stable X/Y/Z constellations and a perspective camera. Drag changes

@@ -5,6 +5,8 @@ namespace AIcontrol;
 
 use RuntimeException;
 use Throwable;
+require_once __DIR__.'/SystemsAgent.php';
+require_once __DIR__.'/SystemsView.php';
 
 final class Panel
 {
@@ -143,6 +145,27 @@ final class Panel
             } elseif (!($_SESSION['authenticated'] ?? false)) {
                 http_response_code(401);
                 $error = 'Sign in to record a proposal.';
+            } elseif (str_starts_with($action,'system_')) {
+                $json=($_GET['systems_api']??'')==='1';
+                try {
+                    if($config['access_mode']==='testing')throw new RuntimeException('Systems control requires PIN, password or host-authenticated access.');
+                    $systems=new Systems($directory);$id=(int)self::input('system_id');$runId=(int)self::input('run_id');
+                    session_write_close();
+                    if($action==='system_add')$id=$systems->add(self::input('name'),self::input('host'),self::input('port'),self::input('username'),self::input('access'),'');
+                    elseif($action==='system_test'){$systems->pin($id,self::input('fingerprint'));$systems->verify($id);}
+                    elseif($action==='system_revoke')$systems->revoke($id);
+                    elseif($action==='system_delete'){$systems->purge($id,self::input('confirmation'));$id=0;}
+                    elseif($action==='system_start')$runId=(new SystemsAgent($systems))->start($id,self::input('task'),self::input('project_id')===''?null:(int)self::input('project_id'));
+                    elseif(in_array($action,['system_step','system_stop'],true)){
+                        if((int)$systems->run($runId)['system_id']!==$id)throw new RuntimeException('Task does not belong to this system.');
+                        if($action==='system_stop')$systems->stop($runId);else (new SystemsAgent($systems))->step($runId);
+                    }else throw new RuntimeException('System operation unavailable.');
+                    if($json){header('Content-Type: application/json');echo json_encode(['run'=>$runId?$systems->run($runId):null],JSON_THROW_ON_ERROR);return;}
+                    header('Location: '.self::entry().'?view=systems&system='.$id.($runId?'&system_run='.$runId:''),true,303);return;
+                }catch(Throwable $failure){
+                    Diagnostics::record('systems.action.failed',['action'=>$action],$failure);http_response_code(422);$error=Diagnostics::clean($failure->getMessage());
+                    if($json){header('Content-Type: application/json');echo json_encode(['error'=>$error],JSON_INVALID_UTF8_SUBSTITUTE);return;}
+                }
             } elseif ($action === 'admin_project_json') {
                 try {
                     $project=ProjectInspector::id($_POST['project_id']??null);
@@ -260,6 +283,10 @@ final class Panel
         $authenticated = (bool) ($_SESSION['authenticated'] ?? false);
         $data = $authenticated ? $store->snapshot() : ['projects' => [], 'tasks' => [], 'events' => [], 'runs' => []];
         if ($authenticated && $view === 'admin') { $data['vault'] = (new Vault($directory))->entries(); }
+        if($authenticated&&$view==='systems'){
+            try{$data['systems']=$config['access_mode']==='testing'?['allowed'=>false]:(new Systems($directory))->snapshot((int)($_GET['system']??($id??0)),(int)($_GET['system_run']??($runId??0)));}
+            catch(Throwable $failure){$error='The selected system or task is unavailable.';$data['systems']=(new Systems($directory))->snapshot();}
+        }
         if ($authenticated && $view === 'research') { $data['research'] = (new Research($directory))->snapshot(); $data['research']['workspace'] = (new Investigation($directory))->workspace((int)($_GET['project'] ?? 0), (int)($_GET['run'] ?? 0),($_GET['new']??'')==='1'||(($action??'')==='research_project'&&$error!=='')); }
         if(($action??'')==='research_project'&&$error!==''&&isset($data['research']))$data['research']['create_values']=['name'=>self::input('name'),'brief'=>self::input('brief')];
         $data['asset_nonce'] = $assetNonce;

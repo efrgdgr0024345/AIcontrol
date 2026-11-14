@@ -11,7 +11,7 @@
   });
   document.querySelectorAll('[data-copy-report]').forEach(button => button.addEventListener('click', async () => {
     const report=document.getElementById(button.dataset.copyReport), status=button.parentElement.querySelector('[data-copy-report-status]');
-    try { if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(report.value);else {report.focus();report.select();if(!document.execCommand('copy'))throw new Error('copy');}status.textContent=button.dataset.copyReport==='admin-technical-report'?'Technical report copied.':'JSON copied.'; }
+    try { if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(report.value);else {report.focus();report.select();if(!document.execCommand('copy'))throw new Error('copy');}status.textContent=button.dataset.copyReport==='admin-technical-report'?'Technical report copied.':button.dataset.copyReport==='system-script'?'Setup script copied.':'JSON copied.'; }
     catch {report.focus();report.select();status.textContent='Report selected. Use your device’s Copy command.';}
   }));
   let installing = false;
