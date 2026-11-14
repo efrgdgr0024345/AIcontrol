@@ -4,6 +4,11 @@ Release intent (2026-11-14 AWST): a black, navigable constellation of provisiona
 ideas. Exploration-first and explicit final Evidence selection remain the research
 workflow; this release changes presentation and adds optional map metadata.
 
+The subsequent [rotation/links/activity update](MAP_ROTATION_LINKS_ACTIVITY.md)
+adds 2D rotation, common-idea overlays, shared family colours and confirmed work
+markers. It supersedes the earlier node-type colour key and extends camera state
+with rotation while retaining the world-coordinate and research contracts here.
+
 ## Release notes
 
 - Pure black star-system canvas with restrained knowledge-family colours; ideas

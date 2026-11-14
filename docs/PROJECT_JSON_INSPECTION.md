@@ -83,3 +83,8 @@ Star-system note: database snapshots now include optional weight/family/focus/ca
 columns. Live size/light and camera/emphasis state belong to the Research window;
 they are not inferred from nullable cache columns or captured by Admin projection.
 See STAR_SYSTEM_MAP.md for the camera API and geometry contract.
+
+Rotation/update note: projected JSON now includes display-only common-family and
+matching-wording links, plus pending request context IDs. They do not create ledger
+relations or evidence. Browser rotation, link visibility and contact-confirmation
+state remain specific to the Research window. See MAP_ROTATION_LINKS_ACTIVITY.md.

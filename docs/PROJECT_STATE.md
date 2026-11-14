@@ -1,5 +1,27 @@
 # AIcontrol — current project state
 
+## Rotation, common-idea links and current model work (2026-11-14 AWST)
+
+Map rotation now supports buttons, Shift-drag, a drag-mode toggle, keyboard Q/E/0
+and two-finger twist/pinch/pan. Labels stay upright and saved positions stay fixed.
+Related branches share family colours; labelled display-only links expose common
+family, matching wording and shared citations without creating evidence. Current
+model work has a visible banner, per-node static rings/badges and request details.
+Markers track actual pending context, clear on Stop/unverified progress and recover
+after confirmed status, including unchanged snapshots. No extra model calls occur.
+
+Local validation passed: all eighteen PHP suites, all seven Python HTTP suites,
+32 map projection groups, 14 camera groups and all Chromium suites, including
+rotation/native touch, common-link inspection, pending-context attribution,
+identical-status recovery, Stop and dark desktop/mobile axe. Provider states are
+synthetic fixtures; no billed live call or host activation is established. The
+release still requires its exact-SHA planning-panel check after publication.
+
+[MAP_ROTATION_LINKS_ACTIVITY.md](MAP_ROTATION_LINKS_ACTIVITY.md) records controls,
+link semantics, camera math, activity honesty, tests and remaining performance
+limits. Its family-colour rules supersede the earlier node-type colour key.
+
+
 ## Living star-system Map (2026-11-14 AWST)
 
 The Map now uses a pure black canvas, continuous size/light attention, stable

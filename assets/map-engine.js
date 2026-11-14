@@ -107,13 +107,14 @@
     }
     const sourceById = new Map(sources.map(source => [key(source.id), source]));
     for (const node of concepts) node.source_ids = sources.filter(source => sourceOwners.get(key(source.id)).includes(node.id)).map(source => sourceId(source.id));
-    const pending = run.status === 'running' ? state.requests.filter(request => request.status === 'pending').slice().sort((a, b) => compare(a.id || '', b.id || '')) : [];
-    for (const request of pending) {
-      const targetId = [request.path_node_id, request.claim_id, request.node_id].map(nearest).find(id => id !== 'root') || 'root';
-      const targets = targetId === 'root' ? concepts.filter(node => node.type === 'dream_claim' && ![0, '0', false].includes(node.selected)) : [conceptsById.get(targetId)].filter(Boolean);
-      const activity = ['dream', 'exploration','model_explore'].includes(request.kind) ? 'discovery' : request.kind === 'plan' ? 'planning' : request.kind === 'evidence' ? 'evidence' : 'verification';
-      for (const node of targets) Object.assign(node, {working: true, activity, activity_text: request.activity || request.worker_role || request.kind});
-      if (targetId === 'root' && !targets.length) Object.assign(root, {working: true, activity, activity_text: request.activity || request.worker_role || request.kind});
+    const pending=state.requests.filter(request=>request.status==='pending'&&(run.status==='running'||request.kind==='learn')).slice().sort((a,b)=>compare(a.id||'',b.id||''));
+    for(const request of pending){
+      const targetId=[request.path_node_id,request.claim_id,request.node_id].map(nearest).find(id=>id!=='root')||'root';
+      const phase=byId.get(key(request.node_id)),explicit=request.kind==='model_explore'?unique(list(data(phase).ids).map(nearest).filter(id=>id!=='root')):[];
+      const targets=explicit.length?explicit.map(id=>conceptsById.get(id)).filter(Boolean):targetId!=='root'?[conceptsById.get(targetId)].filter(Boolean):request.kind==='model_explore'||request.kind==='learn'?[root]:concepts.filter(node=>node.type==='dream_claim'&&![0,'0',false].includes(node.selected));
+      if(!targets.length)targets.push(root);
+      const activity=['dream','exploration','model_explore'].includes(request.kind)?'discovery':request.kind==='plan'?'planning':request.kind==='evidence'?'evidence':request.kind==='learn'?'learning':'verification';
+      for(const node of targets)Object.assign(node,{working:true,activity,activity_text:request.activity||request.worker_role||request.kind,working_request_ids:unique([...(node.working_request_ids||[]),String(request.id)]),work_scope:targets.length>1?'shared':'node'});
     }
     const verdicts = new Map();
     for (const node of full.filter(node => node.type === 'synthesis')) verdicts.set(nearest(node.id), node);
@@ -179,13 +180,14 @@
       return result;
     }
     const projected = [root, ...ordered(selectedConcepts), ...details.sort((a, b) => compare(a.id, b.id))].map(node=>({...node,layer:Math.max(0,Math.min(2,Number(node.layer)||0)),origin:node.origin||(['source','passage','edge'].includes(node.type)?'web_evidence':null)}));
-    const projectedIndex=new Map(projected.map(n=>[n.id,n]));for(const node of projected){node.knowledge_line_id=node.type==='root'?'root':familyFor(node,projectedIndex);node.weight=Math.max(.1,Math.min(4,Number(node.weight)||1));}
+    const projectedIndex=new Map(projected.map(n=>[n.id,n]));for(const node of projected){node.family_basis=typeof node.knowledge_line_id==='string'&&node.knowledge_line_id.trim()?'saved_family':'ancestry';node.knowledge_line_id=node.type==='root'?'root':familyFor(node,projectedIndex);node.weight=Math.max(.1,Math.min(4,Number(node.weight)||1));}
     const projectedIds = new Set(projected.map(node => node.id));
     const edges = projected.filter(node => node.parent_id && projectedIds.has(node.parent_id)).map(node => ({from: node.parent_id, to: node.id, kind: 'concept', weight: Number(node.path_weight) || 50}));
     for (const source of sources) {
       const related = sourceOwners.get(key(source.id)).filter(id => projectedIds.has(id) && allConcepts.get(id)?.type === 'dream_claim');
       for (let a = 0; a < related.length; a++) for (let b = a + 1; b < related.length; b++) edges.push({from: related[a], to: related[b], kind: 'shared_source', source_id: sourceId(source.id), weight: 25});
     }
+    edges.push(...relatedLinks(projected,edges));
     edges.sort((a, b) => compare(a.from, b.from) || compare(a.to, b.to) || compare(a.kind, b.kind) || compare(a.source_id || '', b.source_id || ''));
     const detailCount = filter === 'question' ? selectedConcepts.filter(node => node.type !== 'dream_claim').length : filter === 'dream_claim' ? selectedConcepts.length : filter === 'all' ? selectedConcepts.length : details.length;
     const reasons = {all: review ? 'No concepts have been proposed for review yet.' : 'No selected concepts are available for this run yet.', dream_claim: 'No selected claims are available for this run yet.', question: 'No questions have grown from the selected concepts yet.', source: 'No sources are stored for the selected concepts yet.', passage: 'No passages are stored for the selected concepts yet.', edge: 'No evidence relations are stored for the selected concepts yet.', dead_end: 'No dead ends are stored for the selected concepts yet.', open: 'No open verdicts are stored for the selected concepts yet.'};
@@ -199,7 +201,7 @@
     const memory = previous instanceof Map ? previous : new Map();
     const byId = new Map(rows.map(node => [node.id, node])), parents = new Map();
     for (const node of rows) if (byId.has(key(node.parent_id)) && key(node.parent_id) !== node.id) parents.set(node.id, key(node.parent_id));
-    for (const edge of list(edges)) if (edge && edge.kind !== 'shared_source' && byId.has(key(edge.from)) && byId.has(key(edge.to)) && key(edge.from) !== key(edge.to) && !parents.has(key(edge.to))) parents.set(key(edge.to), key(edge.from));
+    for (const edge of list(edges)) if (edge && (!edge.kind||edge.kind==='concept') && byId.has(key(edge.from)) && byId.has(key(edge.to)) && key(edge.from) !== key(edge.to) && !parents.has(key(edge.to))) parents.set(key(edge.to), key(edge.from));
     const root = rows.find(node => node.id === 'root' || node.type === 'root') || rows.find(node => !parents.has(node.id)) || rows[0];
     parents.delete(root.id);
     const levels = new Map([[root.id, 0]]);
@@ -270,6 +272,19 @@
     return !parent||parent.type==='root'?'line-'+node.id:familyFor(parent,byId,seen);
   }
   const hash=value=>{let n=2166136261;for(const c of String(value)){n^=c.charCodeAt(0);n=Math.imul(n,16777619);}return n>>>0;};
+  function familyColour(family){const colours=['#9ddcec','#a8ebbf','#c8b7f0','#efbe7d','#f0aec9','#a8c7ff','#d8e8a1','#8ed8c8','#e2b9e8','#d4c3a1'];return colours[hash(family)%colours.length];}
+  function relatedLinks(nodes,existing=[]){
+    const groups=new Map(),matches=new Map(),out=[],used=new Set(existing.map(e=>[String(e.from),String(e.to)].sort(compare).join('|')));
+    for(const node of nodes.filter(isConcept)){
+      const family=node.knowledge_line_id;if(family){if(!groups.has(family))groups.set(family,[]);groups.get(family).push(node);}
+      const text=String(data(node).claim||node.title||'').normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+      if(text.length>=10&&text.split(/\s+/).length>=2){if(!matches.has(text))matches.set(text,[]);matches.get(text).push(node);}
+    }
+    const chain=(members,kind,reason)=>{const sorted=members.slice().sort((a,b)=>compare(a.id,b.id));for(let i=1;i<sorted.length;i++){const from=String(sorted[i-1].id),to=String(sorted[i].id),key=[from,to].sort(compare).join('|');if(!used.has(key)){used.add(key);out.push({from,to,kind,weight:25,reason,display_only:true});}}};
+    for(const members of matches.values())chain(members,'idea_match','Matching idea wording (case and punctuation normalized); not verified equivalence.');
+    for(const members of groups.values())chain(members,'knowledge_family',members.every(n=>n.family_basis==='saved_family')?'Same saved knowledge family; not an evidence relation.':'Same concept branch, derived from saved ancestry; not an evidence relation.');
+    return out;
+  }
   function constellationLayout(nodes,edges,width,height,previous=new Map()) {
     const rows=records(nodes).map(n=>({...n,id:String(n.id),w:Number(n.w)||194,h:Number(n.h)||100})),byId=new Map(rows.map(n=>[n.id,n]));
     const root=rows.find(n=>n.id==='root'||n.type==='root')||rows[0];if(!root)return {positions:new Map(),width,height,reused:0,new_count:0};
@@ -315,10 +330,12 @@
       const distance=Math.hypot(p.x+p.w/2-camera.x,p.y+p.h/2-camera.y)/span;
       const falloff=1/(1+distance*distance*2.8),base=layer<=1?.82-(.82-.56)*layer:.56-(.56-.33)*(layer-1);
       const receded=options.receded?.has(id)||options.dimLayers?.has(layer),recency=.88+.12*Math.max(0,Math.min(1,(Number(node.id)||latest)/latest));
-      const size=current?1:Math.max(.12,Math.min(.9,base*(.78+priority*.3)*Math.sqrt(weight)*(related?1:.82)*falloff*zoomContext*recency*(receded?.48:1)));
-      const brightness=current?1:Math.max(.06,Math.min(.88,(.28+size*.68)*falloff*(receded?.62:1)));
-      const colour=node.locked_at||node.origin==='web_evidence'||['source','passage','edge'].includes(node.type)?'#ffd38b':layer===2?'#b3bdcc':node.type==='association'?'#a8ebbf':['counter','edge_case','dead_end'].includes(node.type)?'#efbe7d':node.type==='reframing'?'#c8b7f0':'#9ddcec';
-      out.set(id,{size_factor:size,brightness_factor:brightness,logic_line:current,related,colour,distant:!current&&size<.4});
+      let size=current?1:Math.max(.12,Math.min(.9,base*(.78+priority*.3)*Math.sqrt(weight)*(related?1:.82)*falloff*zoomContext*recency*(receded?.48:1)));
+      let brightness=current?1:Math.max(.06,Math.min(.88,(.28+size*.68)*falloff*(receded?.62:1)));
+      const family_colour=familyColour(familyFor(node,byId));
+      const colour=node.locked_at||node.origin==='web_evidence'||['source','passage','edge'].includes(node.type)?'#ffd38b':layer===2?'#b3bdcc':family_colour;
+      const working=!!node.working&&options.activityVerified!==false;if(working){size=Math.max(.86,size);brightness=Math.max(.96,brightness);}
+      out.set(id,{size_factor:size,brightness_factor:brightness,logic_line:current,related,colour,family_colour,working,distant:!current&&!working&&size<.4});
     }
     return out;
   }
@@ -333,5 +350,5 @@
     add(text) { text = sentence(text); if (!text || this.seen.has(text)) return; this.seen.add(text); this.items.push(text); this.history.push(text); if (this.items.length > 50) this.items.shift(); if (this.history.length > 100) this.history.shift(); }
     tick(now, visible = true) { const elapsed = this.last ? now - this.last : 0; this.last = now; if (!visible || this.paused) { this.until += elapsed; return null; } if (!this.items.length || this.current && now < this.until) return null; this.current = this.items.shift(); this.until = now + Math.max(5000, Math.min(10000, this.current.split(/\s+/).length * 260 + 2000)); return this.current; }
   }
-  return {owner, project, layout, constellationLayout, starPresentation, sentence, ReadingQueue};
+  return {owner, project, layout, constellationLayout, starPresentation, familyColour, relatedLinks, sentence, ReadingQueue};
 });

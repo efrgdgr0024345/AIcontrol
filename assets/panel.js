@@ -402,6 +402,7 @@ document.addEventListener('submit', event => {
   }
   function render(snapshot) {
     if (!root || !snapshot.run) return;
+    root.dispatchEvent(new Event('research:contact'));
     const serial = JSON.stringify({...snapshot,server_time:undefined});
     if (serial === lastSnapshot) return;
     lastSnapshot = serial;

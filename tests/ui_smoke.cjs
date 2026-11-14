@@ -412,7 +412,7 @@ const {spawn,spawnSync}=require('child_process');
   const coordinates=()=>page.locator('[data-map-node]').evaluateAll(cards=>Object.fromEntries(cards.map(card=>[card.dataset.mapNode,[card.style.left,card.style.top]])));
   const stableCoordinates=await coordinates();
   await page.locator('[data-map-node="100"] .map-node-button').click();
-  await page.locator('[data-map-inspector-content] details > summary').click();
+  await page.locator('[data-map-inspector-content] details > summary').filter({hasText:'Planning, evidence and findings history'}).click();
   await page.waitForFunction(()=>!document.querySelector('[data-mindmap]').camera.getState().transitioning);
   await page.evaluate(()=>{const engine=window.AIcontrolMap,layout=engine.layout;window.mapLayoutCalls=0;engine.layout=(...args)=>{window.mapLayoutCalls++;return layout(...args);};window.stableSummary=document.querySelector('[data-map-inspector-content] details > summary');window.stableCamera=document.querySelector('[data-map-world]').style.transform;window.stableSummary.focus();});
   investigation.run.token_input+=17;investigation.requests.at(-1).token_input=17;investigation.requests.at(-1).heartbeat_at+=1;investigation.requests.at(-1).activity='Inspecting captured evidence';
