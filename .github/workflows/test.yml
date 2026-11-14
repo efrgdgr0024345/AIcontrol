@@ -30,6 +30,8 @@ jobs:
           php tests/agent_adapter.php
           php tests/workspace.php
           php tests/systems.php
+          php tests/system_setup.php
+          python3 -B -m unittest -v tests/system_bootstrap.py
           python3 -B -m unittest -v tests/systems_http.py
           php tests/project_inspector.php
           php tests/admin_data.php

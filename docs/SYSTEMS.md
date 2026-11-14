@@ -1,5 +1,10 @@
 # Linux systems and bounded SSH agents
 
+The [two-command setup and risk update](SYSTEM_SETUP.md) is the primary flow.
+The setup instructions below describe legacy manual registration. Administrator
+now explicitly grants sudo; Read-only and Account maintenance do not. A browser
+command console is available after connection.
+
 Systems now registers Linux servers and performs actual remote commands, separate
 from the older tool-free task response adapter. Existing research behavior and
 SSH/PIN/signing identities are retained. No server is enrolled automatically.

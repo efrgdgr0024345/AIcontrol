@@ -7,6 +7,8 @@ use RuntimeException;
 use Throwable;
 require_once __DIR__.'/SystemsAgent.php';
 require_once __DIR__.'/SystemsView.php';
+require_once __DIR__.'/SystemEnrollment.php';
+require_once __DIR__.'/SystemTerminal.php';
 
 final class Panel
 {
@@ -149,9 +151,25 @@ final class Panel
                 $json=($_GET['systems_api']??'')==='1';
                 try {
                     if($config['access_mode']==='testing')throw new RuntimeException('Systems control requires PIN, password or host-authenticated access.');
-                    $systems=new Systems($directory);$id=(int)self::input('system_id');$runId=(int)self::input('run_id');
+                    $systems=new Systems($directory);$id=(int)self::input('system_id');$runId=(int)self::input('run_id');$systemOwner=hash('sha256',session_id());$enrollmentId=self::input('enrollment_id');$terminalId=self::input('terminal_id');$terminalResult=null;
                     session_write_close();
-                    if($action==='system_add')$id=$systems->add(self::input('name'),self::input('host'),self::input('port'),self::input('username'),self::input('access'),'');
+                    if($action==='system_prepare'){$enrollment=(new SystemEnrollment($systems))->prepare(self::input('risk_level'));$enrollmentId=$enrollment['id'];}
+                    elseif($action==='system_import_discovery'){$enrollment=(new SystemEnrollment($systems))->importDiscovery($enrollmentId,self::input('discovery_reply'));$id=(int)$enrollment['system_id'];}
+                    elseif($action==='system_connect'){
+                        $enrollments=new SystemEnrollment($systems);$s=$enrollments->receipt($enrollmentId,self::input('setup_reply'));$id=(int)$s['id'];
+                        $host=strtolower(trim(self::input('connection_host')));$port=self::input('connection_port');
+                        if((!filter_var($host,FILTER_VALIDATE_IP)&&!preg_match('/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/D',$host))||!ctype_digit($port)||(int)$port<1||(int)$port>65535)throw new RuntimeException('Enter a valid connection address and SSH port.');
+                        if($systems->query('SELECT id FROM system_terminals WHERE system_id=? AND enabled=1 AND expires_at>?',[$id,time()])&&($s['host']!==$host||(int)$s['port']!==(int)$port))throw new RuntimeException('Disconnect existing consoles before changing the connection address.');
+                        $systems->write('UPDATE systems SET host=?,port=? WHERE id=?',[$host,(int)$port,$id]);
+                        $terminal=(new SystemTerminal($systems))->connect($id,$systemOwner);$terminalId=$terminal['id'];$runId=(int)$terminal['run_id'];
+                    }
+                    elseif($action==='system_console_connect'){$terminal=(new SystemTerminal($systems))->connect($id,$systemOwner);$terminalId=$terminal['id'];$runId=(int)$terminal['run_id'];}
+                    elseif(in_array($action,['system_console_command','system_console_disconnect'],true)){
+                        $console=new SystemTerminal($systems);$terminal=$console->get($terminalId,$systemOwner);if((int)$terminal['system_id']!==$id)throw new RuntimeException('Console does not belong to this system.');$runId=(int)$terminal['run_id'];
+                        if($action==='system_console_command')$terminalResult=$console->command($terminalId,$systemOwner,self::input('command'));
+                        else{$console->disconnect($terminalId,$systemOwner);$terminalId='';}
+                    }
+                    elseif($action==='system_add')$id=$systems->add(self::input('name'),self::input('host'),self::input('port'),self::input('username'),self::input('access'),'');
                     elseif($action==='system_test'){$systems->pin($id,self::input('fingerprint'));$systems->verify($id);}
                     elseif($action==='system_revoke')$systems->revoke($id);
                     elseif($action==='system_delete'){$systems->purge($id,self::input('confirmation'));$id=0;}
@@ -160,8 +178,8 @@ final class Panel
                         if((int)$systems->run($runId)['system_id']!==$id)throw new RuntimeException('Task does not belong to this system.');
                         if($action==='system_stop')$systems->stop($runId);else (new SystemsAgent($systems))->step($runId);
                     }else throw new RuntimeException('System operation unavailable.');
-                    if($json){header('Content-Type: application/json');echo json_encode(['run'=>$runId?$systems->run($runId):null],JSON_THROW_ON_ERROR);return;}
-                    header('Location: '.self::entry().'?view=systems&system='.$id.($runId?'&system_run='.$runId:''),true,303);return;
+                    if($json){header('Content-Type: application/json');echo json_encode(['run'=>$runId?$systems->run($runId):null,'terminal_result'=>$terminalResult],JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);return;}
+                    header('Location: '.self::entry().'?view=systems&system='.$id.($runId?'&system_run='.$runId:'').($enrollmentId?'&enrollment='.$enrollmentId:'').($terminalId?'&terminal='.$terminalId.'#ssh-console':''),true,303);return;
                 }catch(Throwable $failure){
                     Diagnostics::record('systems.action.failed',['action'=>$action],$failure);http_response_code(422);$error=Diagnostics::clean($failure->getMessage());
                     if($json){header('Content-Type: application/json');echo json_encode(['error'=>$error],JSON_INVALID_UTF8_SUBSTITUTE);return;}
@@ -286,6 +304,15 @@ final class Panel
         if($authenticated&&$view==='systems'){
             try{$data['systems']=$config['access_mode']==='testing'?['allowed'=>false]:(new Systems($directory))->snapshot((int)($_GET['system']??($id??0)),(int)($_GET['system_run']??($runId??0)));}
             catch(Throwable $failure){$error='The selected system or task is unavailable.';$data['systems']=(new Systems($directory))->snapshot();}
+            if(($data['systems']['allowed']??true)!==false){
+                $systemStore=new Systems($directory);
+                try{$data['systems']['setup']=(new SystemEnrollment($systemStore))->view((string)($_GET['enrollment']??($enrollmentId??'')));}catch(Throwable $failure){$error=Diagnostics::clean($failure->getMessage());}
+                try{
+                    $requestedTerminal=(string)($_GET['terminal']??($terminalId??''));
+                    if($requestedTerminal){$data['systems']['terminal']=(new SystemTerminal($systemStore))->view($requestedTerminal,hash('sha256',session_id()));if((int)$data['systems']['terminal']['system_id']!==(int)($data['systems']['selected']['id']??0))throw new RuntimeException('Console does not belong to the selected system.');}
+                }catch(Throwable $failure){unset($data['systems']['terminal']);$error=Diagnostics::clean($failure->getMessage());}
+                if($method==='POST')foreach(['discovery_reply','setup_reply','connection_host','connection_port'] as $field)$data['systems']['setup_values'][$field]=self::input($field);
+            }
         }
         if ($authenticated && $view === 'research') { $data['research'] = (new Research($directory))->snapshot(); $data['research']['workspace'] = (new Investigation($directory))->workspace((int)($_GET['project'] ?? 0), (int)($_GET['run'] ?? 0),($_GET['new']??'')==='1'||(($action??'')==='research_project'&&$error!=='')); }
         if(($action??'')==='research_project'&&$error!==''&&isset($data['research']))$data['research']['create_values']=['name'=>self::input('name'),'brief'=>self::input('brief')];

@@ -1,5 +1,32 @@
 # AIcontrol — current project state
 
+## Two-command server setup, risk accounts and web console (2026-11-15 AWST)
+
+Systems now offers a risk dropdown, one discovery/account-setup command, a first
+paste, one key-install command, a second paste and Connect. Low creates a unique
+non-sudo account with a server-enforced diagnostic key; Medium creates a normal
+maintenance account; High explicitly creates an administrator account with full
+passwordless sudo. Commands/replies bind the role, machine, UID, host key and
+public key to one enrollment. Actual pinned SSH authentication precedes connection.
+
+A browser command console runs noninteractive commands, retains history and last
+confirmed cwd, records stdout/stderr/exits, and supports disconnect/interrupt.
+Session binding, CSRF, time/output limits and single-command guards apply. It is
+a PHP command console, not a persistent PTY service. Existing systems/manual
+registration, provider settings and research/map behavior remain compatible.
+
+[SYSTEM_SETUP.md](SYSTEM_SETUP.md) is the current setup/console contract and exact
+risk/remote-account lifecycle. It supersedes the older no-sudo default description
+for the explicitly selected Administrator level. Added tables/columns are additive.
+
+Local verification passed: twenty PHP suites, eight HTTP suites, generated
+bootstrap tests for all three risk levels, real OpenSSH console/allowlist/cwd/
+interrupt tests, PHP syntax, generated UI/manifest and complete Chromium tests.
+Desktop/mobile setup and console axe pass; the workspace audit covers 34 views
+with zero violations. Root/account changes in bootstrap tests are simulated;
+SSH commands run in the disposable local protocol fixture. No owner-server
+setup, live-host installation or billed administration task is established.
+
 ## Linux systems and SSH agent tasks (2026-11-14 AWST)
 
 Systems now supports per-server encrypted SSH keys, copyable account setup,

@@ -853,3 +853,14 @@ body.research-map-open { overflow:hidden; }
 [data-system-action] { display:inline-block; margin:6px 8px 6px 0; }
 
 .systems-list a { text-decoration:underline; }
+.system-script-preview { max-height:340px; overflow:auto; padding:12px; }
+.system-one-command { overflow-wrap:anywhere; }
+.system-terminal { padding:18px; border:1px solid #465971; border-radius:10px; background:#101923; color:#e7eff8; }
+.system-terminal h3,.system-terminal .form-label { color:#e7eff8; }
+.system-terminal p { color:#c8d7e8; }
+.system-terminal-output { min-height:210px; max-height:420px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; background:#000; color:#d5f4dc; padding:14px; border-radius:6px; }
+.system-terminal-output:focus-visible { outline:2px solid #90cbff; outline-offset:3px; }
+
+.system-terminal .btn-outline-danger { color:#ffbec5; border-color:#c16b7a; background:#30131b; }
+
+.systems-section summary { min-height:44px; padding-top:10px; padding-bottom:10px; }

@@ -49,7 +49,12 @@ final class SshTransport
             file_put_contents($hosts,'['.$system['host'].']:'.$system['port'].' '.$system['host_key']."\n".$system['host'].' '.$system['host_key']."\n");
             $args=['/usr/bin/ssh','-F','/dev/null','-i',$key,'-p',(string)$system['port'],'-l',$system['username']];
             foreach(['HostKeyAlgorithms=ssh-ed25519','BatchMode=yes','IdentitiesOnly=yes','StrictHostKeyChecking=yes','UserKnownHostsFile='.$hosts,'GlobalKnownHostsFile=/dev/null','ConnectTimeout=8','PasswordAuthentication=no','KbdInteractiveAuthentication=no','ForwardAgent=no','ClearAllForwardings=yes','LogLevel=ERROR','ServerAliveInterval=5','ServerAliveCountMax=1'] as $option){$args[]='-o';$args[]=$option;}
-            $args[]='--';$args[]=$system['host'];$args[]='LC_ALL=C timeout -k 2 15 sh -c '.escapeshellarg($command);
+            if(($system['risk_level']??'legacy')==='readonly'){
+                $tool=array_search($command,SystemRisk::commands(),true);
+                if($tool===false)throw new RuntimeException('The read-only SSH key accepts diagnostic commands only.');
+                $remote='aicontrol-inspect '.$tool;
+            }else $remote='LC_ALL=C timeout -k 2 15 sh -c '.SystemRisk::quote($command);
+            $args[]='--';$args[]=$system['host'];$args[]=$remote;
             return self::process($args,20,$cancel);
         } finally {if(is_string($key))@unlink($key);if(is_string($hosts))@unlink($hosts);}
     }

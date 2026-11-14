@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 if(PHP_SAPI!=='cli'){http_response_code(404);exit;}
-require __DIR__.'/../../src/Vault.php';require __DIR__.'/../../src/AgentRunner.php';require __DIR__.'/../../src/SystemsAgent.php';
+require __DIR__.'/../../src/Vault.php';require __DIR__.'/../../src/AgentRunner.php';require __DIR__.'/../../src/SystemsAgent.php';require __DIR__.'/../../src/SystemEnrollment.php';require __DIR__.'/../../src/SystemTerminal.php';
 use AIcontrol\Systems;use AIcontrol\SystemsAgent;
 $s=new Systems(getenv('AICONTROL_PRIVATE_DIR'));$input=json_decode(stream_get_contents(STDIN),true,32,JSON_THROW_ON_ERROR);
 try {
@@ -10,6 +10,11 @@ try {
  case 'verify':$s->verify($input['id']);$result=$s->system($input['id']);break;
  case 'start':$agent=new SystemsAgent($s,null,fn()=>['tool'=>'finish','summary'=>'Fixture']);$result=['id'=>$agent->start($input['id'],$input['task']??'Inspect selected SSH fixture')];break;
  case 'step':$agent=new SystemsAgent($s,null,fn(array $body)=>$input['decision']);$agent->step($input['run']);$result=$s->snapshot($input['id'],$input['run']);break;
+ case 'console_connect':$result=(new \AIcontrol\SystemTerminal($s))->connect($input['id'],'fixture-owner');break;
+ case 'console_command':$result=(new \AIcontrol\SystemTerminal($s))->command($input['terminal'],'fixture-owner',$input['command']);break;
+ case 'console_disconnect':(new \AIcontrol\SystemTerminal($s))->disconnect($input['terminal'],'fixture-owner');$result=['disconnected'=>true];break;
+ case 'inspector':$result=['script'=>\AIcontrol\SystemBootstrap::inspector()];break;
+ case 'raw_probe':$system=$s->system($input['id']);$system['risk_level']='legacy';$result=(new \AIcontrol\SshTransport())->execute($system,$s->privateKey($input['id']),$input['command'],$s->directory,fn()=>false);break;
  case 'stop':$s->stop($input['run']);$result=$s->run($input['run']);break;
  case 'revoke':$s->revoke($input['id']);$result=$s->system($input['id']);break;
  default:throw new RuntimeException('Fixture action unavailable.');

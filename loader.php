@@ -550,7 +550,7 @@ final class AIcontrolUi
   });
   document.querySelectorAll('[data-copy-report]').forEach(button => button.addEventListener('click', async () => {
     const report=document.getElementById(button.dataset.copyReport), status=button.parentElement.querySelector('[data-copy-report-status]');
-    try { if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(report.value);else {report.focus();report.select();if(!document.execCommand('copy'))throw new Error('copy');}status.textContent=button.dataset.copyReport==='admin-technical-report'?'Technical report copied.':button.dataset.copyReport==='system-script'?'Setup script copied.':'JSON copied.'; }
+    try { if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(report.value);else {report.focus();report.select();if(!document.execCommand('copy'))throw new Error('copy');}status.textContent=button.dataset.copyReport==='admin-technical-report'?'Technical report copied.':button.dataset.copyReport==='system-script'?'Setup script copied.':button.dataset.copyReport.endsWith('-command')?'Command copied.':'JSON copied.'; }
     catch {report.focus();report.select();status.textContent='Report selected. Use your device’s Copy command.';}
   }));
   let installing = false;
@@ -1717,6 +1717,49 @@ document.addEventListener('submit', event => {
   area.querySelector('[data-system-download]')?.addEventListener('click',()=>{const blob=new Blob([document.getElementById('system-report').value],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='system-task-'+area.dataset.systemRun+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
 })();
 
+(() => {
+  const riskForm=document.querySelector('[data-system-risk-form]');
+  riskForm?.querySelector('[data-system-risk]')?.addEventListener('change',()=>riskForm.requestSubmit());
+  const terminal=document.querySelector('[data-system-terminal]');if(!terminal)return;
+  const form=terminal.querySelector('[data-terminal-form]'),input=form.querySelector('[data-terminal-input]'),output=terminal.querySelector('[data-terminal-output]'),status=terminal.querySelector('[data-terminal-status]'),disconnect=terminal.querySelector('[data-terminal-disconnect]');
+  let pending=false,generation=0,connected=true;
+  const history=Array.from(output.textContent.matchAll(/^\$ (.*)$/gm),m=>m[1]);let index=history.length,draft='';
+  const clean=text=>String(text||'').replace(/\x1b\[[0-?]*[ -\/]*[@-~]|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g,'');
+  const append=text=>{output.textContent+='\n'+clean(text);if(output.textContent.length>200000)output.textContent=output.textContent.slice(-200000);output.scrollTop=output.scrollHeight;};
+  const request=async target=>{
+    const url=new URL(target.getAttribute('action'),location.href);url.searchParams.set('systems_api','1');
+    const response=await fetch(url,{method:'POST',credentials:'same-origin',body:new URLSearchParams(new FormData(target))});
+    if(!(response.headers.get('content-type')||'').includes('application/json'))throw Error('Session or SSH progress could not be verified. Sign in and reconnect before sending another command.');
+    const data=await response.json();if(!response.ok)throw Error(data.error||'SSH request failed.');return data;
+  };
+  form.addEventListener('submit',async event=>{
+    event.preventDefault();if(pending||!connected)return;
+    const command=input.value.trim();if(!command)return;
+    if(command==='clear'){output.textContent='';input.value='';return;}
+    pending=true;const serial=generation;form.querySelector('button').disabled=true;status.textContent='Command running over SSH…';history.push(command);index=history.length;draft='';append('$ '+command);
+    try {
+      const data=await request(form);if(serial!==generation)return;
+      const result=data.terminal_result;if(!result?.command)throw Error('The SSH result could not be verified. Reconnect before continuing.');
+      const row=result.command;append((row.stdout||'')+(row.stderr?'\n[stderr]\n'+row.stderr:'')+'\n['+row.status+' · exit '+(row.exit_code??'unknown')+(row.truncated?' · output truncated':'')+']');
+      terminal.querySelector('[data-terminal-directory]').textContent='Directory: '+(result.cwd||'server home');
+      connected=result.connected;
+      status.textContent=connected?(result.cwd_verified?'Command finished.':'Command finished; the previous confirmed directory was retained.'): 'SSH outcome uncertain. The console is disconnected. Review the result and reconnect before continuing.';
+      input.value='';
+    }catch(error){if(serial===generation){connected=false;status.textContent=error.message+' No command was retried automatically.';}}
+    finally{pending=false;form.querySelector('button').disabled=!connected;input.disabled=!connected;if(connected)input.focus({preventScroll:true});}
+  });
+  disconnect.addEventListener('submit',async event=>{
+    event.preventDefault();generation++;connected=false;input.disabled=true;form.querySelector('button').disabled=true;status.textContent='Disconnecting SSH console…';
+    try{await request(disconnect);status.textContent='Console disconnected. A command already dispatched may have an uncertain outcome.';disconnect.querySelector('button').disabled=true;}
+    catch(error){status.textContent=error.message+' Disconnect could not be confirmed; check the saved task report.';}
+  });
+  input.addEventListener('keydown',event=>{
+    if(event.key==='ArrowUp'){event.preventDefault();if(index===history.length)draft=input.value;if(index>0)input.value=history[--index];}
+    else if(event.key==='ArrowDown'){event.preventDefault();if(index<history.length){index++;input.value=index===history.length?draft:history[index];}}
+  });
+  if(location.hash==='#ssh-console')input.focus({preventScroll:true});
+})();
+
 AICONTROL_UI_JS;
     }
     public static function css(): string
@@ -2577,6 +2620,17 @@ body.research-map-open { overflow:hidden; }
 [data-system-action] { display:inline-block; margin:6px 8px 6px 0; }
 
 .systems-list a { text-decoration:underline; }
+.system-script-preview { max-height:340px; overflow:auto; padding:12px; }
+.system-one-command { overflow-wrap:anywhere; }
+.system-terminal { padding:18px; border:1px solid #465971; border-radius:10px; background:#101923; color:#e7eff8; }
+.system-terminal h3,.system-terminal .form-label { color:#e7eff8; }
+.system-terminal p { color:#c8d7e8; }
+.system-terminal-output { min-height:210px; max-height:420px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; background:#000; color:#d5f4dc; padding:14px; border-radius:6px; }
+.system-terminal-output:focus-visible { outline:2px solid #90cbff; outline-offset:3px; }
+
+.system-terminal .btn-outline-danger { color:#ffbec5; border-color:#c16b7a; background:#30131b; }
+
+.systems-section summary { min-height:44px; padding-top:10px; padding-bottom:10px; }
 
 AICONTROL_UI_CSS;
     }

@@ -2,8 +2,8 @@
     "version": 2,
     "files": {
         "app.php": "031b76861c650413202b1c66a125b488e2986709cd99cce26f2f32762b850284",
-        "assets/panel.css": "d5d277e4e7c5889a461568477dc71e3839824f8fa3ae337d8f25f495d6b3238f",
-        "assets/panel.js": "d774db6a0114f7d2a8b0829dd6bd7ac4ecee5c9e6beb769ede304da3aea2c86d",
+        "assets/panel.css": "9029c9a53ae9eeae5b1e8bd1f2226e3ae8fbdb3ae17f2a1b3d1acc70a4b279ce",
+        "assets/panel.js": "f5f94da4df55cce02286b40d650f04b45009286f375a2de69cc8b76216446215",
         "src/AccessPolicy.php": "44469fc613bb1704d857e06e6d70d484d44083b33753e99feaec93baed561cd8",
         "src/AdminData.php": "c4bd3e26c0e5ee860c60cccf1ea5246ab83e7d700316bdf464d44309b3ef3679",
         "src/AdminDataView.php": "9d82f013c2a8563242f2ca4314d5a5a4b37ee45b62500ea1119b5928758258ca",
@@ -15,7 +15,7 @@
         "src/ExplorationFlow.php": "f89dd85869aa4c5ef97a82447096d907564b0035ceeea4d8b6f196ed7dcd0ef5",
         "src/HostingRequirements.php": "7d062f0a54c10dc206ce731d31ad7b7efb9993900d3f87c24a7bc5cb110e655b",
         "src/Investigation.php": "aa39f8ee1acc21d70dbe57ef198f0c6519b12c33710641c54c56b7e889ba4db3",
-        "src/Panel.php": "318928dd19d3191997d9e054915d077e7d1b1cae39ac04b46e90f1b712d263c5",
+        "src/Panel.php": "f33f79af47c9f0eb2f00f9de12cbd551b76a9c0b290af5675e21051246264f20",
         "src/PanelStore.php": "65548cfa672db568b48e7ba98931ff776ffa3c8174de8bdf394958c97824a536",
         "src/PanelView.php": "b763d76ac94a405cf300c3bb7ec9d8db341795cfbc3641f48bfce66ddea487f2",
         "src/PrivateStorage.php": "2b8dc6200eb49b248dfe2908de331a583d9ef0b3c324c8cfd2fc8159734c7836",
@@ -26,17 +26,23 @@
         "src/ResearchFlow.php": "2c2df045f99039eba1f8dc3a96b0b2d9bfc9f52a5765afade0b121318e1e18c2",
         "src/ResearchView.php": "899f6ef45cf0e67e6c26e6d9781fecd768a968e5ebae4ea42674375b7f70989c",
         "src/ResponseStream.php": "f1434215df77eecc5b8501f5e95ddf5cd581f92096eeb4d3a71ae120b125ea34",
-        "src/SshTransport.php": "51ea6513f1d1927bdfd42eaae3f9ac619bbc012700f8bb4510c8ed3ddbd28334",
-        "src/Systems.php": "bd08ee829585e7b66f5a8838b712e4b7c08408764a497691018eee8c6266013b",
-        "src/SystemsAgent.php": "f276470040b7de412de338ad76902f508443e1bfabad5728d16ebf84b7688348",
-        "src/SystemsView.php": "3490ae7d23de735a6e58ebb5981e62de6a16f348962e5cc61fa395d513c4b09c",
-        "src/Ui.php": "39200744ead6b6c509525d098c7d10edf992db248f03187536b4495ac2c02f38",
+        "src/SshTransport.php": "b3e57261010b7ab1f32fb29cc529483db9fff9897b8578dd7ca32a7751a963de",
+        "src/SystemBootstrap.php": "53487f9ec9f99ed62c18b5313f4dfc2fd05be721a4669524d3bdc55ff902c931",
+        "src/SystemEnrollment.php": "4ae86658ffa23af301729550337571df9d04801b702f8c15ed3a0d967f926edb",
+        "src/SystemRisk.php": "ebbe8db875256a8206b49c8967091c3692551d6c0ce527a0a21420ff87b0d555",
+        "src/SystemSetupView.php": "ca005c72ff704cd7a6f9f49976d13dd347f647101899d8642dadf81c8edf663f",
+        "src/SystemTerminal.php": "d499682e7694d04a57942f2a2863e7ec36233ff25312489f8c3a4f065fa99638",
+        "src/SystemTerminalView.php": "95b22869c870c0ffae4e99c4f4ec8f7801d987163b927c760cd7789172b2fa84",
+        "src/Systems.php": "7ff51ee47bc1e417706c9731746d833245edb47eb0f861d28113c1f16f41b582",
+        "src/SystemsAgent.php": "255350d6724d82035a41b91949c22a9a0943ff45e784afb32c75e64740c6eb3e",
+        "src/SystemsView.php": "7e7934f49fe2862efc01f96962de9cd8b4375497e30d305ba5d75419933667c5",
+        "src/Ui.php": "5eeea657c33caa5f1218d978c404ac5bad27e76607f3b9baec87f856d8be3cda",
         "src/UsageMeter.php": "71b6b2af9377430023dd20b42ac48cce17c98ae0cae987c6ca557a90c8b7e48a",
         "src/Vault.php": "67293540cbcc1dcd8f97033789e9a9b1c9688f0462f2720cc6c1cd83ec3fbded",
         "src/WorkspaceView.php": "d0b63d0f5cd4df8c9e65fc875c90dcd1506ab39d96829cf5af3e9cf39ff02d94"
     },
     "bootstrap": {
         "path": "loader.php",
-        "sha256": "3ef1ac27a3f8e0f44c61a8874e0903742ea46a7e03a239103e86944ad9428536"
+        "sha256": "64709c1215fc87b7d9618faefa75b23102f430c2188ac337f567a02a067f8320"
     }
 }

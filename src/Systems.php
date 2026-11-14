@@ -5,6 +5,7 @@ namespace AIcontrol;
 use PDO;
 use RuntimeException;
 require_once __DIR__.'/SshTransport.php';
+require_once __DIR__.'/SystemRisk.php';
 
 final class Systems
 {
@@ -18,6 +19,10 @@ final class Systems
             CREATE TABLE IF NOT EXISTS system_runs(id INTEGER PRIMARY KEY,system_id INTEGER NOT NULL REFERENCES systems(id),project_id INTEGER,task TEXT NOT NULL,status TEXT NOT NULL,rounds INTEGER NOT NULL DEFAULT 0,result TEXT,error TEXT,created_at INTEGER NOT NULL,finished_at INTEGER);
             CREATE TABLE IF NOT EXISTS system_commands(id INTEGER PRIMARY KEY,run_id INTEGER NOT NULL REFERENCES system_runs(id),command TEXT NOT NULL,status TEXT NOT NULL,stdout TEXT,stderr TEXT,exit_code INTEGER,timed_out INTEGER,truncated INTEGER,elapsed_ms INTEGER,created_at INTEGER NOT NULL,finished_at INTEGER);
             CREATE TABLE IF NOT EXISTS system_messages(id INTEGER PRIMARY KEY,run_id INTEGER NOT NULL REFERENCES system_runs(id),payload TEXT NOT NULL);');
+        $columns=array_column($this->query('PRAGMA table_info(systems)'),'name');
+        foreach(['risk_level'=>"TEXT NOT NULL DEFAULT 'legacy'",'enrollment_id'=>'TEXT','home_dir'=>'TEXT'] as $name=>$type)if(!in_array($name,$columns,true))$this->db->exec('ALTER TABLE systems ADD COLUMN '.$name.' '.$type);
+        $this->db->exec("CREATE TABLE IF NOT EXISTS system_enrollments(id TEXT PRIMARY KEY,challenge TEXT NOT NULL,receipt_challenge TEXT NOT NULL,risk_level TEXT NOT NULL,username TEXT NOT NULL,state TEXT NOT NULL,system_id INTEGER REFERENCES systems(id) ON DELETE SET NULL,discovery_json TEXT,receipt_json TEXT,created_at INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS system_terminals(id TEXT PRIMARY KEY,system_id INTEGER NOT NULL REFERENCES systems(id),run_id INTEGER NOT NULL REFERENCES system_runs(id),owner_hash TEXT NOT NULL,cwd TEXT,enabled INTEGER NOT NULL DEFAULT 1,expires_at INTEGER NOT NULL,created_at INTEGER NOT NULL);");
     }
     public function query(string $sql,array $params=[]): array {$q=$this->db->prepare($sql);$q->execute($params);return $q->fetchAll();}
     public function write(string $sql,array $params=[]): void {$q=$this->db->prepare($sql);$q->execute($params);}
@@ -49,11 +54,12 @@ final class Systems
         $systems=$this->query('SELECT * FROM systems ORDER BY id DESC');$selected=$id?$this->system($id):null;
         $runs=$id?$this->query('SELECT * FROM system_runs WHERE system_id=? ORDER BY id DESC LIMIT 50',[$id]):[];
         $current=$run?$this->run($run):($runs[0]??null);if($current&&(!$selected||(int)$current['system_id']!==$id))throw new RuntimeException('Task does not belong to this system.');
-        return ['systems'=>$systems,'selected'=>$selected,'runs'=>$runs,'run'=>$current,'messages'=>$current?$this->query('SELECT * FROM system_messages WHERE run_id=? ORDER BY id',[$current['id']]):[],'commands'=>$current?$this->query('SELECT * FROM system_commands WHERE run_id=? ORDER BY id',[$current['id']]):[],'script'=>$selected&&$selected['enabled']?$this->script($id):'','runner_available'=>SshTransport::available()];
+        return ['systems'=>$systems,'selected'=>$selected,'runs'=>$runs,'run'=>$current,'messages'=>$current?$this->query('SELECT * FROM system_messages WHERE run_id=? ORDER BY id',[$current['id']]):[],'commands'=>$current?$this->query('SELECT * FROM system_commands WHERE run_id=? ORDER BY id',[$current['id']]):[],'script'=>$selected&&$selected['enabled']&&$selected['risk_level']==='legacy'?$this->script($id):'','runner_available'=>SshTransport::available()];
     }
     public function revoke(int $id): void
     {
         $this->system($id);$this->write('UPDATE systems SET enabled=0,verified_at=NULL WHERE id=?',[$id]);$this->write("UPDATE system_runs SET status='stopped',finished_at=? WHERE system_id=? AND status IN ('ready','working')",[time(),$id]);(new Vault($this->directory))->change('ssh_system_'.$id,'key','',false,true);$this->write('UPDATE systems SET key_deleted_at=? WHERE id=?',[time(),$id]);
+        $this->write('UPDATE system_terminals SET enabled=0 WHERE system_id=?',[$id]);$this->write("UPDATE system_runs SET status='disconnected',finished_at=? WHERE system_id=? AND status='console'",[time(),$id]);
     }
     public function purge(int $id,string $confirmation): void
     {
@@ -61,7 +67,7 @@ final class Systems
         if($s['enabled']||!$s['key_deleted_at']||$confirmation!=='DELETE SYSTEM '.$id)throw new RuntimeException('Disconnect first, then type DELETE SYSTEM '.$id.' to delete this system and its saved task logs.');
         $path=$this->directory.'/systems-run.lock';if(is_link($path))throw new RuntimeException('Systems execution lock unavailable.');$lock=fopen($path,'c');
         if(!$lock||!flock($lock,LOCK_EX|LOCK_NB)){if($lock)fclose($lock);throw new RuntimeException('Wait for the interrupted system step to finish before deleting its records.');}
-        try{$this->db->beginTransaction();$this->write('DELETE FROM system_messages WHERE run_id IN (SELECT id FROM system_runs WHERE system_id=?)',[$id]);$this->write('DELETE FROM system_commands WHERE run_id IN (SELECT id FROM system_runs WHERE system_id=?)',[$id]);$this->write('DELETE FROM system_runs WHERE system_id=?',[$id]);$this->write('DELETE FROM systems WHERE id=?',[$id]);$this->db->commit();}catch(\Throwable $e){if($this->db->inTransaction())$this->db->rollBack();throw $e;}finally{flock($lock,LOCK_UN);fclose($lock);}
+        try{$this->db->beginTransaction();$this->write('DELETE FROM system_terminals WHERE system_id=?',[$id]);$this->write('DELETE FROM system_enrollments WHERE system_id=?',[$id]);$this->write('DELETE FROM system_messages WHERE run_id IN (SELECT id FROM system_runs WHERE system_id=?)',[$id]);$this->write('DELETE FROM system_commands WHERE run_id IN (SELECT id FROM system_runs WHERE system_id=?)',[$id]);$this->write('DELETE FROM system_runs WHERE system_id=?',[$id]);$this->write('DELETE FROM systems WHERE id=?',[$id]);$this->db->commit();}catch(\Throwable $e){if($this->db->inTransaction())$this->db->rollBack();throw $e;}finally{flock($lock,LOCK_UN);fclose($lock);}
     }
     public function stop(int $run): void {$this->run($run);$this->write("UPDATE system_runs SET status='stopped',finished_at=? WHERE id=? AND status IN ('ready','working')",[time(),$run]);}
     public function privateKey(int $id): string {$key=(new Vault($this->directory))->value('ssh_system_'.$id);if($key==='')throw new RuntimeException('SSH credential unavailable.');return $key;}

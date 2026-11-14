@@ -8,12 +8,14 @@ ROOT=pathlib.Path(__file__).resolve().parent.parent
 PHP=os.environ.get('PHP_BINARY','php')
 
 class Server(paramiko.ServerInterface):
-    def __init__(self, harness): self.harness=harness; self.event=threading.Event(); self.command=None
+    def __init__(self, harness): self.harness=harness; self.event=threading.Event(); self.command=None;self.risk='legacy'
     def get_allowed_auths(self, username): return 'publickey'
     def check_auth_publickey(self, username, key):
         db=sqlite3.connect(self.harness.home+'/systems.sqlite')
-        keys=[row[0].split()[1] for row in db.execute('SELECT public_key FROM systems WHERE enabled=1')]; db.close()
-        return paramiko.AUTH_SUCCESSFUL if username=='aicontrol' and key.get_base64() in keys else paramiko.AUTH_FAILED
+        rows=list(db.execute('SELECT public_key,username,risk_level FROM systems WHERE enabled=1'));db.close()
+        for public,user,risk in rows:
+            if username==user and key.get_base64()==public.split()[1]:self.risk=risk;return paramiko.AUTH_SUCCESSFUL
+        return paramiko.AUTH_FAILED
     def check_channel_request(self, kind, chanid): return paramiko.OPEN_SUCCEEDED if kind=='session' else paramiko.OPEN_FAILED_ADMINISTRATIVELY_PROHIBITED
     def check_channel_exec_request(self, channel, command): self.command=command.decode(); self.event.set(); return True
 
@@ -41,7 +43,9 @@ class SshIntegration(unittest.TestCase):
             transport.start_server(server=server);channel=transport.accept(8)
             if channel is None or not server.event.wait(5): return
             # The fixture executes real bounded commands in the disposable local workspace.
-            result=subprocess.run(server.command,shell=True,executable='/bin/sh',capture_output=True,timeout=20)
+            if server.risk=='readonly':
+                result=subprocess.run(['python3',cls.inspector],env={**os.environ,'SSH_ORIGINAL_COMMAND':server.command,'HOME':cls.home},cwd=cls.home,capture_output=True,timeout=20)
+            else:result=subprocess.run(server.command,shell=True,executable='/bin/sh',capture_output=True,timeout=20)
             channel.sendall(result.stdout);channel.sendall_stderr(result.stderr);channel.send_exit_status(result.returncode);channel.shutdown_write();channel.close()
         except (EOFError,OSError,paramiko.SSHException,subprocess.TimeoutExpired): pass
         finally: transport.close()
@@ -78,6 +82,17 @@ class SshIntegration(unittest.TestCase):
             if pending: break
             time.sleep(.02)
         self.assertTrue(pending);self.driver('stop',run=stop_run);worker.join(5);self.assertFalse(worker.is_alive());self.assertEqual(results[0]['run']['status'],'stopped');self.assertEqual(results[0]['commands'][-1]['status'],'outcome_uncertain')
+        terminal=self.driver('console_connect',id=sid)
+        command=self.driver('console_command',terminal=terminal['id'],command="cd '"+self.home+"' && printf 'café'")
+        self.assertEqual(command['command']['stdout'],'café');self.assertEqual(command['cwd'],self.home)
+        command=self.driver('console_command',terminal=terminal['id'],command='pwd');self.assertEqual(command['command']['stdout'].strip(),'[private]')
+        self.driver('console_disconnect',terminal=terminal['id']);self.assertNotEqual(self.driver('console_command',ok=False,terminal=terminal['id'],command='pwd').returncode,0)
+        db=sqlite3.connect(self.home+'/systems.sqlite');db.execute("UPDATE systems SET risk_level='readonly',access='inspect',home_dir=? WHERE id=?",[self.home,sid]);db.commit();db.close()
+        type(self).inspector=self.home+'/readonly-inspector.py';pathlib.Path(self.inspector).write_text(self.driver('inspector')['script'])
+        terminal=self.driver('console_connect',id=sid);self.assertEqual(self.driver('console_command',terminal=terminal['id'],command='pwd')['command']['stdout'].strip(),'[private]')
+        self.assertNotEqual(self.driver('console_command',ok=False,terminal=terminal['id'],command='touch /tmp/forbidden').returncode,0)
+        bypass=self.driver('raw_probe',id=sid,command='touch '+self.home+'/must-not-exist');self.assertEqual(bypass['exit_code'],126);self.assertFalse(pathlib.Path(self.home+'/must-not-exist').exists())
+        self.driver('console_disconnect',terminal=terminal['id'])
         self.driver('revoke',id=sid);self.assertNotEqual(self.driver('verify',ok=False,id=sid).returncode,0)
         self.assertFalse(list(pathlib.Path(self.home).glob('.ssh-key-*')));self.assertFalse(list(pathlib.Path(self.home).glob('.ssh-host-*')))
 
