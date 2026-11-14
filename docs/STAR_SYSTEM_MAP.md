@@ -1,5 +1,8 @@
 # Living star-system Map and camera
 
+The [3D flight update](MAP_3D_FLIGHT.md) supersedes the planar camera controls
+and geometry below, adding stable Z positions and perspective orbit/free flight.
+
 Release intent (2026-11-14 AWST): a black, navigable constellation of provisional
 ideas. Exploration-first and explicit final Evidence selection remain the research
 workflow; this release changes presentation and adds optional map metadata.

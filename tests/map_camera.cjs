@@ -1,5 +1,5 @@
 const assert=require('node:assert/strict');
-const {CameraController,ease}=require('../assets/map-camera.js');
+const {LegacyCameraController:CameraController,ease}=require('../assets/map-camera.js');
 const {project,layout,starPresentation}=require('../assets/map-engine.js');
 let checks=0;const check=(name,work)=>{try{work();checks++;}catch(e){e.message=name+': '+e.message;throw e;}};
 function rig(reduced=false){let time=0,serial=0;const frames=new Map(),trace=[];const positions=new Map([['root',{x:0,y:0,w:210,h:126}],['old',{x:12000,y:-4000,w:210,h:126}],['new',{x:1500,y:2000,w:210,h:126}]]);const camera=new CameraController({now:()=>time,requestFrame:f=>{frames.set(++serial,f);return serial;},cancelFrame:id=>frames.delete(id),reducedMotion:()=>reduced,onChange:s=>trace.push(s)});camera.setGeometry(positions,1200,800);return {camera,positions,trace,frames,advance(dt){time+=dt;const work=[...frames.values()];frames.clear();for(const f of work)f(time);}};}

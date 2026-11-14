@@ -1,5 +1,8 @@
 # Map rotation, related ideas and current model work
 
+The [3D flight update](MAP_3D_FLIGHT.md) supersedes the flat rotation controls
+and planar camera geometry below. Links, colours and work-state semantics remain.
+
 Release update: 2026-11-14 AWST. These additions extend the star-system renderer;
 the research lifecycle, provider budgets, Stop guards and explicit Evidence
 selection retain their existing behavior.

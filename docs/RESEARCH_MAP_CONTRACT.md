@@ -1,5 +1,20 @@
 # Research Map contract
 
+## Three-dimensional orbit and flight (2026-11-14 AWST)
+
+Map now uses stable X/Y/Z constellations and a perspective camera. Drag changes
+both yaw and pitch; Orbit focused idea centres on the selected star, while Fly
+freely permits fixed-eye looking and held WASD/RF movement through space. Nearby
+and distant ideas show real parallax. Touch steering, two-finger pan/pinch,
+full-size recovery of behind-camera ideas and upright labels are supported.
+World coordinates stay fixed; clipping and pointer-target occlusion affect only
+the view. Family colours, common-idea links and verified work markers remain.
+
+[MAP_3D_FLIGHT.md](MAP_3D_FLIGHT.md) records controls, geometry, camera state,
+compatibility, regression scope and performance limits. It supersedes the flat
+rotation/pan controls below. No provider call or database migration is added.
+
+
 ## Rotation, common-idea links and current model work (2026-11-14 AWST)
 
 Map rotation now supports buttons, Shift-drag, a drag-mode toggle, keyboard Q/E/0

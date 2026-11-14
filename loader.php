@@ -211,6 +211,7 @@ final class AIcontrolUi
     return {nodes: projected, edges, filter, empty: detailCount === 0, empty_reason: detailCount === 0 ? reasons[filter] : '', detail_count: detailCount, concept_count: selectedConcepts.length};
   }
   function layout(nodes, edges, width, height, previous = new Map(), options={}) {
+    if(options.spatial)return spatialLayout(nodes,edges,width,height,previous);
     if(options.constellations)return constellationLayout(nodes,edges,width,height,previous);
     const viewportW = Math.max(1, Number(width) || 1), viewportH = Math.max(1, Number(height) || 1), margin = 24, gapX = 24, gapY = 28;
     const rows = records(nodes).map(node => ({...node, id: key(node.id), w: Math.max(1, Number(node.w) || 194), h: Math.max(1, Number(node.h) || 84)}));
@@ -335,6 +336,11 @@ final class AIcontrolUi
     }
     return {positions,width:Math.max(width,...[...positions.values()].map(p=>p.x+p.w)),height:Math.max(height,...[...positions.values()].map(p=>p.y+p.h)),reused,new_count:rows.length-reused};
   }
+  function spatialLayout(nodes,edges,width,height,previous=new Map()){
+    const result=constellationLayout(nodes,edges,width,height,previous),byId=new Map(nodes.map(n=>[String(n.id),n]));
+    for(const [id,p]of result.positions){if(Number.isFinite(p.z))continue;const node=byId.get(id),parent=result.positions.get(String(node?.parent_id));p.z=id==='root'?0:parent&&String(node?.parent_id)!=='root'&&Number.isFinite(parent.z)?parent.z+(hash(id+'depth')%281-140):(hash((node?.knowledge_line_id||id)+'volume')%1601-800)+(hash(id+'depth')%281-140);}
+    return result;
+  }
   function starPresentation(nodes,positions,camera,viewport,options={}) {
     const byId=new Map(nodes.map(n=>[String(n.id),n])),focus=byId.get(String(camera.focusNodeId))||byId.get('root'),line=new Set(),seen=new Set();
     let walk=focus;while(walk&&!seen.has(String(walk.id))){seen.add(String(walk.id));if(walk===focus||Number(walk.layer||0)===0)line.add(String(walk.id));walk=byId.get(String(walk.parent_id));}
@@ -344,10 +350,10 @@ final class AIcontrolUi
       const id=String(node.id),p=positions.get(id);if(!p)continue;
       const current=line.has(id),related=familyFor(node,byId)===family,layer=Math.max(0,Math.min(2,Number(node.layer)||0));
       const priority=Math.max(.1,Math.min(1,(Number(node.path_weight)||50)/100)),weight=Math.max(.25,Math.min(2,Number(node.weight)||1));
-      const distance=Math.hypot(p.x+p.w/2-camera.x,p.y+p.h/2-camera.y)/span;
+      const projection=options.projections?.get(id);const distance=camera.version==='space3d-v1'?Math.hypot(p.x+p.w/2-camera.pivotX,p.y+p.h/2-camera.pivotY,(p.z||0)-camera.pivotZ)/span:Math.hypot(p.x+p.w/2-camera.x,p.y+p.h/2-camera.y)/span;
       const falloff=1/(1+distance*distance*2.8),base=layer<=1?.82-(.82-.56)*layer:.56-(.56-.33)*(layer-1);
       const receded=options.receded?.has(id)||options.dimLayers?.has(layer),recency=.88+.12*Math.max(0,Math.min(1,(Number(node.id)||latest)/latest));
-      let size=current?1:Math.max(.12,Math.min(.9,base*(.78+priority*.3)*Math.sqrt(weight)*(related?1:.82)*falloff*zoomContext*recency*(receded?.48:1)));
+      let size=current?1:Math.max(.12,Math.min(.9,base*(.78+priority*.3)*Math.sqrt(weight)*(related?1:.82)*falloff*(projection?Math.max(.08,Math.min(1.4,projection.perspective)):zoomContext)*recency*(receded?.48:1)));
       let brightness=current?1:Math.max(.06,Math.min(.88,(.28+size*.68)*falloff*(receded?.62:1)));
       const family_colour=familyColour(familyFor(node,byId));
       const colour=node.locked_at||node.origin==='web_evidence'||['source','passage','edge'].includes(node.type)?'#ffd38b':layer===2?'#b3bdcc':family_colour;
@@ -367,7 +373,7 @@ final class AIcontrolUi
     add(text) { text = sentence(text); if (!text || this.seen.has(text)) return; this.seen.add(text); this.items.push(text); this.history.push(text); if (this.items.length > 50) this.items.shift(); if (this.history.length > 100) this.history.shift(); }
     tick(now, visible = true) { const elapsed = this.last ? now - this.last : 0; this.last = now; if (!visible || this.paused) { this.until += elapsed; return null; } if (!this.items.length || this.current && now < this.until) return null; this.current = this.items.shift(); this.until = now + Math.max(5000, Math.min(10000, this.current.split(/\s+/).length * 260 + 2000)); return this.current; }
   }
-  return {owner, project, layout, constellationLayout, starPresentation, familyColour, relatedLinks, sentence, ReadingQueue};
+  return {owner, project, layout, constellationLayout, spatialLayout, starPresentation, familyColour, relatedLinks, sentence, ReadingQueue};
 });
 
 /* DOM-free camera. World coordinates are read, never changed. */
@@ -378,7 +384,7 @@ final class AIcontrolUi
   const rotate=(x,y,a)=>({x:x*Math.cos(a)-y*Math.sin(a),y:x*Math.sin(a)+y*Math.cos(a)});
   // CSS cubic-bezier(.4,0,.2,1), solved in x so travel matches the specified easing.
   function ease(t){let lo=0,hi=1,u=t;for(let i=0;i<12;i++){u=(lo+hi)/2;const x=3*(1-u)**2*u*.4+3*(1-u)*u*u*.2+u**3;if(x<t)lo=u;else hi=u;}return 3*(1-u)*u*u+u**3;}
-  class CameraController {
+  class LegacyCameraController {
     constructor(options={}){
       this.state={x:0,y:0,scale:1,rotation:0,depth:0,focusNodeId:'root',growthScale:1};this.viewport={width:1,height:1};this.positions=new Map();
       this.now=options.now||(()=>performance.now());this.raf=options.requestFrame||(f=>requestAnimationFrame(f));this.caf=options.cancelFrame||(id=>cancelAnimationFrame(id));
@@ -461,7 +467,74 @@ final class AIcontrolUi
     }
     destroy(){this.cancel();this.destroyed=true;this.pendingGrowth=null;}
   }
-  return {CameraController,ease};
+  const vec=(x=0,y=0,z=0)=>({x,y,z}),add=(a,b)=>vec(a.x+b.x,a.y+b.y,a.z+b.z),sub=(a,b)=>vec(a.x-b.x,a.y-b.y,a.z-b.z),mul=(a,n)=>vec(a.x*n,a.y*n,a.z*n),dot=(a,b)=>a.x*b.x+a.y*b.y+a.z*b.z;
+  class SpaceCameraController {
+    constructor(options={}){
+      this.focusDistance=900;this.near=35;this.far=250000;this.fov=55*Math.PI/180;
+      this.state={x:0,y:0,z:900,pivotX:0,pivotY:0,pivotZ:0,yaw:.3,pitch:.16,distance:900,focusNodeId:'root',mode:'orbit'};
+      this.positions=new Map();this.viewport={width:1,height:1};this.now=options.now||(()=>performance.now());this.raf=options.requestFrame||(f=>requestAnimationFrame(f));this.caf=options.cancelFrame||(id=>cancelAnimationFrame(id));this.reducedMotion=options.reducedMotion||(()=>false);this.onChange=options.onChange||(()=>{});
+      this.frame=null;this.transition=null;this.serial=0;this.manualUntil=0;this.pendingGrowth=null;this.destroyed=false;this.flightInput=vec();this.boost=false;this.placeEye();
+    }
+    axes(state=this.state){const c=Math.cos(state.yaw),s=Math.sin(state.yaw),p=Math.sin(state.pitch),q=Math.cos(state.pitch);return {right:vec(c,0,-s),down:vec(s*p,q,c*p),forward:vec(-s*q,p,-c*q)};}
+    eye(){return vec(this.state.x,this.state.y,this.state.z);}
+    pivot(){return vec(this.state.pivotX,this.state.pivotY,this.state.pivotZ);}
+    placeEye(){const eye=sub(this.pivot(),mul(this.axes().forward,this.state.distance));Object.assign(this.state,eye);}
+    placePivot(){const p=add(this.eye(),mul(this.axes().forward,this.state.distance));Object.assign(this.state,{pivotX:p.x,pivotY:p.y,pivotZ:p.z});}
+    get focal(){return this.viewport.height/(2*Math.tan(this.fov/2));}
+    getState(){return {...this.state,version:'space3d-v1',scale:this.focusDistance/this.state.distance,depth:this.state.z,transitioning:!!this.transition,transitionType:this.transition?.type||null,userNavigating:this.now()<this.manualUntil};}
+    setGeometry(positions,width,height){this.positions=positions;this.viewport={width:Math.max(1,finite(width,1)),height:Math.max(1,finite(height,1))};}
+    centre(p){return vec(p.x+p.w/2,p.y+p.h/2,finite(p.z,0));}
+    emit(extra={}){this.onChange(this.getState(),extra);}
+    cancel(){if(this.frame!==null)this.caf(this.frame);this.frame=null;this.transition=null;this.serial++;this.flightInput=vec();}
+    move(target,{animate=true,duration=600,type='focus'}={}){
+      this.cancel();if(this.destroyed)return false;const to={...this.state,...target};
+      to.distance=clamp(finite(to.distance,900),120,200000);to.yaw=turn(finite(to.yaw,0));to.pitch=clamp(finite(to.pitch,0),-Math.PI*.47,Math.PI*.47);
+      if(!['x','y','z','pivotX','pivotY','pivotZ'].every(k=>Number.isFinite(to[k])))return false;
+      if(!animate||this.reducedMotion()){this.state=to;this.emit({reducedMotion:!!animate&&this.reducedMotion()});this.flushGrowth();return true;}
+      const from={...this.state},start=this.now(),ticket=this.serial;this.transition={type,start,duration};this.state.focusNodeId=to.focusNodeId;this.state.mode=to.mode;this.emit();
+      const tick=()=>{if(ticket!==this.serial||this.destroyed)return;const t=clamp((this.now()-start)/duration,0,1),p=ease(t);for(const k of ['x','y','z','pivotX','pivotY','pivotZ','distance','pitch'])this.state[k]=from[k]+(to[k]-from[k])*p;this.state.yaw=from.yaw+turn(to.yaw-from.yaw)*p;
+        if(t>=1){this.state=to;this.transition=null;this.frame=null;this.emit();this.flushGrowth();}else{this.emit();this.frame=this.raf(tick);}};this.frame=this.raf(tick);return true;
+    }
+    targetPose(pivot,distance,yaw=this.state.yaw,pitch=this.state.pitch){const forward=this.axes({yaw,pitch}).forward,eye=sub(pivot,mul(forward,distance));return {...eye,pivotX:pivot.x,pivotY:pivot.y,pivotZ:pivot.z,distance,yaw,pitch};}
+    focus(nodeId,{animate=true,fitPadding=.2}={}){const p=this.positions.get(String(nodeId));if(!p)return false;this.pendingGrowth=null;this.manualUntil=0;const centre=this.centre(p),d=this.focusDistance;const destination=this.targetPose(centre,d),travel=Math.hypot(destination.x-this.state.x,destination.y-this.state.y,destination.z-this.state.z);return this.move({...destination,focusNodeId:String(nodeId),mode:'orbit'},{animate,type:'focus',duration:clamp(450+travel*.1,450,750)});}
+    groupBounds(nodeIds){const ids=[...nodeIds].map(String).filter(id=>this.positions.has(id));if(!ids.length)return null;const centres=ids.map(id=>this.centre(this.positions.get(id))),lo=vec(Math.min(...centres.map(p=>p.x)),Math.min(...centres.map(p=>p.y)),Math.min(...centres.map(p=>p.z))),hi=vec(Math.max(...centres.map(p=>p.x)),Math.max(...centres.map(p=>p.y)),Math.max(...centres.map(p=>p.z))),centre=mul(add(lo,hi),.5);return {ids,centre,radius:Math.max(180,...centres.map(p=>Math.hypot(p.x-centre.x,p.y-centre.y,p.z-centre.z)+140))};}
+    fitGroup(ids,{animate=true,fitPadding=.12}={}){const bounds=this.groupBounds(ids);if(!bounds)return false;this.manualUntil=0;this.pendingGrowth=null;const vertical=this.fov/2,horizontal=Math.atan(Math.tan(vertical)*this.viewport.width/this.viewport.height),angle=Math.atan(Math.tan(Math.min(vertical,horizontal))*(1-clamp(fitPadding,0,.4)*2)),d=bounds.radius/Math.sin(angle);return this.move({...this.targetPose(bounds.centre,d),mode:'orbit',focusNodeId:bounds.ids.includes(this.state.focusNodeId)?this.state.focusNodeId:bounds.ids[0]},{animate,type:'fit',duration:650});}
+    cameraPoint(point){const p=sub(vec(finite(point.x,0),finite(point.y,0),finite(point.z,0)),this.eye()),a=this.axes();return vec(dot(p,a.right),dot(p,a.down),dot(p,a.forward));}
+    projectCamera(p){const visible=p.z>=this.near&&p.z<=this.far;const depth=Math.max(this.near,p.z),factor=this.focal/depth;return {x:this.viewport.width/2+p.x*factor,y:this.viewport.height/2+p.y*factor,depth:p.z,perspective:factor,visible};}
+    worldToScreen(point){return this.projectCamera(this.cameraPoint(point));}
+    screenToWorld(point,depth=this.state.distance){const a=this.axes(),d=Math.max(this.near,finite(depth,this.state.distance));return add(this.eye(),add(mul(a.forward,d),add(mul(a.right,(point.x-this.viewport.width/2)*d/this.focal),mul(a.down,(point.y-this.viewport.height/2)*d/this.focal))));}
+    projectSegment(from,to){let a=this.cameraPoint(from),b=this.cameraPoint(to),lo=0,hi=1;const dz=b.z-a.z;if(Math.abs(dz)<1e-10){if(a.z<this.near||a.z>this.far)return null;}else{const n=(this.near-a.z)/dz,f=(this.far-a.z)/dz;lo=Math.max(0,Math.min(n,f));hi=Math.min(1,Math.max(n,f));if(lo>hi)return null;}const delta=sub(b,a);return {from:this.projectCamera(add(a,mul(delta,lo))),to:this.projectCamera(add(a,mul(delta,hi)))};}
+    interact(emit=true){this.cancel();this.manualUntil=this.now()+4000;if(emit)this.emit();}
+    panBy(dx,dy){if(this.transition?.type!=='flight')this.interact(false);else this.manualUntil=this.now()+4000;const a=this.axes(),factor=this.state.distance/this.focal,delta=add(mul(a.right,-finite(dx,0)*factor),mul(a.down,-finite(dy,0)*factor));Object.assign(this.state,add(this.eye(),delta));Object.assign(this.state,{pivotX:this.state.pivotX+delta.x,pivotY:this.state.pivotY+delta.y,pivotZ:this.state.pivotZ+delta.z});this.emit();}
+    turnBy(yaw,pitch=0){const flying=!!this.transition&&this.transition.type==='flight';if(!flying)this.interact(false);else this.manualUntil=this.now()+4000;this.state.yaw=turn(this.state.yaw+finite(yaw,0));this.state.pitch=clamp(this.state.pitch+finite(pitch,0),-Math.PI*.47,Math.PI*.47);this.state.mode==='fly'?this.placePivot():this.placeEye();this.emit();}
+    rotateBy(yaw,pitch=0){this.turnBy(yaw,pitch);}
+    resetRotation({animate=true}={}){this.interact(false);return this.move({...this.targetPose(this.pivot(),this.state.distance,0,0)},{animate,type:'orientation',duration:500});}
+    setMode(mode){if(!['orbit','fly'].includes(mode))return false;this.interact(false);this.state.mode=mode;this.emit();return true;}
+    transformBy({zoom=1,anchor={x:this.viewport.width/2,y:this.viewport.height/2},nextAnchor=anchor}={}){
+      const point=this.screenToWorld(anchor),oldDistance=this.state.distance;if(this.transition?.type!=='flight')this.interact(false);else this.manualUntil=this.now()+4000;const factor=clamp(finite(zoom,1),.3,3);
+      if(this.state.mode==='fly'){const delta=mul(this.axes().forward,oldDistance*(1-1/factor));Object.assign(this.state,add(this.eye(),delta));this.placePivot();}else{this.state.distance=clamp(oldDistance/factor,120,200000);this.placeEye();}
+      const projected=this.worldToScreen(point),depth=clamp(projected.depth,this.near,this.far),at=this.screenToWorld(nextAnchor,depth),delta=sub(point,at);Object.assign(this.state,add(this.eye(),delta));Object.assign(this.state,{pivotX:this.state.pivotX+delta.x,pivotY:this.state.pivotY+delta.y,pivotZ:this.state.pivotZ+delta.z});this.emit();
+    }
+    zoomBy(factor,anchor){this.transformBy({zoom:factor,anchor});}
+    flyBy(right=0,down=0,forward=0){this.interact(false);const a=this.axes(),delta=add(mul(a.right,finite(right,0)),add(mul(a.down,finite(down,0)),mul(a.forward,finite(forward,0))));Object.assign(this.state,add(this.eye(),delta));this.state.mode='fly';this.placePivot();this.emit();}
+    setFlightInput({right=0,down=0,forward=0,boost=false}={}){
+      if(this.destroyed)return;const input=vec(clamp(finite(right,0),-1,1),clamp(finite(down,0),-1,1),clamp(finite(forward,0),-1,1));if(!input.x&&!input.y&&!input.z){if(this.transition?.type==='flight'){this.cancel();this.emit();}return;}
+      if(this.transition?.type==='flight'){this.flightInput=input;this.boost=boost;return;}this.interact(false);this.state.mode='fly';this.flightInput=input;this.boost=boost;let last=this.now();const ticket=this.serial;this.transition={type:'flight'};
+      const tick=()=>{if(ticket!==this.serial||this.destroyed)return;const now=this.now(),dt=Math.min(.05,Math.max(0,(now-last)/1000));last=now;this.manualUntil=now+4000;const i=this.flightInput,n=Math.max(1,Math.hypot(i.x,i.y,i.z)),speed=(this.boost?1400:550)*dt/n,a=this.axes(),delta=add(mul(a.right,i.x*speed),add(mul(a.down,i.y*speed),mul(a.forward,i.z*speed)));Object.assign(this.state,add(this.eye(),delta));this.placePivot();this.emit();this.frame=this.raf(tick);};this.emit();this.frame=this.raf(tick);
+    }
+    release(vx=0,vy=0){if(this.reducedMotion()||Math.hypot(vx,vy)<.03)return;this.cancel();let x=clamp(vx,-1.5,1.5),y=clamp(vy,-1.5,1.5),last=this.now(),elapsed=0;const ticket=this.serial;this.transition={type:'momentum'};
+      const tick=()=>{if(ticket!==this.serial||this.destroyed)return;const now=this.now(),dt=Math.min(32,Math.max(1,now-last));last=now;elapsed+=dt;x*=Math.exp(-dt/75);y*=Math.exp(-dt/75);const a=this.axes(),delta=add(mul(a.right,-x*dt*this.state.distance/this.focal),mul(a.down,-y*dt*this.state.distance/this.focal));Object.assign(this.state,add(this.eye(),delta));this.placePivot();if(elapsed>=300||Math.hypot(x,y)<.01){this.transition=null;this.frame=null;this.emit();}else{this.emit();this.frame=this.raf(tick);}};this.frame=this.raf(tick);
+    }
+    growthFor(ids){const rows=[...ids].map(id=>this.positions.get(String(id))).filter(Boolean);if(!rows.length)return false;const a=this.axes(),p=this.pivot(),vertical=this.fov/2,horizontal=Math.atan(Math.tan(vertical)*this.viewport.width/this.viewport.height),tan=Math.tan(Math.min(vertical,horizontal))*.8;let d=this.state.distance;for(const row of rows){const q=sub(this.centre(row),p),z=dot(q,a.forward);d=Math.max(d,(Math.max(Math.abs(dot(q,a.right)),Math.abs(dot(q,a.down)))+140)/tan-z,this.near-z+140);}return this.setGrowthScale(this.focusDistance/d);}
+    setGrowthScale(factor){if(!Number.isFinite(factor)||factor<=0)return false;const d=clamp(this.focusDistance/factor,120,200000);if(d<=this.state.distance*1.02){this.pendingGrowth=null;return false;}this.pendingGrowth=d;return this.flushGrowth();}
+    flushGrowth(){if(this.pendingGrowth===null||this.transition||this.now()<this.manualUntil||this.destroyed)return false;const d=this.pendingGrowth;this.pendingGrowth=null;return this.move(this.targetPose(this.pivot(),d),{animate:true,type:'growth',duration:2200});}
+    restoreState(value){if(!value||!['x','y'].every(k=>typeof value[k]==='number'&&Number.isFinite(value[k])))return false;
+      if(value.version==='space3d-v1'){if(!['z','pivotX','pivotY','pivotZ','yaw','pitch','distance'].every(k=>typeof value[k]==='number'&&Number.isFinite(value[k])))return false;this.manualUntil=0;this.pendingGrowth=null;return this.move({...value,mode:value.mode==='fly'?'fly':'orbit',focusNodeId:typeof value.focusNodeId==='string'?value.focusNodeId:'root'},{animate:false});}
+      if(typeof value.scale!=='number'||!Number.isFinite(value.scale)||value.scale<=0)return false;const pivot=vec(value.x,value.y,0);this.manualUntil=0;this.pendingGrowth=null;return this.move({...this.targetPose(pivot,clamp(this.focusDistance/value.scale,120,200000),0,0),mode:'orbit',focusNodeId:typeof value.focusNodeId==='string'?value.focusNodeId:'root'},{animate:false});
+    }
+    destroy(){this.cancel();this.destroyed=true;this.pendingGrowth=null;}
+  }
+  return {CameraController:SpaceCameraController,SpaceCameraController,LegacyCameraController,ease};
 });
 
 (() => {
@@ -1140,7 +1213,8 @@ document.addEventListener('submit', event => {
   const dimLayers=new Set(),receded=new Set();
   const collapsed = new Set(), selectedSources = new Set();
   let lastCameraPaint=0,framePressure=0,activityVerified=true,relations=[],overviewGraph={nodes:[],edges:[]};
-  let showRelated=true,rotateDrag=false;
+  let showRelated=true,pendingKeyboardFocus=null;
+  const flightKeys=new Set(),flightPressed=new Set();
   let sceneCards=new Map(),edgeElements=[],presentation=new Map(),growthTimer=null,skipClick=false;
   const motion=matchMedia('(prefers-reduced-motion: reduce)');
   const camera=new window.AIcontrolCamera.CameraController({reducedMotion:()=>motion.matches,onChange:(state,extra)=>renderCamera(state,extra)});
@@ -1173,16 +1247,21 @@ document.addEventListener('submit', event => {
   for(const [layer,label] of [[1,'Dim Secondary'],[2,'Dim Tertiary']]){const button=el('button',label,'btn btn-outline-secondary');button.type='button';button.setAttribute('aria-pressed','false');button.addEventListener('click',()=>{dimLayers.has(layer)?dimLayers.delete(layer):dimLayers.add(layer);button.setAttribute('aria-pressed',String(dimLayers.has(layer)));renderCamera(camera.getState());});layerControls.append(button);}
   const activeFocus=el('button','Focus Active','btn btn-outline-secondary');activeFocus.type='button';activeFocus.addEventListener('click',()=>{const node=visible.find(n=>n.type!=='root'&&Number(n.layer||0)===0)||visible[0];if(node){inspect(node.id);world.querySelector(`[data-map-node="${node.id}"] button`)?.focus({preventScroll:true});}});layerControls.append(activeFocus);tray.append(layerControls);
   const starNavigator=el('div',undefined,'map-star-navigator'),findLabel=el('label','Find an idea or evidence card');findLabel.htmlFor='map-star-target';const targetPicker=el('select',undefined,'form-select');targetPicker.id='map-star-target';const focusButton=el('button','Focus selected star','btn btn-outline-secondary');focusButton.type='button';focusButton.addEventListener('click',()=>inspect(targetPicker.value));starNavigator.append(findLabel,targetPicker,focusButton);tray.append(starNavigator);
-  const rotationControls=el('div',undefined,'map-rotation-controls');rotationControls.setAttribute('role','group');rotationControls.setAttribute('aria-label','Rotate map');
-  for(const [label,angle]of [['Rotate left',-Math.PI/12],['Rotate right',Math.PI/12],['Reset rotation',0]]){const button=el('button',label,'btn btn-outline-secondary');button.type='button';button.addEventListener('click',()=>{angle?camera.rotateBy(angle):camera.resetRotation();queueGrowth();});rotationControls.append(button);}
-  const rotationOutput=el('output','0°');rotationOutput.dataset.mapRotation='1';rotationOutput.setAttribute('aria-label','Map rotation');rotationOutput.setAttribute('aria-live','off');
-  const rotateMode=el('button','Rotate by dragging','btn btn-outline-secondary');rotateMode.type='button';rotateMode.setAttribute('aria-pressed','false');rotateMode.addEventListener('click',()=>{rotateDrag=!rotateDrag;rotateMode.setAttribute('aria-pressed',String(rotateDrag));viewport.dataset.dragMode=rotateDrag?'rotate':'pan';});rotationControls.append(rotateMode,rotationOutput);tray.append(rotationControls);
+  const rotationControls=el('div',undefined,'map-rotation-controls');rotationControls.setAttribute('role','group');rotationControls.setAttribute('aria-label','3D navigation');
+  const orbitMode=el('button','Orbit focused idea','btn btn-outline-secondary'),flyMode=el('button','Fly freely','btn btn-outline-secondary');for(const [button,mode]of[[orbitMode,'orbit'],[flyMode,'fly']]){button.type='button';button.setAttribute('aria-pressed',String(mode==='orbit'));button.addEventListener('click',()=>{clearFlight();if(mode==='orbit')camera.focus(selected);else camera.setMode(mode);});rotationControls.append(button);}
+  for(const [label,yaw,pitch]of [['Turn left',Math.PI/12,0],['Turn right',-Math.PI/12,0],['Tilt up',0,-Math.PI/12],['Tilt down',0,Math.PI/12],['Reset view',0,0]]){const button=el('button',label,'btn btn-outline-secondary');button.type='button';button.addEventListener('click',()=>{clearFlight();yaw||pitch?camera.turnBy(yaw,pitch):camera.resetRotation();queueGrowth();});rotationControls.append(button);}
+  const rotationOutput=el('output','3D orbit');rotationOutput.dataset.mapRotation='1';rotationOutput.setAttribute('aria-label','3D camera heading');rotationOutput.setAttribute('aria-live','off');rotationControls.append(rotationOutput);tray.append(rotationControls);
+  const flightControls=el('div',undefined,'map-flight-controls');flightControls.setAttribute('role','group');flightControls.setAttribute('aria-label','Fly through space');
+  const directions={Forward:{forward:1},Back:{forward:-1},Left:{right:-1},Right:{right:1},Up:{down:-1},Down:{down:1}};
+  for(const [name,input]of Object.entries(directions)){const button=el('button',name,'btn btn-outline-secondary');button.type='button';button.dataset.flightDirection=name;button.setAttribute('aria-label','Fly '+name.toLowerCase());button.addEventListener('pointerdown',event=>{event.preventDefault();flightPressed.clear();flightPressed.add(name);button._flightStarted=performance.now();button.setPointerCapture(event.pointerId);syncFlight();});const release=event=>{flightPressed.delete(name);if(button.hasPointerCapture(event.pointerId))button.releasePointerCapture(event.pointerId);syncFlight();if(event.type==='pointerup'&&performance.now()-button._flightStarted<120)camera.flyBy((input.right||0)*90,(input.down||0)*90,(input.forward||0)*90);};button.addEventListener('pointerup',release);button.addEventListener('pointercancel',release);button.addEventListener('lostpointercapture',()=>{flightPressed.delete(name);syncFlight();});button.addEventListener('click',event=>{if(event.detail===0){clearFlight();camera.flyBy((input.right||0)*150,(input.down||0)*150,(input.forward||0)*150);}});flightControls.append(button);}
+  const stopMotion=el('button','Stop camera movement','btn btn-outline-secondary');stopMotion.type='button';stopMotion.addEventListener('click',()=>{clearFlight();camera.interact();});flightControls.append(stopMotion);tray.append(flightControls);
+  tray.append(el('p','Drag to orbit or look in 3D. Shift-drag pans. W/S fly forward/back, A/D strafe, R/F move up/down; Shift boosts speed. Arrow keys or Q/E turn; 0 resets. On touch, one finger orbits/looks and two fingers pan/pinch. Use Fit to return to the ideas.','map-space-help'));
   const connectionLegend=el('details',undefined,'map-connection-legend');connectionLegend.append(el('summary','Connection colours and line styles'),el('p','Nodes in the same idea family share a colour. Gold marks Evidence lock-in or sources; grey marks parked ideas. Solid lines are parent/child paths; short dashes share a family; dotted lines match wording; long dashes share a cited source. These links do not establish truth or independent corroboration.'));
   const familyLegend=el('ul');familyLegend.dataset.mapFamilyLegend='1';familyLegend.tabIndex=0;familyLegend.setAttribute('aria-label','Idea family colours');connectionLegend.append(familyLegend);
   const relatedToggle=el('button','Show related idea links','btn btn-outline-secondary');relatedToggle.type='button';relatedToggle.setAttribute('aria-pressed','true');relatedToggle.addEventListener('click',()=>{showRelated=!showRelated;relatedToggle.setAttribute('aria-pressed',String(showRelated));renderCamera(camera.getState());});connectionLegend.append(relatedToggle);tray.append(connectionLegend);
   const activityPanel=el('details',undefined,'map-current-work'),activitySummary=el('summary','Current model work · idle'),activityList=el('div');activityPanel.append(activitySummary,activityList);tray.append(activityPanel);
   const workingNow=el('div',undefined,'map-working-now');workingNow.dataset.mapWorkingNow='1';workingNow.setAttribute('role','status');workingNow.setAttribute('aria-live','polite');workingNow.hidden=true;const workingButton=el('button','','btn');workingButton.type='button';workingNow.append(workingButton);map.append(workingNow);workingButton.addEventListener('click',()=>{workingButton.dataset.nodeId?inspect(workingButton.dataset.nodeId):controls(true);});
-  const legend=el('p','Brightest: current logic line. Other ideas recede; none are deleted. Drag to pan · Shift-drag or two-finger twist to rotate · wheel or +/− to zoom. Size and light indicate attention, not truth.','map-star-legend');legend.id='map-star-help';map.append(legend);viewport.setAttribute('aria-describedby','map-star-help');
+  const legend=el('p','Brightest: current logic line. Other ideas recede; none are deleted. Drag to orbit/look in 3D · Shift-drag pans · W/A/S/D fly · R/F up/down · wheel moves forward/back. Size and light indicate attention, not truth.','map-star-legend');legend.id='map-star-help';map.append(legend);viewport.setAttribute('aria-describedby','map-star-help');
 
   const live=el('p');live.dataset.liveActivity='1';live.setAttribute('role','status');const clock=el('small');clock.dataset.liveClock='1';clock.setAttribute('aria-live','off');const spend=el('p');spend.dataset.projectSpend='1';
   const history=el('details',undefined,'map-idea-history'),historyTitle=el('summary','Idea history'),historyList=el('ol');history.append(historyTitle,historyList);tray.append(live,clock,spend,map.querySelector('[data-map-evidence-help]'),history);
@@ -1216,7 +1295,7 @@ document.addEventListener('submit', event => {
   const side=map.querySelector('[data-map-inspector]');side.hidden=true;const closeSide=el('button','×','map-inspector-close btn');closeSide.type='button';closeSide.setAttribute('aria-label','Close details');closeSide.addEventListener('click',()=>{details(false);viewport.focus();});side.prepend(closeSide);
   let underlay=[],previousFocus=null,manualViewport=false;
   function showView(next) {
-    view=next;map.hidden=view!=='map';if(view!=='map'){camera.cancel();clearTimeout(growthTimer);}root.querySelector('[data-investigate-list]').hidden=view!=='list';
+    view=next;map.hidden=view!=='map';if(view!=='map'){clearFlight();camera.cancel();clearTimeout(growthTimer);}root.querySelector('[data-investigate-list]').hidden=view!=='list';
     root.querySelectorAll('[data-investigate-view]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.investigateView===view)));
     if(view==='map'){
       controls(false);details(false);previousFocus=document.activeElement;document.body.append(map);document.body.classList.add('research-map-open');
@@ -1257,27 +1336,30 @@ document.addEventListener('submit', event => {
   });
   map.addEventListener('keydown',event=>{
     if(event.altKey&&event.key.toLowerCase()==='s'){event.preventDefault();root.querySelector('[data-research-action=research_stop]')?.requestSubmit();return;}
-    if(event.key==='Escape'){event.preventDefault();if(!tray.hidden){controls(false);handle.focus();}else if(!side.hidden){details(false);viewport.focus();}else showView('list');return;}
+    if(event.key==='Escape'){event.preventDefault();if(camera.getState().transitionType==='flight'){clearFlight();camera.interact();viewport.focus({preventScroll:true});return;}if(!tray.hidden){controls(false);handle.focus();}else if(!side.hidden){details(false);viewport.focus();}else showView('list');return;}
     if(event.key!=='Tab')return;
     const stops=[...map.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],[tabindex="0"]')].filter(node=>node.getClientRects().length);
     const first=stops[0],last=stops.at(-1);
     if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus({preventScroll:true});}
     else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus({preventScroll:true});}
   });
-  viewport.addEventListener('wheel',event=>{event.preventDefault();manualViewport=true;const r=viewport.getBoundingClientRect();if(event.shiftKey)camera.panBy(-event.deltaY,-event.deltaX);else camera.zoomBy(Math.exp(-Math.max(-160,Math.min(160,event.deltaY))*.002),{x:event.clientX-r.left,y:event.clientY-r.top});queueGrowth();},{passive:false});
+  viewport.addEventListener('wheel',event=>{event.preventDefault();pendingKeyboardFocus=null;manualViewport=true;const r=viewport.getBoundingClientRect();if(event.shiftKey)camera.panBy(-event.deltaY,-event.deltaX);else camera.zoomBy(Math.exp(-Math.max(-160,Math.min(160,event.deltaY))*.002),{x:event.clientX-r.left,y:event.clientY-r.top});queueGrowth();},{passive:false});
   viewport.addEventListener('scroll',()=>{if(viewport.scrollLeft||viewport.scrollTop){viewport.scrollLeft=0;viewport.scrollTop=0;}},{passive:true});
   let drag=null,pinch=null;const pointers=new Map();
   const localPoint=event=>{const r=viewport.getBoundingClientRect();return {x:event.clientX-r.left,y:event.clientY-r.top};};
   const gesture=()=>{const [a,b]=[...pointers.values()];return {anchor:{x:(a.x+b.x)/2,y:(a.y+b.y)/2},distance:Math.max(1,Math.hypot(b.x-a.x,b.y-a.y)),angle:Math.atan2(b.y-a.y,b.x-a.x)};};
-  viewport.addEventListener('pointerdown',event=>{if(event.button!==0||event.target.closest('input,label,a'))return;manualViewport=true;camera.interact();pointers.set(event.pointerId,localPoint(event));if(pointers.size>=2){pinch=gesture();drag=null;for(const id of pointers.keys())viewport.setPointerCapture(id);return;}drag={id:event.pointerId,x:event.clientX,y:event.clientY,last:performance.now(),vx:0,vy:0,moved:false,rotate:rotateDrag||event.shiftKey};});
+  viewport.addEventListener('pointerdown',event=>{if(event.button!==0||event.target.closest('input,label,a'))return;pendingKeyboardFocus=null;manualViewport=true;if(camera.getState().transitionType!=='flight')camera.interact();pointers.set(event.pointerId,localPoint(event));if(pointers.size>=2){pinch=gesture();drag=null;for(const id of pointers.keys())viewport.setPointerCapture(id);return;}drag={id:event.pointerId,x:event.clientX,y:event.clientY,last:performance.now(),vx:0,vy:0,moved:false,pan:event.shiftKey};});
   viewport.addEventListener('pointermove',event=>{
     if(!pointers.has(event.pointerId))return;pointers.set(event.pointerId,localPoint(event));
-    if(pinch&&pointers.size>=2){const next=gesture();camera.transformBy({anchor:pinch.anchor,nextAnchor:next.anchor,zoom:next.distance/pinch.distance,rotation:next.angle-pinch.angle});pinch=next;skipClick=true;queueGrowth();return;}
-    if(!drag||event.pointerId!==drag.id)return;const now=performance.now(),dx=event.clientX-drag.x,dy=event.clientY-drag.y,dt=Math.max(1,now-drag.last);if(Math.abs(dx)+Math.abs(dy)>3||drag.moved){if(!drag.moved)viewport.setPointerCapture(event.pointerId);drag.moved=true;if(drag.rotate)camera.rotateBy((dx+dy*.25)*.006);else camera.panBy(dx,dy);drag.vx=dx/dt;drag.vy=dy/dt;}drag.x=event.clientX;drag.y=event.clientY;drag.last=now;
+    if(pinch&&pointers.size>=2){const next=gesture();camera.transformBy({anchor:pinch.anchor,nextAnchor:next.anchor,zoom:next.distance/pinch.distance});pinch=next;skipClick=true;queueGrowth();return;}
+    if(!drag||event.pointerId!==drag.id)return;const now=performance.now(),dx=event.clientX-drag.x,dy=event.clientY-drag.y,dt=Math.max(1,now-drag.last);if(Math.abs(dx)+Math.abs(dy)>3||drag.moved){if(!drag.moved)viewport.setPointerCapture(event.pointerId);drag.moved=true;if(drag.pan)camera.panBy(dx,dy);else camera.turnBy(-dx*.006,dy*.006);drag.vx=dx/dt;drag.vy=dy/dt;}drag.x=event.clientX;drag.y=event.clientY;drag.last=now;
   });
-  const release=event=>{pointers.delete(event.pointerId);if(viewport.hasPointerCapture(event.pointerId))viewport.releasePointerCapture(event.pointerId);if(pinch){pinch=null;drag=null;skipClick=true;setTimeout(()=>skipClick=false,0);queueGrowth();return;}if(!drag||event.pointerId!==drag.id)return;if(drag.moved){skipClick=true;setTimeout(()=>skipClick=false,0);if(!drag.rotate)camera.release(drag.vx,drag.vy);}drag=null;queueGrowth();};
+  const release=event=>{pointers.delete(event.pointerId);if(viewport.hasPointerCapture(event.pointerId))viewport.releasePointerCapture(event.pointerId);if(pinch){pinch=null;drag=null;skipClick=true;setTimeout(()=>skipClick=false,0);queueGrowth();return;}if(!drag||event.pointerId!==drag.id)return;if(drag.moved){skipClick=true;setTimeout(()=>skipClick=false,0);if(drag.pan)camera.release(drag.vx,drag.vy);}drag=null;queueGrowth();};
   viewport.addEventListener('pointerup',release);viewport.addEventListener('pointercancel',event=>{pointers.delete(event.pointerId);if(drag?.id===event.pointerId||pinch){pinch=null;drag=null;camera.interact();skipClick=false;}});
-  viewport.addEventListener('keydown',event=>{if(event.target!==viewport)return;const vectors={ArrowDown:[0,-70],ArrowUp:[0,70],ArrowLeft:[70,0],ArrowRight:[-70,0],PageDown:[0,-250],PageUp:[0,250]};if(vectors[event.key]){event.preventDefault();manualViewport=true;camera.panBy(...vectors[event.key]);queueGrowth();}if(['q','Q','e','E','0'].includes(event.key)){event.preventDefault();event.key==='0'?camera.resetRotation():camera.rotateBy(event.key.toLowerCase()==='q'?-Math.PI/12:Math.PI/12);queueGrowth();}if(['+','=','-','Home'].includes(event.key)){event.preventDefault();if(event.key==='Home')fit();else camera.zoomBy(event.key==='-'?1/1.2:1.2);}});
+  function syncFlight(){const values={right:(flightKeys.has('d')?1:0)-(flightKeys.has('a')?1:0),down:(flightKeys.has('f')?1:0)-(flightKeys.has('r')?1:0),forward:(flightKeys.has('w')?1:0)-(flightKeys.has('s')?1:0),boost:flightKeys.has('shift')};for(const name of flightPressed){const input=directions[name];for(const k of ['right','down','forward'])values[k]+=input[k]||0;}camera.setFlightInput(values);}
+  function clearFlight(){flightKeys.clear();flightPressed.clear();camera.setFlightInput({});}
+  viewport.addEventListener('keydown',event=>{if(event.target!==viewport||event.altKey||event.ctrlKey||event.metaKey)return;pendingKeyboardFocus=null;const key=event.key.toLowerCase();if(['w','a','s','d','r','f','shift'].includes(key)){event.preventDefault();if(!event.repeat){flightKeys.add(key);syncFlight();}return;}const turns={ArrowLeft:[.12,0],ArrowRight:[-.12,0],ArrowUp:[0,-.12],ArrowDown:[0,.12],q:[.12,0],e:[-.12,0]};const pair=turns[event.key]||turns[key];if(pair){event.preventDefault();if(event.shiftKey&&event.key.startsWith('Arrow')){const moves={ArrowLeft:[70,0],ArrowRight:[-70,0],ArrowUp:[0,70],ArrowDown:[0,-70]};camera.panBy(...moves[event.key]);}else camera.turnBy(...pair);queueGrowth();}if(['+','=','-','Home','0'].includes(event.key)){event.preventDefault();clearFlight();if(event.key==='Home')fit();else if(event.key==='0')camera.resetRotation();else camera.zoomBy(event.key==='-'?1/1.2:1.2);}});
+  window.addEventListener('keyup',event=>{const key=event.key.toLowerCase();if(flightKeys.delete(key))syncFlight();});window.addEventListener('blur',clearFlight);
   world.addEventListener('focusin',event=>{const card=event.target.closest('[data-map-node]');if(card&&event.target.matches('.map-node-button:focus-visible')&&card.dataset.mapNode!==selected){selected=card.dataset.mapNode;renderCamera(camera.getState());camera.focus(selected);}});
   root.querySelector('[data-mindmap-switch]').hidden = false;
   root.querySelectorAll('[data-investigate-view]').forEach(button => button.addEventListener('click', () => showView(button.dataset.investigateView)));
@@ -1305,31 +1387,41 @@ document.addEventListener('submit', event => {
   }
   function geometry(){camera.setGeometry(positions,Math.max(280,viewport.clientWidth),Math.max(200,viewport.clientHeight));}
   function setScale(value){camera.zoomBy(value/camera.getState().scale);}
-  function fit(animate=true){if(!map.hidden){geometry();camera.fitGroup(visible.map(n=>n.id),{animate,fitPadding:.1});}}
+  function fit(animate=true){clearFlight();if(!map.hidden){geometry();camera.fitGroup(visible.map(n=>n.id),{animate,fitPadding:.1});}}
   function queueGrowth(){clearTimeout(growthTimer);if(camera.pendingGrowth!==null&&!map.hidden)growthTimer=setTimeout(()=>{camera.flushGrowth();if(camera.pendingGrowth!==null)queueGrowth();},4200);}
   function renderCamera(state,extra={}){
-    if(map.hidden||!visible.length)return;
+    if(map.hidden||!visible.length||visible.some(node=>!positions.has(node.id)))return;
     const paintStarted=performance.now(),gap=paintStarted-lastCameraPaint;lastCameraPaint=paintStarted;if(state.transitioning&&gap>28&&gap<250)framePressure=Math.min(8,framePressure+1);else if(gap<23)framePressure=Math.max(0,framePressure-.25);
     if(selected!==state.focusNodeId&&nodes.some(n=>n.id===state.focusNodeId)){selected=state.focusNodeId;updateInspector();}
     const viewportRect=viewport.getBoundingClientRect(),blocked=[side,tray,workingNow,notification,map.querySelector('[data-map-review]')].filter(element=>element&&!element.hidden&&element.getClientRects().length).map(element=>{const r=element.getBoundingClientRect();return {left:r.left-viewportRect.left,right:r.right-viewportRect.left,top:r.top-viewportRect.top,bottom:r.bottom-viewportRect.top};});
-    scale=state.scale;const w=camera.viewport.width,h=camera.viewport.height,angle=state.rotation||0,cos=Math.cos(angle),sin=Math.sin(angle),tx=w/2-(state.x*cos-state.y*sin)*scale,ty=h/2-(state.x*sin+state.y*cos)*scale;
-    const degrees=Math.round(angle*180/Math.PI),rotationText=degrees+'°';if(rotationOutput.textContent!==rotationText)rotationOutput.textContent=rotationText;
-    world.style.transform=`translate(${tx}px, ${ty}px)`;world.querySelector('svg')?.style.setProperty('transform',`rotate(${angle}rad) scale(${scale})`);
-    map.dataset.cameraTransition=state.transitionType||'idle';map.dataset.cameraFocus=state.focusNodeId;
+    scale=state.scale;const w=camera.viewport.width,h=camera.viewport.height;
+    const heading=`Yaw ${Math.round(state.yaw*180/Math.PI)}° · Pitch ${Math.round(state.pitch*180/Math.PI)}° · ${state.mode==='fly'?'Fly':'Orbit'}`;if(rotationOutput.textContent!==heading)rotationOutput.textContent=heading;orbitMode.setAttribute('aria-pressed',String(state.mode==='orbit'));flyMode.setAttribute('aria-pressed',String(state.mode==='fly'));viewport.dataset.spaceMode=state.mode;
+    world.style.transform='translate(0px, 0px)';world.querySelector('svg')?.style.removeProperty('transform');
+    map.dataset.cameraTransition=state.transitionType||'idle';map.dataset.cameraFocus=state.focusNodeId;map.dataset.spaceCamera='perspective-3d';
     if(extra.reducedMotion){world.classList.remove('map-short-crossfade');void world.offsetWidth;world.classList.add('map-short-crossfade');}
     map.dataset.detailLevel=visible.length>300||framePressure>=2?'compact':'full';
-    presentation=Engine.starPresentation(visible,positions,state,camera.viewport,{receded,dimLayers,activityVerified});
+    const projections=new Map(visible.map(n=>{const p=positions.get(n.id);return [n.id,camera.worldToScreen({x:p.x+p.w/2,y:p.y+p.h/2,z:p.z||0})];}));
+    presentation=Engine.starPresentation(visible,positions,state,camera.viewport,{receded,dimLayers,activityVerified,projections});
+    const depthOrder=new Map([...projections].filter(([,p])=>p.visible).sort((a,b)=>b[1].depth-a[1].depth).map(([id],i)=>[id,i+1]));
+    // Perspective can place distant stars behind one another. Keep their light
+    // visible, but offer only fully exposed hit targets; the full-size picker
+    // and List can still focus every saved idea, including an occluded one.
+    const hitBlocked=new Set(),hitBoxes=[];
+    const hitOrder=visible.filter(n=>projections.get(n.id)?.visible).sort((a,b)=>(b.id===state.focusNodeId)-(a.id===state.focusNodeId)||projections.get(a.id).depth-projections.get(b.id).depth);
+    for(const node of hitOrder){const point=projections.get(node.id),light=presentation.get(node.id),card=sceneCards.get(node.id);if(!light||!card)continue;const f=Math.max(.28,card._size||0,light.size_factor),box={left:point.x-105*f,right:point.x+105*f,top:point.y-63*f,bottom:point.y+63*f};if(box.left<0||box.top<0||box.right>w||box.bottom>h||[...blocked,...hitBoxes].some(r=>box.left<r.right+2&&box.right+2>r.left&&box.top<r.bottom+2&&box.bottom+2>r.top))hitBlocked.add(node.id);else hitBoxes.push(box);}
     const labelBoxes=[],labelHidden=new Set();
-    const labels=visible.filter(n=>{const light=presentation.get(n.id);return light&&!light.distant;}).sort((a,b)=>(b.id===state.focusNodeId)-(a.id===state.focusNodeId)||(presentation.get(b.id).logic_line?1:0)-(presentation.get(a.id).logic_line?1:0)||presentation.get(b.id).size_factor-presentation.get(a.id).size_factor);
-    for(const node of labels){const p=positions.get(node.id),light=presentation.get(node.id),x=((p.x+p.w/2)*cos-(p.y+p.h/2)*sin)*scale+tx,y=((p.x+p.w/2)*sin+(p.y+p.h/2)*cos)*scale+ty,f=light.size_factor,box={left:x-115*f,right:x+115*f,top:y+14*f,bottom:y+75*f};if(x < -230||x>w+230||y < -150||y>h+150)continue;if(labelBoxes.some(b=>box.left<b.right+4&&box.right+4>b.left&&box.top<b.bottom+4&&box.bottom+4>b.top))labelHidden.add(node.id);else labelBoxes.push(box);}
+    const labels=visible.filter(n=>{const light=presentation.get(n.id);return light&&!light.distant&&projections.get(n.id)?.visible;}).sort((a,b)=>(b.id===state.focusNodeId)-(a.id===state.focusNodeId)||(presentation.get(b.id).logic_line?1:0)-(presentation.get(a.id).logic_line?1:0)||presentation.get(b.id).size_factor-presentation.get(a.id).size_factor);
+    for(const node of labels){const projected=projections.get(node.id),light=presentation.get(node.id),x=projected.x,y=projected.y,f=light.size_factor,box={left:x-115*f,right:x+115*f,top:y+14*f,bottom:y+75*f};if(x < -230||x>w+230||y < -150||y>h+150)continue;if(labelBoxes.some(b=>box.left<b.right+4&&box.right+4>b.left&&box.top<b.bottom+4&&box.bottom+4>b.top))labelHidden.add(node.id);else labelBoxes.push(box);}
     const cards=sceneCards;
-    for(const node of visible){const card=cards.get(node.id),light=presentation.get(node.id);if(!card||!light)continue;const p=positions.get(node.id);const rx=((p.x+p.w/2)*cos-(p.y+p.h/2)*sin)*scale,ry=((p.x+p.w/2)*sin+(p.y+p.h/2)*cos)*scale;card.style.transform=`translate(${rx-p.x-p.w/2}px, ${ry-p.y-p.h/2}px)`;const sx=rx+tx,sy=ry+ty,hitScale=Math.max(.28,card._size||0,light.size_factor),box={left:sx-105*hitScale,right:sx+105*hitScale,top:sy-63*hitScale,bottom:sy+63*hitScale},obscured=box.left<0||box.top<0||box.right>w||box.bottom>h||blocked.some(r=>box.left<r.right&&box.right>r.left&&box.top<r.bottom&&box.bottom>r.top);const hitButton=card.querySelector('.map-node-button');if(obscured&&document.activeElement===hitButton)viewport.focus({preventScroll:true});hitButton.disabled=obscured;if(!light.logic_line&&!light.working&&(sx < -230||sx>w+230||sy < -150||sy>h+150))continue;if(reviewing()&&node.type==='dream_claim'){light.size_factor=1;light.brightness_factor=1;light.distant=false;}
-      card.querySelector('.map-node-button').setAttribute('aria-pressed',String(node.id===state.focusNodeId));if(card._size===undefined||Math.abs(card._size-light.size_factor)>.015){card._size=light.size_factor;card.style.setProperty('--star-size',Math.max(.28,light.size_factor));card.style.setProperty('--star-glyph-size',light.size_factor/Math.max(.28,light.size_factor));}if(card._light===undefined||Math.abs(card._light-light.brightness_factor)>.025){card._light=light.brightness_factor;card.style.setProperty('--star-light',light.brightness_factor);}if(card._colour!==light.colour){card._colour=light.colour;card.style.setProperty('--star-colour',light.colour);}card.dataset.starSize=light.size_factor.toFixed(4);card.dataset.starBrightness=light.brightness_factor.toFixed(4);card.dataset.logicLine=String(light.logic_line);card.dataset.distant=String(light.distant);card.dataset.labelSuppressed=String(labelHidden.has(node.id));card.style.zIndex=node.id===state.focusNodeId?'3':light.logic_line?'2':'1';
+    for(const node of visible){const card=cards.get(node.id),light=presentation.get(node.id),point=projections.get(node.id);if(!card||!light||!point)continue;const p=positions.get(node.id);card.dataset.worldZ=String(p.z||0);card.dataset.cameraDepth=String(point.depth);card.hidden=!point.visible;const hitButton=card.querySelector('.map-node-button');if(!point.visible){hitButton.disabled=true;continue;}
+      const sx=point.x,sy=point.y;card.style.transform=`translate(${sx-p.x-p.w/2}px, ${sy-p.y-p.h/2}px)`;const obscured=hitBlocked.has(node.id);if(obscured&&document.activeElement===hitButton)viewport.focus({preventScroll:true});hitButton.disabled=obscured;if(!light.logic_line&&!light.working&&(sx < -230||sx>w+230||sy < -150||sy>h+150))continue;if(reviewing()&&node.type==='dream_claim'){light.size_factor=1;light.brightness_factor=1;light.distant=false;}
+      card.querySelector('.map-node-button').setAttribute('aria-pressed',String(node.id===state.focusNodeId));if(card._size===undefined||Math.abs(card._size-light.size_factor)>.015){card._size=light.size_factor;card.style.setProperty('--star-size',Math.max(.28,light.size_factor));card.style.setProperty('--star-glyph-size',light.size_factor/Math.max(.28,light.size_factor));}if(card._light===undefined||Math.abs(card._light-light.brightness_factor)>.025){card._light=light.brightness_factor;card.style.setProperty('--star-light',light.brightness_factor);}if(card._colour!==light.colour){card._colour=light.colour;card.style.setProperty('--star-colour',light.colour);}card.dataset.starSize=light.size_factor.toFixed(4);card.dataset.starBrightness=light.brightness_factor.toFixed(4);card.dataset.logicLine=String(light.logic_line);card.dataset.distant=String(light.distant);card.dataset.labelSuppressed=String(labelHidden.has(node.id));card.style.zIndex=String((depthOrder.get(node.id)||1)+(node.id===state.focusNodeId?1000:0));
     }
-    for(const connection of edgeElements){const {path,edge,gradient,startStop,endStop}=connection,a=presentation.get(edge.from),b=presentation.get(edge.to);if(!a||!b)continue;const relatedLink=['knowledge_family','idea_match'].includes(edge.kind),active=a.logic_line&&b.logic_line,quiet=map.dataset.detailLevel==='compact'&&state.transitioning&&!(a.logic_line||b.logic_line||a.working||b.working);path.style.display=relatedLink&&(!showRelated||quiet)?'none':'';
+    for(const connection of edgeElements){const {path,edge,gradient,startStop,endStop}=connection,a=presentation.get(edge.from),b=presentation.get(edge.to),pa=positions.get(edge.from),pb=positions.get(edge.to);if(!a||!b||!pa||!pb)continue;const segment=camera.projectSegment({x:pa.x+pa.w/2,y:pa.y+pa.h/2,z:pa.z||0},{x:pb.x+pb.w/2,y:pb.y+pb.h/2,z:pb.z||0});if(!segment){path.style.display='none';continue;}path.setAttribute('d',`M${segment.from.x},${segment.from.y} L${segment.to.x},${segment.to.y}`);if(gradient){gradient.setAttribute('x1',segment.from.x);gradient.setAttribute('y1',segment.from.y);gradient.setAttribute('x2',segment.to.x);gradient.setAttribute('y2',segment.to.y);}const relatedLink=['knowledge_family','idea_match'].includes(edge.kind),active=a.logic_line&&b.logic_line,quiet=map.dataset.detailLevel==='compact'&&state.transitioning&&!(a.logic_line||b.logic_line||a.working||b.working);path.style.display=relatedLink&&(!showRelated||quiet)?'none':'';
       if(gradient){if(connection.startColour!==a.colour){connection.startColour=a.colour;startStop.setAttribute('stop-color',a.colour);}if(connection.endColour!==b.colour){connection.endColour=b.colour;endStop.setAttribute('stop-color',b.colour);}if(!connection.gradientSet){path.style.stroke=`url(#${gradient.id})`;connection.gradientSet=true;}}else if(connection.colour!==b.colour){connection.colour=b.colour;path.style.stroke=b.colour;}
       const opacity=active?.85:Math.max(.06,Math.min(a.brightness_factor,b.brightness_factor)*.55);if(connection.opacity===undefined||Math.abs(connection.opacity-opacity)>.025){connection.opacity=opacity;path.style.opacity=String(opacity);}path.style.strokeWidth=String(active?1.7:1);
     }
+    if(pendingKeyboardFocus){const target=sceneCards.get(pendingKeyboardFocus)?.querySelector('.map-node-button');if(document.activeElement!==viewport)pendingKeyboardFocus=null;else if(target&&!target.disabled&&!target.closest('[hidden]')){pendingKeyboardFocus=null;target.focus({preventScroll:true});}}
     map.lastCameraPaintMs=performance.now()-paintStarted;
   }
   function pathIds(node) {
@@ -1402,7 +1494,7 @@ document.addEventListener('submit', event => {
     if(layoutRan){
       layoutSignature=nextLayout;
       const layoutStart=performance.now();
-      const packed=Engine.layout(visible,linksToDraw,Math.max(280,viewport.clientWidth-12),Math.max(260,viewport.clientHeight-(reviewing()?88:12)),positions,{constellations:true});
+      const packed=Engine.layout(visible,linksToDraw,Math.max(280,viewport.clientWidth-12),Math.max(260,viewport.clientHeight-(reviewing()?88:12)),positions,{constellations:true,spatial:true});
       for(const [id,position] of packed.positions)positions.set(id,position);
       width=packed.width;height=packed.height;
       if(debug)console.debug('Research map layout',JSON.stringify({nodes:visible.length,edges:linksToDraw.length,reused:packed.reused,new_count:packed.new_count,layout_ms:Number((performance.now()-layoutStart).toFixed(2))}));
@@ -1529,7 +1621,7 @@ document.addEventListener('submit', event => {
     map.querySelector('[data-map-copy]').hidden=!sources.some(source=>safe(source.url));
   }
   function inspect(id) {
-    id=String(id);if(!nodes.some(n=>n.id===id))return;
+    pendingKeyboardFocus=null;clearFlight();id=String(id);if(!nodes.some(n=>n.id===id))return;
     let node=nodes.find(n=>n.id===id);const seen=new Set();while(node&&!seen.has(node.id)){seen.add(node.id);collapsed.delete(node.id);node=nodes.find(n=>n.id===node.parent_id);}
     if(!visible.some(n=>n.id===id)){filter='all';map.querySelectorAll('[data-map-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.mapFilter==='all')));}
     controls(false);selected=id;details(true);draw();geometry();camera.focus(id);targetPicker.value=id;
@@ -1560,7 +1652,7 @@ document.addEventListener('submit', event => {
     if(event.key==='ArrowRight'){if(collapsed.has(node.id)){collapsed.delete(node.id);draw();}next=visible.find(child=>child.parent_id===node.id);}
     if(event.key==='ArrowLeft')next=visible.find(parent=>parent.id===node.parent_id);
     if(event.key==='ArrowDown')next=visible[visible.indexOf(node)+1];if(event.key==='ArrowUp')next=visible[visible.indexOf(node)-1];
-    if(next){event.preventDefault();inspect(next.id);world.querySelector(`[data-map-node="${next.id}"] button`)?.focus({preventScroll:true});}
+    if(next){event.preventDefault();inspect(next.id);const target=world.querySelector(`[data-map-node="${next.id}"] button`);if(target&&!target.disabled&&!target.closest('[hidden]'))target.focus({preventScroll:true});else{pendingKeyboardFocus=next.id;viewport.focus({preventScroll:true});}}
   });
   root.addEventListener('research:contact',()=>{if(!activityVerified&&snapshot){activityVerified=true;updateActivity();renderCamera(camera.getState());}});
   root.addEventListener('research:snapshot',event=>{
@@ -1589,7 +1681,7 @@ document.addEventListener('submit', event => {
   // Initialize after the status request; live processes are never assumed to survive navigation.
   let resizeTimer;new ResizeObserver(()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(!map.hidden&&snapshot){draw();geometry();renderCamera(camera.getState());}},160);}).observe(viewport);
   motion.addEventListener('change',()=>{if(motion.matches&&camera.transition){const state=camera.getState();camera.cancel();if(state.transitionType==='focus'&&positions.has(state.focusNodeId))camera.focus(state.focusNodeId);else camera.restoreState(state);}renderCamera(camera.getState());});
-  document.addEventListener('visibilitychange',()=>{if(document.hidden)camera.cancel();});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden){clearFlight();camera.cancel();}});
   showView(view);
 })();
 
@@ -2436,7 +2528,15 @@ body.research-map-open { overflow:hidden; }
 @media(max-width:760px) { .map-working-now { top:78px; max-width:calc(100vw - 28px); }.map-rotation-controls .btn { font-size:12px; } }
 .mindmap .map-connections > summary { color:#d3e5fa; }
 .mindmap .map-node-work-badge { top:0; }
-.mindmap .map-node-button:disabled { opacity:1; cursor:default; }
+.mindmap .map-node-button:disabled { opacity:1; cursor:default; pointer-events:none; }
+.mindmap .map-node-button > * { pointer-events:none; }
+/* A perspective volume with billboard labels: orbit and free flight share one camera. */
+.map-flight-controls { display:flex; flex-wrap:wrap; gap:7px; margin:12px 0; }
+.map-flight-controls .btn { touch-action:none; }
+.mindmap .map-space-help { color:#c3d0e3; font-size:12px; line-height:1.5; }
+.mindmap .map-viewport[data-space-mode=fly] { cursor:crosshair; }
+.mindmap .map-viewport[data-space-mode=orbit] { cursor:grab; }
+.map-rotation-controls output { width:100%; text-align:left; font-size:12px; }
 
 AICONTROL_UI_CSS;
     }

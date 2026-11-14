@@ -804,4 +804,12 @@ body.research-map-open { overflow:hidden; }
 @media(max-width:760px) { .map-working-now { top:78px; max-width:calc(100vw - 28px); }.map-rotation-controls .btn { font-size:12px; } }
 .mindmap .map-connections > summary { color:#d3e5fa; }
 .mindmap .map-node-work-badge { top:0; }
-.mindmap .map-node-button:disabled { opacity:1; cursor:default; }
+.mindmap .map-node-button:disabled { opacity:1; cursor:default; pointer-events:none; }
+.mindmap .map-node-button > * { pointer-events:none; }
+/* A perspective volume with billboard labels: orbit and free flight share one camera. */
+.map-flight-controls { display:flex; flex-wrap:wrap; gap:7px; margin:12px 0; }
+.map-flight-controls .btn { touch-action:none; }
+.mindmap .map-space-help { color:#c3d0e3; font-size:12px; line-height:1.5; }
+.mindmap .map-viewport[data-space-mode=fly] { cursor:crosshair; }
+.mindmap .map-viewport[data-space-mode=orbit] { cursor:grab; }
+.map-rotation-controls output { width:100%; text-align:left; font-size:12px; }

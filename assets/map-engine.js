@@ -194,6 +194,7 @@
     return {nodes: projected, edges, filter, empty: detailCount === 0, empty_reason: detailCount === 0 ? reasons[filter] : '', detail_count: detailCount, concept_count: selectedConcepts.length};
   }
   function layout(nodes, edges, width, height, previous = new Map(), options={}) {
+    if(options.spatial)return spatialLayout(nodes,edges,width,height,previous);
     if(options.constellations)return constellationLayout(nodes,edges,width,height,previous);
     const viewportW = Math.max(1, Number(width) || 1), viewportH = Math.max(1, Number(height) || 1), margin = 24, gapX = 24, gapY = 28;
     const rows = records(nodes).map(node => ({...node, id: key(node.id), w: Math.max(1, Number(node.w) || 194), h: Math.max(1, Number(node.h) || 84)}));
@@ -318,6 +319,11 @@
     }
     return {positions,width:Math.max(width,...[...positions.values()].map(p=>p.x+p.w)),height:Math.max(height,...[...positions.values()].map(p=>p.y+p.h)),reused,new_count:rows.length-reused};
   }
+  function spatialLayout(nodes,edges,width,height,previous=new Map()){
+    const result=constellationLayout(nodes,edges,width,height,previous),byId=new Map(nodes.map(n=>[String(n.id),n]));
+    for(const [id,p]of result.positions){if(Number.isFinite(p.z))continue;const node=byId.get(id),parent=result.positions.get(String(node?.parent_id));p.z=id==='root'?0:parent&&String(node?.parent_id)!=='root'&&Number.isFinite(parent.z)?parent.z+(hash(id+'depth')%281-140):(hash((node?.knowledge_line_id||id)+'volume')%1601-800)+(hash(id+'depth')%281-140);}
+    return result;
+  }
   function starPresentation(nodes,positions,camera,viewport,options={}) {
     const byId=new Map(nodes.map(n=>[String(n.id),n])),focus=byId.get(String(camera.focusNodeId))||byId.get('root'),line=new Set(),seen=new Set();
     let walk=focus;while(walk&&!seen.has(String(walk.id))){seen.add(String(walk.id));if(walk===focus||Number(walk.layer||0)===0)line.add(String(walk.id));walk=byId.get(String(walk.parent_id));}
@@ -327,10 +333,10 @@
       const id=String(node.id),p=positions.get(id);if(!p)continue;
       const current=line.has(id),related=familyFor(node,byId)===family,layer=Math.max(0,Math.min(2,Number(node.layer)||0));
       const priority=Math.max(.1,Math.min(1,(Number(node.path_weight)||50)/100)),weight=Math.max(.25,Math.min(2,Number(node.weight)||1));
-      const distance=Math.hypot(p.x+p.w/2-camera.x,p.y+p.h/2-camera.y)/span;
+      const projection=options.projections?.get(id);const distance=camera.version==='space3d-v1'?Math.hypot(p.x+p.w/2-camera.pivotX,p.y+p.h/2-camera.pivotY,(p.z||0)-camera.pivotZ)/span:Math.hypot(p.x+p.w/2-camera.x,p.y+p.h/2-camera.y)/span;
       const falloff=1/(1+distance*distance*2.8),base=layer<=1?.82-(.82-.56)*layer:.56-(.56-.33)*(layer-1);
       const receded=options.receded?.has(id)||options.dimLayers?.has(layer),recency=.88+.12*Math.max(0,Math.min(1,(Number(node.id)||latest)/latest));
-      let size=current?1:Math.max(.12,Math.min(.9,base*(.78+priority*.3)*Math.sqrt(weight)*(related?1:.82)*falloff*zoomContext*recency*(receded?.48:1)));
+      let size=current?1:Math.max(.12,Math.min(.9,base*(.78+priority*.3)*Math.sqrt(weight)*(related?1:.82)*falloff*(projection?Math.max(.08,Math.min(1.4,projection.perspective)):zoomContext)*recency*(receded?.48:1)));
       let brightness=current?1:Math.max(.06,Math.min(.88,(.28+size*.68)*falloff*(receded?.62:1)));
       const family_colour=familyColour(familyFor(node,byId));
       const colour=node.locked_at||node.origin==='web_evidence'||['source','passage','edge'].includes(node.type)?'#ffd38b':layer===2?'#b3bdcc':family_colour;
@@ -350,5 +356,5 @@
     add(text) { text = sentence(text); if (!text || this.seen.has(text)) return; this.seen.add(text); this.items.push(text); this.history.push(text); if (this.items.length > 50) this.items.shift(); if (this.history.length > 100) this.history.shift(); }
     tick(now, visible = true) { const elapsed = this.last ? now - this.last : 0; this.last = now; if (!visible || this.paused) { this.until += elapsed; return null; } if (!this.items.length || this.current && now < this.until) return null; this.current = this.items.shift(); this.until = now + Math.max(5000, Math.min(10000, this.current.split(/\s+/).length * 260 + 2000)); return this.current; }
   }
-  return {owner, project, layout, constellationLayout, starPresentation, familyColour, relatedLinks, sentence, ReadingQueue};
+  return {owner, project, layout, constellationLayout, spatialLayout, starPresentation, familyColour, relatedLinks, sentence, ReadingQueue};
 });
