@@ -116,3 +116,9 @@ persist in systems.sqlite. Web console sessions are bound to the creating login,
 expire after 30 minutes, and allow at most 60 bounded commands/hour/system.
 The console is noninteractive; no terminal daemon or external relay is installed.
 See SYSTEM_SETUP.md for server-side enforcement and account removal semantics.
+
+Map execution controls (2026-11-21 AWST): one compact top Start/Stop icon;
+automatic model-only growth defaults to five rounds, accepts 1–20, dispatches
+sequentially and pauses on user interruption/errors/limits. It uses the existing
+research API, model, spend cap, rate limit and flow-2 permissions. No new daemon,
+provider allowance, database field or automatic Evidence stage is introduced.

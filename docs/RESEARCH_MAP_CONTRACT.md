@@ -1,5 +1,26 @@
 # Research Map contract
 
+## Compact map controls and automatic growth (2026-11-21 AWST)
+
+Map's top bar now has one 36px Start/Stop toggle and a separate Auto-grow/Pause
+icon with a compact round count (default 5, range 1–20) and completed/total status.
+The tray no longer duplicates Start/Stop. Keyboard labels and Alt+S remain usable.
+
+Auto-grow runs exactly the requested number of confirmed model-only exploration
+rounds, one request at a time, from the selected idea or active frontier, then
+from newly generated ideas. It needs no review clicks between rounds and never
+locks Evidence or starts web searches. Existing server spend/request/Stop guards
+remain authoritative. Stop, Pause, leaving Map, hiding/closing the page, errors,
+uncertain progress, changed runs and exhausted budgets prevent further dispatch.
+A paused in-flight request can finish and save its ideas; no unknown request is
+retried. Queue state is local to the current page and does not resume on reload.
+Old workflow runs keep Start/Stop; automatic model growth is for flow version 2.
+
+`tests/map_auto_growth_ui.cjs` uses real local PHP actions with synthetic provider
+responses to verify five sequential frontier rounds, model-only scope, invalid
+counts, Stop with a held/stale response, fresh-run reset, failure/no-retry and
+compact desktop/mobile axe. Existing map coordinates/camera behavior is unchanged.
+
 ## Three-dimensional orbit and flight (2026-11-14 AWST)
 
 Map now uses stable X/Y/Z constellations and a perspective camera. Drag changes

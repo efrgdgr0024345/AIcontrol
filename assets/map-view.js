@@ -40,8 +40,17 @@
   const tray=el('div',undefined,'map-controls-tray');tray.id='map-controls-tray';tray.hidden=true;tray.setAttribute('role','group');tray.setAttribute('aria-label','Map controls and usage');
   const actions=el('div',undefined,'map-screen-actions');
   const screenButton=(label,action,style='btn-outline-secondary')=>{const button=el('button',label,'btn '+style);button.type='button';button.dataset.mapScreenAction=action;return button;};
-  actions.append(screenButton('▶ Start research','start','btn-primary'),screenButton('■ Stop research','stop','btn-outline-danger'),screenButton('Continue planned search','step'),screenButton('Finish and freeze','finish','btn-primary'),screenButton('Review gaps once','repair'),screenButton('Project menu','menu'),screenButton('Details','details'),screenButton('List','list'));
-  actions.children[0].setAttribute('aria-label','Start research');actions.children[1].setAttribute('aria-label','Stop research');actions.children[1].setAttribute('aria-keyshortcuts','Alt+S');
+  actions.append(screenButton('Continue planned search','step'),screenButton('Finish and freeze','finish','btn-primary'),screenButton('Review gaps once','repair'),screenButton('Project menu','menu'),screenButton('Details','details'),screenButton('List','list'));
+  const quickControls=el('div',undefined,'map-quick-controls');quickControls.setAttribute('role','group');quickControls.setAttribute('aria-label','Research and automatic growth');
+  const runToggle=screenButton('▶','start','map-compact-button');runToggle.dataset.mapRunToggle='1';runToggle.setAttribute('aria-label','Start research');runToggle.title='Start research';runToggle.disabled=true;
+  const autoGrow=el('button','✦','btn map-compact-button');autoGrow.type='button';autoGrow.dataset.mapAutoGrow='1';autoGrow.setAttribute('aria-label','Start automatic growth');autoGrow.setAttribute('aria-pressed','false');autoGrow.disabled=true;
+  const growRounds=el('input',undefined,'map-grow-rounds');growRounds.type='number';growRounds.min='1';growRounds.max='20';growRounds.step='1';growRounds.required=true;growRounds.value='5';growRounds.inputMode='numeric';growRounds.dataset.mapGrowRounds='1';growRounds.setAttribute('aria-label','Automatic growth rounds');growRounds.title='Model-only growth rounds (1–20)';
+  const growProgress=el('span','','map-grow-progress');growProgress.dataset.mapGrowProgress='1';growProgress.setAttribute('role','status');growProgress.setAttribute('aria-live','polite');growProgress.hidden=true;
+  let growthState={active:false,completed:0,total:0,busy:false};
+  autoGrow.addEventListener('click',()=>{if(growthState.active){root.dispatchEvent(new Event('research:auto-grow-cancel'));return;}if(!growRounds.reportValidity())return;root.dispatchEvent(new CustomEvent('research:auto-grow',{detail:{rounds:Number(growRounds.value),focusNodeId:selected}}));});
+  growRounds.addEventListener('input',()=>screenControls());
+  root.addEventListener('research:auto-grow-state',event=>{growthState=event.detail;growProgress.hidden=!growthState.total;growProgress.textContent=growthState.total?`${growthState.completed}/${growthState.total}`:'';growProgress.setAttribute('aria-label',growthState.message||'');growProgress.title=growthState.message||'';screenControls();});
+  quickControls.append(runToggle,autoGrow,growRounds,growProgress);
   tray.append(actions,map.querySelector('.mindmap-toolbar'),map.querySelector('[data-map-outcomes]'));
   const layerControls=el('div',undefined,'map-layer-controls');layerControls.setAttribute('role','group');layerControls.setAttribute('aria-label','Map layers');
   for(const [layer,label] of [[1,'Dim Secondary'],[2,'Dim Tertiary']]){const button=el('button',label,'btn btn-outline-secondary');button.type='button';button.setAttribute('aria-pressed','false');button.addEventListener('click',()=>{dimLayers.has(layer)?dimLayers.delete(layer):dimLayers.add(layer);button.setAttribute('aria-pressed',String(dimLayers.has(layer)));renderCamera(camera.getState());});layerControls.append(button);}
@@ -65,7 +74,7 @@
 
   const live=el('p');live.dataset.liveActivity='1';live.setAttribute('role','status');const clock=el('small');clock.dataset.liveClock='1';clock.setAttribute('aria-live','off');const spend=el('p');spend.dataset.projectSpend='1';
   const history=el('details',undefined,'map-idea-history'),historyTitle=el('summary','Idea history'),historyList=el('ol');history.append(historyTitle,historyList);tray.append(live,clock,spend,map.querySelector('[data-map-evidence-help]'),history);
-  header.append(heading,ticker,handle,tray);map.prepend(header);
+  header.append(quickControls,heading,ticker,handle,tray);map.prepend(header);
   const notification=el('button','','map-state-notice');notification.type='button';notification.hidden=true;notification.setAttribute('aria-label','Review research status');notification.addEventListener('click',()=>controls(true));map.append(notification);
   const mapError=el('p','','map-request-error');mapError.hidden=true;mapError.setAttribute('role','alert');tray.prepend(mapError);
   const focusError=el('p','','map-request-error');focusError.hidden=true;focusError.setAttribute('role','alert');map.querySelector('[data-map-focus]').before(focusError);
@@ -95,7 +104,7 @@
   const side=map.querySelector('[data-map-inspector]');side.hidden=true;const closeSide=el('button','×','map-inspector-close btn');closeSide.type='button';closeSide.setAttribute('aria-label','Close details');closeSide.addEventListener('click',()=>{details(false);viewport.focus();});side.prepend(closeSide);
   let underlay=[],previousFocus=null,manualViewport=false;
   function showView(next) {
-    view=next;map.hidden=view!=='map';if(view!=='map'){clearFlight();camera.cancel();clearTimeout(growthTimer);}root.querySelector('[data-investigate-list]').hidden=view!=='list';
+    view=next;map.hidden=view!=='map';if(view!=='map'){root.dispatchEvent(new Event('research:auto-grow-cancel'));clearFlight();camera.cancel();clearTimeout(growthTimer);}root.querySelector('[data-investigate-list]').hidden=view!=='list';
     root.querySelectorAll('[data-investigate-view]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.investigateView===view)));
     if(view==='map'){
       controls(false);details(false);previousFocus=document.activeElement;document.body.append(map);document.body.classList.add('research-map-open');
@@ -112,8 +121,11 @@
   function screenControls(){
     if(!snapshot)return;
     const active=['pending','running'].includes(snapshot.run.status),pending=snapshot.requests.some(request=>request.status==='pending');
-    actions.querySelector('[data-map-screen-action=start]').disabled=active||pending||root.dataset.connected==='0'||(snapshot.budget&&snapshot.budget.remaining<6);
-    actions.querySelector('[data-map-screen-action=stop]').disabled=!(active||pending);
+    const canStop=active||pending;runToggle.dataset.mapScreenAction=canStop?'stop':'start';runToggle.textContent=canStop?'■':'▶';runToggle.setAttribute('aria-label',canStop?'Stop research':'Start research');runToggle.title=canStop?'Stop research (Alt+S)':'Start research';runToggle.dataset.stopping=String(canStop);runToggle.disabled=canStop?root.dataset.stopBusy==='1':root.dataset.requestBusy==='1'||root.dataset.connected==='0'||(snapshot.budget&&snapshot.budget.remaining<6);
+    if(canStop)runToggle.setAttribute('aria-keyshortcuts','Alt+S');else runToggle.removeAttribute('aria-keyshortcuts');
+    const idle=active&&snapshot.run.status==='running'&&!snapshot.run.busy_since&&!pending&&['exploring','verification_review'].includes(snapshot.run.phase),living=Number(snapshot.run.flow_version)>=2;
+    autoGrow.disabled=!growthState.active&&(!living||!idle||!activityVerified||growthState.busy||root.dataset.requestBusy==='1'||root.dataset.connected==='0'||!growRounds.checkValidity()||snapshot.budget?.remaining===0);
+    autoGrow.textContent=growthState.active?'Ⅱ':'✦';autoGrow.setAttribute('aria-label',growthState.active?'Pause automatic growth':'Start automatic growth');autoGrow.setAttribute('aria-pressed',String(growthState.active));autoGrow.title=growthState.active?'Pause after the current growth request':!living?'Automatic growth is available in exploration-first runs':!idle?'Start research and wait for idle model exploration':'Run the chosen number of model-only growth rounds; no automatic web Evidence';growRounds.disabled=growthState.active;
     actions.querySelector('[data-map-screen-action=step]').hidden=!active||!!snapshot.run.busy_since||snapshot.run.phase!=='evidence';
     const verificationReview=active&&snapshot.run.phase==='verification_review';
     map.querySelector('[data-map-command=collapse]').textContent=Number(snapshot.run.flow_version)>=2?'Recede all':'Collapse all';map.querySelector('[data-map-command=expand]').textContent=Number(snapshot.run.flow_version)>=2?'Restore all':'Expand all';

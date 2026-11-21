@@ -864,3 +864,12 @@ body.research-map-open { overflow:hidden; }
 .system-terminal .btn-outline-danger { color:#ffbec5; border-color:#c16b7a; background:#30131b; }
 
 .systems-section summary { min-height:44px; padding-top:10px; padding-bottom:10px; }
+
+.map-screen-header > .map-quick-controls:first-child { display:flex; flex-direction:row; align-items:center; gap:5px; flex-shrink:0; }
+.mindmap .map-compact-button { display:inline-flex; align-items:center; justify-content:center; width:36px; min-width:36px; height:36px; min-height:36px; padding:0; color:#d8f5e9; background:#122b28; border:1px solid #5d9489; font-size:15px; }
+.mindmap .map-compact-button[data-stopping=true] { color:#ffd0d5; background:#361a22; border-color:#c47f91; }
+.mindmap .map-compact-button:focus-visible,.map-grow-rounds:focus-visible { outline:2px solid #bde6ff; outline-offset:2px; }
+.mindmap .map-grow-rounds { width:46px; height:36px; min-height:36px; padding:4px; border:1px solid #71859c; border-radius:6px; background:#101b27; color:#e5f2ff; font-size:13px; }
+.map-grow-progress { color:#d4f4e7; font-size:11px; white-space:nowrap; }
+.research-map-open .map-screen-header { gap:9px; }
+@media(max-width:700px) { .research-map-open .map-screen-header { gap:6px; padding-left:8px; padding-right:8px; }.map-quick-controls { gap:4px; } }

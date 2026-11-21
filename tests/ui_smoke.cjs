@@ -227,7 +227,7 @@ const {spawn,spawnSync}=require('child_process');
   const full=await page.locator('[data-mindmap]').boundingBox();
   if(!full||full.x!==0||full.y!==0||full.width<1439||full.height<999)throw new Error('Map does not fill the screen');
   await openMapControls();const mapHeader=page.locator('.map-screen-header');
-  if(!await mapHeader.getByRole('button',{name:'Start research',exact:true}).isDisabled())throw new Error('Map Start enabled during active review');
+  if(await mapHeader.getByRole('button',{name:'Start research',exact:true}).count())throw new Error('Active map should show only the Stop toggle');
   if(await mapHeader.getByRole('button',{name:'Stop research',exact:true}).isDisabled())throw new Error('Map Stop unavailable');
   const overlap=await page.evaluate(()=>{const a=document.querySelector('[data-map-node="2"]').getBoundingClientRect(),b=document.querySelector('[data-map-node="9"]').getBoundingClientRect();return a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top;});
   if(overlap)throw new Error('Concept cards overlap');

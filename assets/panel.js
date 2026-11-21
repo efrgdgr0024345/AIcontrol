@@ -378,6 +378,48 @@ document.addEventListener('submit', event => {
     root.querySelectorAll('[data-source-id]').forEach(card=>{card.querySelector('[data-source-passages]')?.remove();const group=element('section');group.dataset.sourcePassages='1';group.append(element('h5','Captured passages'));const passages=ledger.passages.filter(p=>Number(p.source_id)===Number(card.dataset.sourceId));for(const passage of passages)group.append(passageView(passage));const source=ledger.sources.find(s=>Number(s.id)===Number(card.dataset.sourceId));if(source?.shared_origin)group.append(element('p',source.shared_origin));if(!passages.length)group.append(element('p','No exact source passage was returned.'));card.append(group);});
   }
   let livingSnapshot;
+  let growthBatch=null,growthSerial=0,actionRequests=0;
+  let growthProgress={active:false,completed:0,total:0,message:''};
+  const growthTypes=new Set(['dream_claim','question','model_idea','association','counter','edge_case','reframing']);
+  function publishGrowth(){root?.dispatchEvent(new CustomEvent('research:auto-grow-state',{detail:{...growthProgress,busy:stepping}}));}
+  function cancelGrowth(message='Automatic growth paused; a request already sent may finish.'){
+    if(!growthBatch)return;growthBatch=null;growthSerial++;growthProgress={...growthProgress,active:false,message};publishGrowth();
+  }
+  function growthReady(snapshot){return snapshot?.run.status==='running'&&Number(snapshot.run.flow_version)>=2&&['exploring','verification_review'].includes(snapshot.run.phase)&&!snapshot.run.busy_since&&!snapshot.requests.some(r=>r.status==='pending');}
+  root?.addEventListener('research:auto-grow-cancel',()=>cancelGrowth());
+  root?.addEventListener('research:error',event=>{if(event.detail)cancelGrowth('Automatic growth stopped: '+event.detail);});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelGrowth('Automatic growth paused because the page is hidden.');});
+  window.addEventListener('pagehide',()=>cancelGrowth('Automatic growth ended when the page closed.'));
+  root?.addEventListener('research:auto-grow',async event=>{
+    const total=event.detail?.rounds;
+    if(!Number.isInteger(total)||total<1||total>20||growthBatch||stepping||actionRequests||document.hidden||!growthReady(livingSnapshot))return;
+    const runId=String(livingSnapshot.run.id),ticket=++growthSerial;
+    const ideas=livingSnapshot.nodes.filter(n=>growthTypes.has(n.type)&&Number(n.layer||0)<2&&!n.locked_at);
+    const focused=ideas.find(n=>String(n.id)===String(event.detail?.focusNodeId));
+    let frontier=focused?[Number(focused.id)]:ideas.slice(-5).map(n=>Number(n.id)),latest=livingSnapshot;
+    growthBatch={runId,ticket};growthProgress={active:true,completed:0,total,message:`Automatic growth: 0 of ${total} rounds.`};error('');stepping=true;halted=false;publishGrowth();
+    try {
+      for(let round=0;round<total;round++){
+        if(!growthBatch||growthSerial!==ticket)break;
+        const before=latest;
+        if(document.hidden||String(before.run.id)!==runId||!growthReady(before)){cancelGrowth('Automatic growth stopped because the run is no longer ready.');break;}
+        if(before.budget?.remaining===0){cancelGrowth('Automatic growth stopped at the hourly request limit.');break;}
+        const oldNodes=new Set(before.nodes.map(n=>String(n.id))),oldRequests=new Set(before.requests.map(r=>String(r.id)));
+        const form=document.createElement('form');form.setAttribute('action',root.dataset.entry||location.pathname);
+        for(const [name,value] of [['action','research_explore'],['csrf',csrf()],['run_id',runId],['explore_mode','explore'],...frontier.map(id=>['node_ids[]',String(id)])]){const field=document.createElement('input');field.name=name;field.value=value;form.append(field);}
+        const after=await send(form);
+        if(!growthBatch||growthSerial!==ticket)break;
+        render(after);latest=after;
+        const confirmed=after.requests.some(r=>r.kind==='model_explore'&&r.status==='complete'&&!oldRequests.has(String(r.id)));
+        const fresh=after.nodes.filter(n=>growthTypes.has(n.type)&&!oldNodes.has(String(n.id)));
+        if(String(after.run.id)!==runId||!growthReady(after)||!confirmed||!fresh.length){cancelGrowth('Automatic growth stopped: this round did not return confirmed model growth. Inspect the saved result before continuing.');break;}
+        frontier=fresh.slice(-5).map(n=>Number(n.id));growthProgress={active:true,completed:round+1,total,message:`Automatic growth: ${round+1} of ${total} rounds completed.`};publishGrowth();
+        if(round+1<total)await new Promise(resolve=>setTimeout(resolve,200));
+      }
+      if(growthBatch&&growthSerial===ticket){growthBatch=null;growthProgress={...growthProgress,active:false,message:`Automatic growth finished: ${total} of ${total} rounds.`};}
+    }catch(failure){diagnosticFailure('auto_growth',failure);cancelGrowth('Automatic growth stopped: '+failure.message);halted=true;error(failure.message);}
+    finally{stepping=false;publishGrowth();root?.dispatchEvent(new Event('research:controls'));}
+  });
   function renderLiving(snapshot) {
     livingSnapshot=snapshot;
     const types=['dream_claim','question','model_idea','association','counter','edge_case','reframing'];
@@ -407,6 +449,7 @@ document.addEventListener('submit', event => {
     if (serial === lastSnapshot) return;
     lastSnapshot = serial;
     const run = snapshot.run;
+    if(growthBatch&&(String(run.id)!==growthBatch.runId||run.status!=='running'))cancelGrowth('Automatic growth stopped because the run changed or stopped.');
     root.dataset.rigour = String(run.rigour_version || 0); root.dataset.searchLimit = String(run.normal_search_limit || 2);
     showBudget(snapshot.budget);
     const active = ['pending', 'running'].includes(run.status);
@@ -517,9 +560,12 @@ document.addEventListener('submit', event => {
     event.preventDefault();
     const action = form.dataset.researchAction;
     const button = event.submitter || form.querySelector('button:not([type=button])'); button.disabled = true;
+    if(growthBatch)cancelGrowth(action==='research_stop'?'Automatic growth stopped.':'Automatic growth paused for a manual action.');
+    if(action!=='research_stop'&&actionRequests){button.disabled=false;return;}
     if (action === 'research_stop') halted = true;
     if (action === 'research_step' && !form.hasAttribute('data-map-focus')) { halted = false; advance(true); button.disabled = false; return; }
     if (action === 'research_learn') { root.querySelectorAll('[data-learn-followup], [data-learn-submit]').forEach(button => button.disabled = true); error('Explaining collected evidence… No web search.'); root.querySelector('[data-stop-control]').hidden = false; }
+    actionRequests++;if(root){root.dataset.requestBusy='1';if(action==='research_stop')root.dataset.stopBusy='1';root.dispatchEvent(new Event('research:controls'));}
     try {
       const snapshot = await send(form);
       if(action==='research_settings'){location.reload();return;}
@@ -529,7 +575,7 @@ document.addEventListener('submit', event => {
       render(snapshot); error('');
       if (action === 'research_continue' || (action==='research_living'&&form.elements.action.value==='research_lock_evidence') || form.hasAttribute('data-map-focus')) { halted = false; advance(); }
     } catch (failure) { diagnosticFailure(action, failure); error(failure.message);  }
-    finally { button.disabled = false;if(livingSnapshot)renderLiving(livingSnapshot); root?.dispatchEvent(new Event('research:controls')); }
+    finally { actionRequests--;if(root){root.dataset.requestBusy=actionRequests?'1':'0';if(action==='research_stop')root.dataset.stopBusy='0';}button.disabled = false;if(livingSnapshot)renderLiving(livingSnapshot); root?.dispatchEvent(new Event('research:controls')); }
   });
   root?.addEventListener('click', event => {
     const quick = event.target.closest('[data-keep]');

@@ -909,6 +909,48 @@ document.addEventListener('submit', event => {
     root.querySelectorAll('[data-source-id]').forEach(card=>{card.querySelector('[data-source-passages]')?.remove();const group=element('section');group.dataset.sourcePassages='1';group.append(element('h5','Captured passages'));const passages=ledger.passages.filter(p=>Number(p.source_id)===Number(card.dataset.sourceId));for(const passage of passages)group.append(passageView(passage));const source=ledger.sources.find(s=>Number(s.id)===Number(card.dataset.sourceId));if(source?.shared_origin)group.append(element('p',source.shared_origin));if(!passages.length)group.append(element('p','No exact source passage was returned.'));card.append(group);});
   }
   let livingSnapshot;
+  let growthBatch=null,growthSerial=0,actionRequests=0;
+  let growthProgress={active:false,completed:0,total:0,message:''};
+  const growthTypes=new Set(['dream_claim','question','model_idea','association','counter','edge_case','reframing']);
+  function publishGrowth(){root?.dispatchEvent(new CustomEvent('research:auto-grow-state',{detail:{...growthProgress,busy:stepping}}));}
+  function cancelGrowth(message='Automatic growth paused; a request already sent may finish.'){
+    if(!growthBatch)return;growthBatch=null;growthSerial++;growthProgress={...growthProgress,active:false,message};publishGrowth();
+  }
+  function growthReady(snapshot){return snapshot?.run.status==='running'&&Number(snapshot.run.flow_version)>=2&&['exploring','verification_review'].includes(snapshot.run.phase)&&!snapshot.run.busy_since&&!snapshot.requests.some(r=>r.status==='pending');}
+  root?.addEventListener('research:auto-grow-cancel',()=>cancelGrowth());
+  root?.addEventListener('research:error',event=>{if(event.detail)cancelGrowth('Automatic growth stopped: '+event.detail);});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelGrowth('Automatic growth paused because the page is hidden.');});
+  window.addEventListener('pagehide',()=>cancelGrowth('Automatic growth ended when the page closed.'));
+  root?.addEventListener('research:auto-grow',async event=>{
+    const total=event.detail?.rounds;
+    if(!Number.isInteger(total)||total<1||total>20||growthBatch||stepping||actionRequests||document.hidden||!growthReady(livingSnapshot))return;
+    const runId=String(livingSnapshot.run.id),ticket=++growthSerial;
+    const ideas=livingSnapshot.nodes.filter(n=>growthTypes.has(n.type)&&Number(n.layer||0)<2&&!n.locked_at);
+    const focused=ideas.find(n=>String(n.id)===String(event.detail?.focusNodeId));
+    let frontier=focused?[Number(focused.id)]:ideas.slice(-5).map(n=>Number(n.id)),latest=livingSnapshot;
+    growthBatch={runId,ticket};growthProgress={active:true,completed:0,total,message:`Automatic growth: 0 of ${total} rounds.`};error('');stepping=true;halted=false;publishGrowth();
+    try {
+      for(let round=0;round<total;round++){
+        if(!growthBatch||growthSerial!==ticket)break;
+        const before=latest;
+        if(document.hidden||String(before.run.id)!==runId||!growthReady(before)){cancelGrowth('Automatic growth stopped because the run is no longer ready.');break;}
+        if(before.budget?.remaining===0){cancelGrowth('Automatic growth stopped at the hourly request limit.');break;}
+        const oldNodes=new Set(before.nodes.map(n=>String(n.id))),oldRequests=new Set(before.requests.map(r=>String(r.id)));
+        const form=document.createElement('form');form.setAttribute('action',root.dataset.entry||location.pathname);
+        for(const [name,value] of [['action','research_explore'],['csrf',csrf()],['run_id',runId],['explore_mode','explore'],...frontier.map(id=>['node_ids[]',String(id)])]){const field=document.createElement('input');field.name=name;field.value=value;form.append(field);}
+        const after=await send(form);
+        if(!growthBatch||growthSerial!==ticket)break;
+        render(after);latest=after;
+        const confirmed=after.requests.some(r=>r.kind==='model_explore'&&r.status==='complete'&&!oldRequests.has(String(r.id)));
+        const fresh=after.nodes.filter(n=>growthTypes.has(n.type)&&!oldNodes.has(String(n.id)));
+        if(String(after.run.id)!==runId||!growthReady(after)||!confirmed||!fresh.length){cancelGrowth('Automatic growth stopped: this round did not return confirmed model growth. Inspect the saved result before continuing.');break;}
+        frontier=fresh.slice(-5).map(n=>Number(n.id));growthProgress={active:true,completed:round+1,total,message:`Automatic growth: ${round+1} of ${total} rounds completed.`};publishGrowth();
+        if(round+1<total)await new Promise(resolve=>setTimeout(resolve,200));
+      }
+      if(growthBatch&&growthSerial===ticket){growthBatch=null;growthProgress={...growthProgress,active:false,message:`Automatic growth finished: ${total} of ${total} rounds.`};}
+    }catch(failure){diagnosticFailure('auto_growth',failure);cancelGrowth('Automatic growth stopped: '+failure.message);halted=true;error(failure.message);}
+    finally{stepping=false;publishGrowth();root?.dispatchEvent(new Event('research:controls'));}
+  });
   function renderLiving(snapshot) {
     livingSnapshot=snapshot;
     const types=['dream_claim','question','model_idea','association','counter','edge_case','reframing'];
@@ -938,6 +980,7 @@ document.addEventListener('submit', event => {
     if (serial === lastSnapshot) return;
     lastSnapshot = serial;
     const run = snapshot.run;
+    if(growthBatch&&(String(run.id)!==growthBatch.runId||run.status!=='running'))cancelGrowth('Automatic growth stopped because the run changed or stopped.');
     root.dataset.rigour = String(run.rigour_version || 0); root.dataset.searchLimit = String(run.normal_search_limit || 2);
     showBudget(snapshot.budget);
     const active = ['pending', 'running'].includes(run.status);
@@ -1048,9 +1091,12 @@ document.addEventListener('submit', event => {
     event.preventDefault();
     const action = form.dataset.researchAction;
     const button = event.submitter || form.querySelector('button:not([type=button])'); button.disabled = true;
+    if(growthBatch)cancelGrowth(action==='research_stop'?'Automatic growth stopped.':'Automatic growth paused for a manual action.');
+    if(action!=='research_stop'&&actionRequests){button.disabled=false;return;}
     if (action === 'research_stop') halted = true;
     if (action === 'research_step' && !form.hasAttribute('data-map-focus')) { halted = false; advance(true); button.disabled = false; return; }
     if (action === 'research_learn') { root.querySelectorAll('[data-learn-followup], [data-learn-submit]').forEach(button => button.disabled = true); error('Explaining collected evidence… No web search.'); root.querySelector('[data-stop-control]').hidden = false; }
+    actionRequests++;if(root){root.dataset.requestBusy='1';if(action==='research_stop')root.dataset.stopBusy='1';root.dispatchEvent(new Event('research:controls'));}
     try {
       const snapshot = await send(form);
       if(action==='research_settings'){location.reload();return;}
@@ -1060,7 +1106,7 @@ document.addEventListener('submit', event => {
       render(snapshot); error('');
       if (action === 'research_continue' || (action==='research_living'&&form.elements.action.value==='research_lock_evidence') || form.hasAttribute('data-map-focus')) { halted = false; advance(); }
     } catch (failure) { diagnosticFailure(action, failure); error(failure.message);  }
-    finally { button.disabled = false;if(livingSnapshot)renderLiving(livingSnapshot); root?.dispatchEvent(new Event('research:controls')); }
+    finally { actionRequests--;if(root){root.dataset.requestBusy=actionRequests?'1':'0';if(action==='research_stop')root.dataset.stopBusy='0';}button.disabled = false;if(livingSnapshot)renderLiving(livingSnapshot); root?.dispatchEvent(new Event('research:controls')); }
   });
   root?.addEventListener('click', event => {
     const quick = event.target.closest('[data-keep]');
@@ -1232,8 +1278,17 @@ document.addEventListener('submit', event => {
   const tray=el('div',undefined,'map-controls-tray');tray.id='map-controls-tray';tray.hidden=true;tray.setAttribute('role','group');tray.setAttribute('aria-label','Map controls and usage');
   const actions=el('div',undefined,'map-screen-actions');
   const screenButton=(label,action,style='btn-outline-secondary')=>{const button=el('button',label,'btn '+style);button.type='button';button.dataset.mapScreenAction=action;return button;};
-  actions.append(screenButton('▶ Start research','start','btn-primary'),screenButton('■ Stop research','stop','btn-outline-danger'),screenButton('Continue planned search','step'),screenButton('Finish and freeze','finish','btn-primary'),screenButton('Review gaps once','repair'),screenButton('Project menu','menu'),screenButton('Details','details'),screenButton('List','list'));
-  actions.children[0].setAttribute('aria-label','Start research');actions.children[1].setAttribute('aria-label','Stop research');actions.children[1].setAttribute('aria-keyshortcuts','Alt+S');
+  actions.append(screenButton('Continue planned search','step'),screenButton('Finish and freeze','finish','btn-primary'),screenButton('Review gaps once','repair'),screenButton('Project menu','menu'),screenButton('Details','details'),screenButton('List','list'));
+  const quickControls=el('div',undefined,'map-quick-controls');quickControls.setAttribute('role','group');quickControls.setAttribute('aria-label','Research and automatic growth');
+  const runToggle=screenButton('▶','start','map-compact-button');runToggle.dataset.mapRunToggle='1';runToggle.setAttribute('aria-label','Start research');runToggle.title='Start research';runToggle.disabled=true;
+  const autoGrow=el('button','✦','btn map-compact-button');autoGrow.type='button';autoGrow.dataset.mapAutoGrow='1';autoGrow.setAttribute('aria-label','Start automatic growth');autoGrow.setAttribute('aria-pressed','false');autoGrow.disabled=true;
+  const growRounds=el('input',undefined,'map-grow-rounds');growRounds.type='number';growRounds.min='1';growRounds.max='20';growRounds.step='1';growRounds.required=true;growRounds.value='5';growRounds.inputMode='numeric';growRounds.dataset.mapGrowRounds='1';growRounds.setAttribute('aria-label','Automatic growth rounds');growRounds.title='Model-only growth rounds (1–20)';
+  const growProgress=el('span','','map-grow-progress');growProgress.dataset.mapGrowProgress='1';growProgress.setAttribute('role','status');growProgress.setAttribute('aria-live','polite');growProgress.hidden=true;
+  let growthState={active:false,completed:0,total:0,busy:false};
+  autoGrow.addEventListener('click',()=>{if(growthState.active){root.dispatchEvent(new Event('research:auto-grow-cancel'));return;}if(!growRounds.reportValidity())return;root.dispatchEvent(new CustomEvent('research:auto-grow',{detail:{rounds:Number(growRounds.value),focusNodeId:selected}}));});
+  growRounds.addEventListener('input',()=>screenControls());
+  root.addEventListener('research:auto-grow-state',event=>{growthState=event.detail;growProgress.hidden=!growthState.total;growProgress.textContent=growthState.total?`${growthState.completed}/${growthState.total}`:'';growProgress.setAttribute('aria-label',growthState.message||'');growProgress.title=growthState.message||'';screenControls();});
+  quickControls.append(runToggle,autoGrow,growRounds,growProgress);
   tray.append(actions,map.querySelector('.mindmap-toolbar'),map.querySelector('[data-map-outcomes]'));
   const layerControls=el('div',undefined,'map-layer-controls');layerControls.setAttribute('role','group');layerControls.setAttribute('aria-label','Map layers');
   for(const [layer,label] of [[1,'Dim Secondary'],[2,'Dim Tertiary']]){const button=el('button',label,'btn btn-outline-secondary');button.type='button';button.setAttribute('aria-pressed','false');button.addEventListener('click',()=>{dimLayers.has(layer)?dimLayers.delete(layer):dimLayers.add(layer);button.setAttribute('aria-pressed',String(dimLayers.has(layer)));renderCamera(camera.getState());});layerControls.append(button);}
@@ -1257,7 +1312,7 @@ document.addEventListener('submit', event => {
 
   const live=el('p');live.dataset.liveActivity='1';live.setAttribute('role','status');const clock=el('small');clock.dataset.liveClock='1';clock.setAttribute('aria-live','off');const spend=el('p');spend.dataset.projectSpend='1';
   const history=el('details',undefined,'map-idea-history'),historyTitle=el('summary','Idea history'),historyList=el('ol');history.append(historyTitle,historyList);tray.append(live,clock,spend,map.querySelector('[data-map-evidence-help]'),history);
-  header.append(heading,ticker,handle,tray);map.prepend(header);
+  header.append(quickControls,heading,ticker,handle,tray);map.prepend(header);
   const notification=el('button','','map-state-notice');notification.type='button';notification.hidden=true;notification.setAttribute('aria-label','Review research status');notification.addEventListener('click',()=>controls(true));map.append(notification);
   const mapError=el('p','','map-request-error');mapError.hidden=true;mapError.setAttribute('role','alert');tray.prepend(mapError);
   const focusError=el('p','','map-request-error');focusError.hidden=true;focusError.setAttribute('role','alert');map.querySelector('[data-map-focus]').before(focusError);
@@ -1287,7 +1342,7 @@ document.addEventListener('submit', event => {
   const side=map.querySelector('[data-map-inspector]');side.hidden=true;const closeSide=el('button','×','map-inspector-close btn');closeSide.type='button';closeSide.setAttribute('aria-label','Close details');closeSide.addEventListener('click',()=>{details(false);viewport.focus();});side.prepend(closeSide);
   let underlay=[],previousFocus=null,manualViewport=false;
   function showView(next) {
-    view=next;map.hidden=view!=='map';if(view!=='map'){clearFlight();camera.cancel();clearTimeout(growthTimer);}root.querySelector('[data-investigate-list]').hidden=view!=='list';
+    view=next;map.hidden=view!=='map';if(view!=='map'){root.dispatchEvent(new Event('research:auto-grow-cancel'));clearFlight();camera.cancel();clearTimeout(growthTimer);}root.querySelector('[data-investigate-list]').hidden=view!=='list';
     root.querySelectorAll('[data-investigate-view]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.investigateView===view)));
     if(view==='map'){
       controls(false);details(false);previousFocus=document.activeElement;document.body.append(map);document.body.classList.add('research-map-open');
@@ -1304,8 +1359,11 @@ document.addEventListener('submit', event => {
   function screenControls(){
     if(!snapshot)return;
     const active=['pending','running'].includes(snapshot.run.status),pending=snapshot.requests.some(request=>request.status==='pending');
-    actions.querySelector('[data-map-screen-action=start]').disabled=active||pending||root.dataset.connected==='0'||(snapshot.budget&&snapshot.budget.remaining<6);
-    actions.querySelector('[data-map-screen-action=stop]').disabled=!(active||pending);
+    const canStop=active||pending;runToggle.dataset.mapScreenAction=canStop?'stop':'start';runToggle.textContent=canStop?'■':'▶';runToggle.setAttribute('aria-label',canStop?'Stop research':'Start research');runToggle.title=canStop?'Stop research (Alt+S)':'Start research';runToggle.dataset.stopping=String(canStop);runToggle.disabled=canStop?root.dataset.stopBusy==='1':root.dataset.requestBusy==='1'||root.dataset.connected==='0'||(snapshot.budget&&snapshot.budget.remaining<6);
+    if(canStop)runToggle.setAttribute('aria-keyshortcuts','Alt+S');else runToggle.removeAttribute('aria-keyshortcuts');
+    const idle=active&&snapshot.run.status==='running'&&!snapshot.run.busy_since&&!pending&&['exploring','verification_review'].includes(snapshot.run.phase),living=Number(snapshot.run.flow_version)>=2;
+    autoGrow.disabled=!growthState.active&&(!living||!idle||!activityVerified||growthState.busy||root.dataset.requestBusy==='1'||root.dataset.connected==='0'||!growRounds.checkValidity()||snapshot.budget?.remaining===0);
+    autoGrow.textContent=growthState.active?'Ⅱ':'✦';autoGrow.setAttribute('aria-label',growthState.active?'Pause automatic growth':'Start automatic growth');autoGrow.setAttribute('aria-pressed',String(growthState.active));autoGrow.title=growthState.active?'Pause after the current growth request':!living?'Automatic growth is available in exploration-first runs':!idle?'Start research and wait for idle model exploration':'Run the chosen number of model-only growth rounds; no automatic web Evidence';growRounds.disabled=growthState.active;
     actions.querySelector('[data-map-screen-action=step]').hidden=!active||!!snapshot.run.busy_since||snapshot.run.phase!=='evidence';
     const verificationReview=active&&snapshot.run.phase==='verification_review';
     map.querySelector('[data-map-command=collapse]').textContent=Number(snapshot.run.flow_version)>=2?'Recede all':'Collapse all';map.querySelector('[data-map-command=expand]').textContent=Number(snapshot.run.flow_version)>=2?'Restore all':'Expand all';
@@ -2623,6 +2681,15 @@ body.research-map-open { overflow:hidden; }
 .system-terminal .btn-outline-danger { color:#ffbec5; border-color:#c16b7a; background:#30131b; }
 
 .systems-section summary { min-height:44px; padding-top:10px; padding-bottom:10px; }
+
+.map-screen-header > .map-quick-controls:first-child { display:flex; flex-direction:row; align-items:center; gap:5px; flex-shrink:0; }
+.mindmap .map-compact-button { display:inline-flex; align-items:center; justify-content:center; width:36px; min-width:36px; height:36px; min-height:36px; padding:0; color:#d8f5e9; background:#122b28; border:1px solid #5d9489; font-size:15px; }
+.mindmap .map-compact-button[data-stopping=true] { color:#ffd0d5; background:#361a22; border-color:#c47f91; }
+.mindmap .map-compact-button:focus-visible,.map-grow-rounds:focus-visible { outline:2px solid #bde6ff; outline-offset:2px; }
+.mindmap .map-grow-rounds { width:46px; height:36px; min-height:36px; padding:4px; border:1px solid #71859c; border-radius:6px; background:#101b27; color:#e5f2ff; font-size:13px; }
+.map-grow-progress { color:#d4f4e7; font-size:11px; white-space:nowrap; }
+.research-map-open .map-screen-header { gap:9px; }
+@media(max-width:700px) { .research-map-open .map-screen-header { gap:6px; padding-left:8px; padding-right:8px; }.map-quick-controls { gap:4px; } }
 
 AICONTROL_UI_CSS;
     }
