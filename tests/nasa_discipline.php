@@ -97,6 +97,10 @@ try{
     $n->db->exec("CREATE TEMP TRIGGER nasa_restore_reject BEFORE INSERT ON nasa_items WHEN NEW.created_by='owner_baseline_restore' AND NEW.kind='requirement' BEGIN SELECT RAISE(ABORT,'Synthetic mid-restore failure'); END;");
     $failed=false;try{$n->disciplinedRestoreBaseline($id,$rollback,'RESTORE BASELINE '.$rollback,$revisionBefore);}catch(Throwable){$failed=true;}finally{$n->db->exec('DROP TRIGGER nasa_restore_reject');}
     verify($failed&&count($n->rows('SELECT id FROM nasa_items WHERE project_id=?',[$id]))===$rowsBefore&&(int)$n->project($id)['revision']===$revisionBefore&&count($n->baselineHistory($id))===$historyBefore,'Mid-restore failure escaped transaction rollback');
+    for($i=0;$i<22;$i++)$makeBaseline($valid);
+    $workspace=$n->workspace($id);
+    verify(count($workspace['baselines'])>20&&in_array($baseline,array_column($workspace['baselines'],'id'),true)&&isset($workspace['baseline_deltas'][$baseline]),'Older baselines or their restore comparisons disappeared after twenty snapshots');
+    verify(isset($workspace['baseline_deltas'][$badId]['error']),'Malformed baseline prevented safe workspace inspection');
     verify(!AIcontrol\InvestigationWire::$bodies,'Configuration discipline triggered a provider request');
     echo "PASS: $checks NASA baseline review/CAS, scoped research hashes, pure comparisons, immutable restore, legacy verification reset and interface contract checks\n";
 }catch(Throwable $error){fwrite(STDERR,$error->getMessage()."\n".$error->getTraceAsString()."\n");exit(1);}finally{putenv('AICONTROL_INSTALLED_SHA');foreach($dirs as $directory){foreach(glob($directory.'/*') as $file)@unlink($file);@rmdir($directory);}}

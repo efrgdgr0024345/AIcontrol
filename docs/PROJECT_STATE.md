@@ -873,9 +873,9 @@ origin write is safely repairable on retry and never approves planning work.
 Baselines require an explicit local review of the current revision and capture
 planning, provenance, deterministic linked/focused research hashes and the installed
 release SHA when available. Comparisons and restore audit show planning/research
-changes; restores never roll research/code/servers back. Current baselines are
-bounded to the latest 20 in the interactive view; all snapshots remain stored.
-Structured IF records version both sides, payload/errors/auth, owner and change rule.
+changes; restores never roll research/code/servers back. All saved baselines remain accessible in the interactive view, with comparison
+details before restore. Structured IF records version both sides, payload/errors/
+auth, owner and change rule.
 
 Beginner guidance remains. Practitioner mode adds phase entrance/success and
 recursive detail and works through a native GET form. Current posture combines
