@@ -1,5 +1,40 @@
 # AIcontrol — current project state
 
+## Research continuity and readable selected paths (2026-11-22)
+
+Model exploration now sends compact coverage of every saved idea branch in the
+same project, including parked ideas and earlier runs. Each entry keeps its ID,
+run, parent, title, summary, uncertainty/test, layer, priority and provenance.
+Detailed selected ancestry and areas of interest guide useful next steps rather
+than repeating the brief. Auto-grow carries the original interest as its frontier
+advances; selecting another idea steers the next request, including when a request
+is already in flight. Other projects and vault contents stay outside this context.
+
+Provider instructions explicitly reject paraphrases and rediscovery. A conservative
+server check skips exact/near lexical repeats against project history and within
+the reply; distinct mechanisms may share a title. This is not a guarantee of
+semantic novelty. Zero useful ideas is a completed, billed-if-dispatched response:
+auto-grow stops with an explanation and never retries to fill its count. No saved
+idea is deleted. Context is capped at 240,000 UTF-8 JSON bytes before dispatch;
+oversized histories fail preparation instead of silently dropping older lines.
+Existing spend reservations include the larger body. Diagnostics retain coverage
+counts, parent/interest IDs, bytes and saved/skipped counts without dumping prompts.
+
+Selecting a star brings all ancestors to full size/light regardless of parked or
+dimmed state. The selected 16px title expands beyond the old two-line clamp; very
+long titles scroll and the inspector retains complete text. Other constellations
+recede, and saved world coordinates remain fixed. No schema changes are needed.
+
+Regression coverage includes prior-run/parked branches, project isolation, a
+350-branch UTF-8 history, oversized-context admission, stable interests/ancestry, duplicate-only exhaustion,
+live browser steering, selected-label styling and full-path focus. Provider tests
+are synthetic; no billed model run or live-host activation is claimed.
+
+Local validation passed on PHP 8.4.24: generated UI/manifest and syntax, all
+21 PHP suites, ten Python integration suites including local OpenSSH, the full
+Chromium suite and a final parked-interest auto-growth regression. The release
+must pass required planning-panel CI on its exact published SHA before readiness.
+
 ## Compact map controls and automatic growth (2026-11-21 AWST)
 
 Map's top bar now has one 36px Start/Stop toggle and a separate Auto-grow/Pause

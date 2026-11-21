@@ -10,7 +10,7 @@
   const originLabel=value=>({model_latent:'Model idea',web_evidence:'Web evidence',user:'Your idea',synthesis:'Model assessment'}[value]||'Historical record');
   const provenanceLabel=value=>({provisional_model:'Provisional / unchecked',locked:'Locked for Evidence',grounded:'Grounded within source scope'}[value]||'Unchecked');
   const conceptTypes=['dream_claim','question','model_idea','association','counter','edge_case','reframing'];
-  const dimLayers=new Set(),receded=new Set();
+  const dimLayers=new Set(),receded=new Set(),handoffReceded=new Set();
   const collapsed = new Set(), selectedSources = new Set();
   let lastCameraPaint=0,framePressure=0,activityVerified=true,relations=[],overviewGraph={nodes:[],edges:[]};
   let showRelated=true,pendingKeyboardFocus=null;
@@ -172,7 +172,7 @@
   function clearFlight(){flightKeys.clear();flightPressed.clear();camera.setFlightInput({});}
   viewport.addEventListener('keydown',event=>{if(event.target!==viewport||event.altKey||event.ctrlKey||event.metaKey)return;pendingKeyboardFocus=null;const key=event.key.toLowerCase();if(['w','a','s','d','r','f','shift'].includes(key)){event.preventDefault();if(!event.repeat){flightKeys.add(key);syncFlight();}return;}const turns={ArrowLeft:[.12,0],ArrowRight:[-.12,0],ArrowUp:[0,-.12],ArrowDown:[0,.12],q:[.12,0],e:[-.12,0]};const pair=turns[event.key]||turns[key];if(pair){event.preventDefault();if(event.shiftKey&&event.key.startsWith('Arrow')){const moves={ArrowLeft:[70,0],ArrowRight:[-70,0],ArrowUp:[0,70],ArrowDown:[0,-70]};camera.panBy(...moves[event.key]);}else camera.turnBy(...pair);queueGrowth();}if(['+','=','-','Home','0'].includes(event.key)){event.preventDefault();clearFlight();if(event.key==='Home')fit();else if(event.key==='0')camera.resetRotation();else camera.zoomBy(event.key==='-'?1/1.2:1.2);}});
   window.addEventListener('keyup',event=>{const key=event.key.toLowerCase();if(flightKeys.delete(key))syncFlight();});window.addEventListener('blur',clearFlight);
-  world.addEventListener('focusin',event=>{const card=event.target.closest('[data-map-node]');if(card&&event.target.matches('.map-node-button:focus-visible')&&card.dataset.mapNode!==selected){selected=card.dataset.mapNode;renderCamera(camera.getState());camera.focus(selected);}});
+  world.addEventListener('focusin',event=>{const card=event.target.closest('[data-map-node]');if(card&&event.target.matches('.map-node-button:focus-visible')&&card.dataset.mapNode!==selected){inspect(card.dataset.mapNode);}});
   root.querySelector('[data-mindmap-switch]').hidden = false;
   root.querySelectorAll('[data-investigate-view]').forEach(button => button.addEventListener('click', () => showView(button.dataset.investigateView)));
   function normalize() {
@@ -213,7 +213,7 @@
     if(extra.reducedMotion){world.classList.remove('map-short-crossfade');void world.offsetWidth;world.classList.add('map-short-crossfade');}
     map.dataset.detailLevel=visible.length>300||framePressure>=2?'compact':'full';
     const projections=new Map(visible.map(n=>{const p=positions.get(n.id);return [n.id,camera.worldToScreen({x:p.x+p.w/2,y:p.y+p.h/2,z:p.z||0})];}));
-    presentation=Engine.starPresentation(visible,positions,state,camera.viewport,{receded,dimLayers,activityVerified,projections});
+    presentation=Engine.starPresentation(visible,positions,state,camera.viewport,{receded,dimLayers,handoffReceded,activityVerified,projections});
     const depthOrder=new Map([...projections].filter(([,p])=>p.visible).sort((a,b)=>b[1].depth-a[1].depth).map(([id],i)=>[id,i+1]));
     // Perspective can place distant stars behind one another. Keep their light
     // visible, but offer only fully exposed hit targets; the full-size picker
@@ -227,7 +227,7 @@
     const cards=sceneCards;
     for(const node of visible){const card=cards.get(node.id),light=presentation.get(node.id),point=projections.get(node.id);if(!card||!light||!point)continue;const p=positions.get(node.id);card.dataset.worldZ=String(p.z||0);card.dataset.cameraDepth=String(point.depth);card.hidden=!point.visible;const hitButton=card.querySelector('.map-node-button');if(!point.visible){hitButton.disabled=true;continue;}
       const sx=point.x,sy=point.y;card.style.transform=`translate(${sx-p.x-p.w/2}px, ${sy-p.y-p.h/2}px)`;const obscured=hitBlocked.has(node.id);if(obscured&&document.activeElement===hitButton)viewport.focus({preventScroll:true});hitButton.disabled=obscured;if(!light.logic_line&&!light.working&&(sx < -230||sx>w+230||sy < -150||sy>h+150))continue;if(reviewing()&&node.type==='dream_claim'){light.size_factor=1;light.brightness_factor=1;light.distant=false;}
-      card.querySelector('.map-node-button').setAttribute('aria-pressed',String(node.id===state.focusNodeId));if(card._size===undefined||Math.abs(card._size-light.size_factor)>.015){card._size=light.size_factor;card.style.setProperty('--star-size',Math.max(.28,light.size_factor));card.style.setProperty('--star-glyph-size',light.size_factor/Math.max(.28,light.size_factor));}if(card._light===undefined||Math.abs(card._light-light.brightness_factor)>.025){card._light=light.brightness_factor;card.style.setProperty('--star-light',light.brightness_factor);}if(card._colour!==light.colour){card._colour=light.colour;card.style.setProperty('--star-colour',light.colour);}card.dataset.starSize=light.size_factor.toFixed(4);card.dataset.starBrightness=light.brightness_factor.toFixed(4);card.dataset.logicLine=String(light.logic_line);card.dataset.distant=String(light.distant);card.dataset.labelSuppressed=String(labelHidden.has(node.id));card.style.zIndex=String((depthOrder.get(node.id)||1)+(node.id===state.focusNodeId?1000:0));
+      card.dataset.selected=String(node.id===state.focusNodeId);card.querySelector('.map-node-button').setAttribute('aria-pressed',String(node.id===state.focusNodeId));if(card._size===undefined||Math.abs(card._size-light.size_factor)>.015){card._size=light.size_factor;card.style.setProperty('--star-size',Math.max(.28,light.size_factor));card.style.setProperty('--star-glyph-size',light.size_factor/Math.max(.28,light.size_factor));}if(card._light===undefined||Math.abs(card._light-light.brightness_factor)>.025){card._light=light.brightness_factor;card.style.setProperty('--star-light',light.brightness_factor);}if(card._colour!==light.colour){card._colour=light.colour;card.style.setProperty('--star-colour',light.colour);}card.dataset.starSize=light.size_factor.toFixed(4);card.dataset.starBrightness=light.brightness_factor.toFixed(4);card.dataset.logicLine=String(light.logic_line);card.dataset.distant=String(light.distant);card.dataset.labelSuppressed=String(labelHidden.has(node.id)&&!light.logic_line);card.style.zIndex=String((depthOrder.get(node.id)||1)+(node.id===state.focusNodeId?1000:0));
     }
     for(const connection of edgeElements){const {path,edge,gradient,startStop,endStop}=connection,a=presentation.get(edge.from),b=presentation.get(edge.to),pa=positions.get(edge.from),pb=positions.get(edge.to);if(!a||!b||!pa||!pb)continue;const segment=camera.projectSegment({x:pa.x+pa.w/2,y:pa.y+pa.h/2,z:pa.z||0},{x:pb.x+pb.w/2,y:pb.y+pb.h/2,z:pb.z||0});if(!segment){path.style.display='none';continue;}path.setAttribute('d',`M${segment.from.x},${segment.from.y} L${segment.to.x},${segment.to.y}`);if(gradient){gradient.setAttribute('x1',segment.from.x);gradient.setAttribute('y1',segment.from.y);gradient.setAttribute('x2',segment.to.x);gradient.setAttribute('y2',segment.to.y);}const relatedLink=['knowledge_family','idea_match'].includes(edge.kind),active=a.logic_line&&b.logic_line,quiet=map.dataset.detailLevel==='compact'&&state.transitioning&&!(a.logic_line||b.logic_line||a.working||b.working);path.style.display=relatedLink&&(!showRelated||quiet)?'none':'';
       if(gradient){if(connection.startColour!==a.colour){connection.startColour=a.colour;startStop.setAttribute('stop-color',a.colour);}if(connection.endColour!==b.colour){connection.endColour=b.colour;endStop.setAttribute('stop-color',b.colour);}if(!connection.gradientSet){path.style.stroke=`url(#${gradient.id})`;connection.gradientSet=true;}}else if(connection.colour!==b.colour){connection.colour=b.colour;path.style.stroke=b.colour;}
@@ -434,9 +434,11 @@
   }
   function inspect(id) {
     pendingKeyboardFocus=null;clearFlight();id=String(id);if(!nodes.some(n=>n.id===id))return;
+    handoffReceded.clear();
     let node=nodes.find(n=>n.id===id);const seen=new Set();while(node&&!seen.has(node.id)){seen.add(node.id);collapsed.delete(node.id);node=nodes.find(n=>n.id===node.parent_id);}
     if(!visible.some(n=>n.id===id)){filter='all';map.querySelectorAll('[data-map-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.mapFilter==='all')));}
     controls(false);selected=id;details(true);draw();geometry();camera.focus(id);targetPicker.value=id;
+    root.dispatchEvent(new CustomEvent('research:interest',{detail:{nodeId:id}}));
   }
   map.addEventListener('click',async event=>{
     const command=event.target.closest('[data-map-command]');
@@ -473,7 +475,7 @@
     const oldIDs=new Set(snapshot?.nodes.map(n=>String(n.id))||[]);const growth=!!snapshot&&incoming.nodes.some(n=>!oldIDs.has(String(n.id))&&conceptTypes.includes(n.type));
     snapshot={...incoming,nodes:incoming.nodes||[],sources:incoming.sources||[],requests:incoming.requests||[],ledger:{...(incoming.ledger||{}),passages:incoming.ledger?.passages||[],edges:incoming.ledger?.edges||[]}};
     normalize();screenControls();enqueueIdeas();
-    if(demoted){const here=positions.get(selected);const alternatives=snapshot.nodes.filter(n=>conceptTypes.includes(n.type)&&Number(n.layer||0)===0&&String(n.id)!==selected);alternatives.sort((a,b)=>{const pa=positions.get(String(a.id))||here,pb=positions.get(String(b.id))||here;return here&&pa&&pb?Math.hypot(pa.x-here.x,pa.y-here.y)-Math.hypot(pb.x-here.x,pb.y-here.y):Number(a.id)-Number(b.id);});selected=alternatives.length?String(alternatives[0].id):'root';}
+    if(demoted){handoffReceded.add(selected);const here=positions.get(selected);const alternatives=snapshot.nodes.filter(n=>conceptTypes.includes(n.type)&&Number(n.layer||0)===0&&String(n.id)!==selected);alternatives.sort((a,b)=>{const pa=positions.get(String(a.id))||here,pb=positions.get(String(b.id))||here;return here&&pa&&pb?Math.hypot(pa.x-here.x,pa.y-here.y)-Math.hypot(pb.x-here.x,pb.y-here.y):Number(a.id)-Number(b.id);});selected=alternatives.length?String(alternatives[0].id):'root';}
     const handedTo=selected;draw();
     if(!map.hidden&&initialCamera&&visible.length){fit(false);initialCamera=false;}
     else if(demoted&&!map.hidden){geometry();camera.focus(handedTo);}

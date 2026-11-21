@@ -44,7 +44,7 @@ final class ResearchApi
                 if($json){self::json(['saved'=>true]);return;}header('Location: '.$entry.'?view=research&project='.$project,true,303);return;
             }
             elseif($action==='research_focus_node'){$node=self::input('node_id');if(!preg_match('/^[1-9][0-9]{0,9}$/D',$node))throw new \RuntimeException('Choose a saved node from this investigation.');$engine->recordMapFocus($id,(int)$node);}
-            elseif($action==='research_explore'){$engine->explore($id,self::ids('node_ids')??[],self::input('explore_mode')?:'explore');}
+            elseif($action==='research_explore'){$engine->explore($id,self::ids('node_ids')??[],self::input('explore_mode')?:'explore',self::ids('interest_ids')??[]);}
             elseif($action==='research_lock_evidence'){$engine->lockEvidence($id,self::ids('node_ids')??[]);}
             elseif(in_array($action,['research_promote_layer','research_demote_layer','research_park'],true)){$engine->changeLayer($id,self::ids('node_ids')??[],match($action){'research_promote_layer'=>'promote','research_demote_layer'=>'demote',default=>'park'},self::input('park_reason'));}
             elseif($action==='research_rank'){$engine->rankPath($id,(int)self::input('node_id'),(int)self::input('path_weight'),self::input('model_tier'));}

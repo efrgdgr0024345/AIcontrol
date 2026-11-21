@@ -1,5 +1,27 @@
 # Research Map contract
 
+## Research continuity and path focus (2026-11-22)
+
+Exploration requests include every saved idea branch in the current project,
+across runs and layers, as compact ID/parent-linked coverage. Selected interest
+and logical ancestry are separate from the advancing parent frontier. Auto-grow
+retains the interest and applies a newly selected idea to its next dispatch.
+The server rejects foreign-run interest IDs before dispatch. Context is bounded
+at 240,000 UTF-8 JSON bytes, with no silent branch omission; normal spend limits
+still apply. Coverage is model/user context, never independent evidence.
+
+Prompts require a new mechanism, test or uncertainty beyond existing coverage.
+Clear lexical duplicates are skipped across project history and inside a reply.
+An empty or duplicate-only reply stops auto-grow without retrying. The completed
+request, usage and received/saved/skipped counts remain available. Semantic novelty
+is a model requirement, not a deterministic guarantee of this lexical filter.
+
+Selected nodes and every ancestor have size/brightness 1 even when parked/dimmed.
+Their path labels are not suppressed by background label collision handling.
+The selected title uses 16px text without the two-line clamp; very long titles
+scroll within a bounded area, and complete text remains in the inspector.
+Camera transitions remain interruptible and never change node world coordinates.
+
 ## Compact map controls and automatic growth (2026-11-21 AWST)
 
 Map's top bar now has one 36px Start/Stop toggle and a separate Auto-grow/Pause

@@ -418,7 +418,7 @@ final class Investigation
         if(strlen($note)>1000||!mb_check_encoding($note,'UTF-8')||($focusNode===null&&$note!==''))throw new RuntimeException('Invalid focus note.');
         $job = $this->transaction(function () use ($id,$focusNode,$note,$explore): ?array {
             $run=$this->run($id);
-            if($explore!==null){$this->livingIdle($id);$this->livingNodes($id,$explore['ids'],true);$run['phase']='model_explore';}
+            if($explore!==null){$this->livingIdle($id);$this->livingNodes($id,$explore['ids'],true);$this->livingNodes($id,$explore['interest_ids']??[],true);$run['phase']='model_explore';}
             elseif($run['phase']==='exploring')return null;
             if((int)$run['flow_version']>=2&&$focusNode!==null)throw new RuntimeException('Evidence is restricted to the explicitly locked branches.');
             $focus=null;

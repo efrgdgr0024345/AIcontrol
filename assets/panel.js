@@ -387,6 +387,10 @@ document.addEventListener('submit', event => {
   }
   function growthReady(snapshot){return snapshot?.run.status==='running'&&Number(snapshot.run.flow_version)>=2&&['exploring','verification_review'].includes(snapshot.run.phase)&&!snapshot.run.busy_since&&!snapshot.requests.some(r=>r.status==='pending');}
   root?.addEventListener('research:auto-grow-cancel',()=>cancelGrowth());
+  root?.addEventListener('research:interest',event=>{
+    const id=Number(event.detail?.nodeId);
+    if(growthBatch&&livingSnapshot?.nodes.some(n=>Number(n.id)===id&&growthTypes.has(n.type))){growthBatch.interestIds=[id];growthBatch.nextFrontier=[id];}
+  });
   root?.addEventListener('research:error',event=>{if(event.detail)cancelGrowth('Automatic growth stopped: '+event.detail);});
   document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelGrowth('Automatic growth paused because the page is hidden.');});
   window.addEventListener('pagehide',()=>cancelGrowth('Automatic growth ended when the page closed.'));
@@ -394,25 +398,27 @@ document.addEventListener('submit', event => {
     const total=event.detail?.rounds;
     if(!Number.isInteger(total)||total<1||total>20||growthBatch||stepping||actionRequests||document.hidden||!growthReady(livingSnapshot))return;
     const runId=String(livingSnapshot.run.id),ticket=++growthSerial;
-    const ideas=livingSnapshot.nodes.filter(n=>growthTypes.has(n.type)&&Number(n.layer||0)<2&&!n.locked_at);
-    const focused=ideas.find(n=>String(n.id)===String(event.detail?.focusNodeId));
+    const allIdeas=livingSnapshot.nodes.filter(n=>growthTypes.has(n.type));
+    const ideas=allIdeas.filter(n=>Number(n.layer||0)<2&&!n.locked_at);
+    const focused=allIdeas.find(n=>String(n.id)===String(event.detail?.focusNodeId));
     let frontier=focused?[Number(focused.id)]:ideas.slice(-5).map(n=>Number(n.id)),latest=livingSnapshot;
-    growthBatch={runId,ticket};growthProgress={active:true,completed:0,total,message:`Automatic growth: 0 of ${total} rounds.`};error('');stepping=true;halted=false;publishGrowth();
+    growthBatch={runId,ticket,interestIds:focused?[Number(focused.id)]:[],nextFrontier:null};growthProgress={active:true,completed:0,total,message:`Automatic growth: 0 of ${total} rounds.`};error('');stepping=true;halted=false;publishGrowth();
     try {
       for(let round=0;round<total;round++){
         if(!growthBatch||growthSerial!==ticket)break;
         const before=latest;
         if(document.hidden||String(before.run.id)!==runId||!growthReady(before)){cancelGrowth('Automatic growth stopped because the run is no longer ready.');break;}
         if(before.budget?.remaining===0){cancelGrowth('Automatic growth stopped at the hourly request limit.');break;}
+        if(growthBatch.nextFrontier){frontier=growthBatch.nextFrontier;growthBatch.nextFrontier=null;}
         const oldNodes=new Set(before.nodes.map(n=>String(n.id))),oldRequests=new Set(before.requests.map(r=>String(r.id)));
         const form=document.createElement('form');form.setAttribute('action',root.dataset.entry||location.pathname);
-        for(const [name,value] of [['action','research_explore'],['csrf',csrf()],['run_id',runId],['explore_mode','explore'],...frontier.map(id=>['node_ids[]',String(id)])]){const field=document.createElement('input');field.name=name;field.value=value;form.append(field);}
+        for(const [name,value] of [['action','research_explore'],['csrf',csrf()],['run_id',runId],['explore_mode','explore'],...frontier.map(id=>['node_ids[]',String(id)]),...growthBatch.interestIds.map(id=>['interest_ids[]',String(id)])]){const field=document.createElement('input');field.name=name;field.value=value;form.append(field);}
         const after=await send(form);
         if(!growthBatch||growthSerial!==ticket)break;
         render(after);latest=after;
         const confirmed=after.requests.some(r=>r.kind==='model_explore'&&r.status==='complete'&&!oldRequests.has(String(r.id)));
         const fresh=after.nodes.filter(n=>growthTypes.has(n.type)&&!oldNodes.has(String(n.id)));
-        if(String(after.run.id)!==runId||!growthReady(after)||!confirmed||!fresh.length){cancelGrowth('Automatic growth stopped: this round did not return confirmed model growth. Inspect the saved result before continuing.');break;}
+        if(String(after.run.id)!==runId||!growthReady(after)||!confirmed||!fresh.length){cancelGrowth(confirmed&&!fresh.length?'Automatic growth stopped: no new ideas were returned. Repeats were skipped; select another path to continue.':'Automatic growth stopped: this round did not return confirmed model growth. Inspect the saved result before continuing.');break;}
         frontier=fresh.slice(-5).map(n=>Number(n.id));growthProgress={active:true,completed:round+1,total,message:`Automatic growth: ${round+1} of ${total} rounds completed.`};publishGrowth();
         if(round+1<total)await new Promise(resolve=>setTimeout(resolve,200));
       }

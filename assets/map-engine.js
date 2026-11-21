@@ -326,7 +326,8 @@
   }
   function starPresentation(nodes,positions,camera,viewport,options={}) {
     const byId=new Map(nodes.map(n=>[String(n.id),n])),focus=byId.get(String(camera.focusNodeId))||byId.get('root'),line=new Set(),seen=new Set();
-    let walk=focus;while(walk&&!seen.has(String(walk.id))){seen.add(String(walk.id));if(walk===focus||Number(walk.layer||0)===0)line.add(String(walk.id));walk=byId.get(String(walk.parent_id));}
+    // A just-demoted focus recedes during automatic handoff; explicit selection restores the path.
+    let walk=focus;while(walk&&!seen.has(String(walk.id))){seen.add(String(walk.id));if(walk===focus||!options.handoffReceded?.has(String(walk.id)))line.add(String(walk.id));walk=byId.get(String(walk.parent_id));}
     const family=focus?familyFor(focus,byId):'root',span=Math.max(200,Math.hypot(viewport.width,viewport.height)/(camera.scale||1));
     const out=new Map(),latest=Math.max(1,...nodes.map(n=>Number(n.id)||0)),zoomContext=Math.sqrt(Math.max(.04,Math.min(1,camera.scale||1)));
     for(const node of nodes){

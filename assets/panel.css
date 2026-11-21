@@ -812,6 +812,9 @@ body.research-map-open { overflow:hidden; }
 .mindmap[data-camera-transition=focus] .map-node:not([data-logic-line=true]) .map-node-title,.mindmap[data-camera-transition=focus] .map-node:not([data-logic-line=true]) .map-node-type { visibility:hidden; }
 .mindmap .map-node[data-label-suppressed=true] .map-node-title,.mindmap .map-node[data-label-suppressed=true] .map-node-status,.mindmap .map-node[data-label-suppressed=true] .map-node-type { visibility:hidden; }
 .mindmap .map-node[data-label-suppressed=true] .map-node-button:hover .map-node-title,.mindmap .map-node[data-label-suppressed=true] .map-node-button:focus-visible .map-node-title { visibility:visible; background:#000; }
+.mindmap .map-node[data-logic-line=true] .map-node-title { font-size:14px; color:#fff; visibility:visible; }
+.mindmap .map-node[data-selected=true] .map-node-title { display:block; -webkit-line-clamp:unset; font-size:16px; line-height:1.45; background:#000e; border-radius:6px; padding:6px; max-height:min(28vh,240px); overflow:auto; overflow-wrap:anywhere; visibility:visible; }
+.mindmap .map-node[data-selected=true] .map-node-status { display:none; }
 
 /* Orbit controls, readable relationship keys and real pending-request markers. */
 .map-rotation-controls { display:flex; align-items:center; flex-wrap:wrap; gap:7px; margin:14px 0; }

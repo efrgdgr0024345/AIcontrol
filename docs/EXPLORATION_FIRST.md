@@ -13,7 +13,11 @@ new public settings field. PIN, vault, signing and update behavior are unchanged
 2. In Map Details or List, choose zero to five branches and **Explore further
    (model only)**. With no selection the brief is the root. Modes are explore,
    associations, counters, edge cases and reframing. Each explicit action returns
-   one to five bounded ideas with uncertainty and a possible falsification test.
+   zero to five bounded ideas with uncertainty and a possible falsification test.
+   Each request includes compact coverage of all saved idea branches in this
+   project, including earlier runs, plus selected interests and ancestry. Prompts
+   require useful new contributions; clear lexical repeats are skipped. Auto-grow
+   retains the selected interest as it advances and stops if no new ideas remain.
 3. Promote, demote or park branches, optionally with a park reason. Active,
    Secondary and Tertiary are metadata layers 0, 1 and 2; no nodes are deleted.
    Park sets layer 2; promote moves it back one level. These actions are free of
