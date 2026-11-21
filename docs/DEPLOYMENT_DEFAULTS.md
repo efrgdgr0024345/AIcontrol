@@ -117,6 +117,14 @@ expire after 30 minutes, and allow at most 60 bounded commands/hour/system.
 The console is noninteractive; no terminal daemon or external relay is installed.
 See SYSTEM_SETUP.md for server-side enforcement and account removal semantics.
 
+Security boundaries (2026-11-22): pasted bootstrap and new readonly inspector
+invocations use Python isolated mode (`-I`). The `ssh_system_` vault namespace is
+managed only through Systems, not generic vault forms, and is never AI-shared.
+Legacy public-testing sessions cannot open Admin, mutate any vault entry, export
+Admin reports or run Admin cleanup. PIN-verified access overrides that demo flag.
+These restrictions preserve existing records and keys; they do not reset access
+configuration or modify existing remote servers during application installation.
+
 Map execution controls (2026-11-21 AWST): one compact top Start/Stop icon;
 automatic model-only growth defaults to five rounds, accepts 1–20, dispatches
 sequentially and pauses on user interruption/errors/limits. It uses the existing

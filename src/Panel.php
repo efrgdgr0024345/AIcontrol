@@ -107,6 +107,13 @@ final class Panel
             $_SESSION['expires'] = time() + 1800;
         }
         $error = '';
+        // Public demo sessions are not owner authentication, even with a valid CSRF token.
+        $postedAction=is_string($_POST['action']??null)?$_POST['action']:'';
+        if($config['access_mode']==='testing'&& (($_GET['view']??null)==='admin'
+            ||$method==='POST'&&(str_starts_with($postedAction,'admin_')||str_starts_with($postedAction,'vault_')))){
+            http_response_code(403);header('Content-Type: application/json; charset=utf-8');
+            echo '{"error":"Admin and vault management require owner-authenticated access."}';return;
+        }
         if (($_GET['research_api'] ?? '') === 'status' && $method === 'GET') {
             if (!($_SESSION['authenticated'] ?? false) || !hash_equals($_SESSION['csrf'], $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '')) {
                 Diagnostics::record('research.status.denied',['authenticated'=>(bool)($_SESSION['authenticated']??false),'csrf_header_present'=>isset($_SERVER['HTTP_X_CSRF_TOKEN'])]);
@@ -275,6 +282,7 @@ final class Panel
                     http_response_code(422);
                     $error = 'Operation could not be completed. Check the selected project and field lengths.';
                     if (str_starts_with($action, 'vault_')) { $error = 'Vault could not be updated. Use a lowercase name with underscores, and a nonempty value up to 8000 bytes. Existing private data was retained.'; }
+                    if(str_starts_with($action,'vault_')&&$failure->getMessage()==='SSH credentials are managed in Systems.')$error='SSH credentials are managed in Systems. Use Disconnect there to revoke a key.';
                     if (str_starts_with($action, 'research_')) { $error = 'Research request could not be started. Check the provider connection, field lengths, pending requests and ten-request hourly limit.'; }
                     if ($action === 'research_project') { $error='Enter a working title (up to 160 bytes) and a research brief (up to 4,000 bytes). Your draft is retained.'; }
                     if ($action === 'run_agent') {

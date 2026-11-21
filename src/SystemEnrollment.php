@@ -67,7 +67,7 @@ final class SystemEnrollment
                 $this->systems->db->commit();
             }catch(\Throwable $failure){
                 if($this->systems->db->inTransaction())$this->systems->db->rollBack();
-                if($system&&!$this->systems->query('SELECT id FROM systems WHERE id=?',[$system]))try{(new Vault($this->systems->directory))->change('ssh_system_'.$system,'key','',false,true);}catch(\Throwable $cleanup){Diagnostics::record('systems.enrollment.cleanup_failed',['enrollment_id'=>$id],$cleanup);}
+                if($system&&!$this->systems->query('SELECT id FROM systems WHERE id=?',[$system]))try{(new Vault($this->systems->directory))->deleteSystemKey($system);}catch(\Throwable $cleanup){Diagnostics::record('systems.enrollment.cleanup_failed',['enrollment_id'=>$id],$cleanup);}
                 throw $failure;
             }
             return $this->get($id);

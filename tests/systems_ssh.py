@@ -44,9 +44,13 @@ class SshIntegration(unittest.TestCase):
             if channel is None or not server.event.wait(5): return
             # The fixture executes real bounded commands in the disposable local workspace.
             if server.risk=='readonly':
-                result=subprocess.run(['python3',cls.inspector],env={**os.environ,'SSH_ORIGINAL_COMMAND':server.command,'HOME':cls.home},cwd=cls.home,capture_output=True,timeout=20)
+                result=subprocess.run(['python3','-I',cls.inspector],env={**os.environ,'SSH_ORIGINAL_COMMAND':server.command,'HOME':cls.home},cwd=cls.home,capture_output=True,timeout=20)
             else:result=subprocess.run(server.command,shell=True,executable='/bin/sh',capture_output=True,timeout=20)
             channel.sendall(result.stdout);channel.sendall_stderr(result.stderr);channel.send_exit_status(result.returncode);channel.shutdown_write();channel.close()
+            # Let OpenSSH consume the exit status and close the connection before
+            # tearing down the transport; an immediate close can reset unread data.
+            deadline=time.monotonic()+2
+            while transport.is_active() and time.monotonic()<deadline:time.sleep(.01)
         except (EOFError,OSError,paramiko.SSHException,subprocess.TimeoutExpired): pass
         finally: transport.close()
     @classmethod
@@ -91,7 +95,7 @@ class SshIntegration(unittest.TestCase):
         type(self).inspector=self.home+'/readonly-inspector.py';pathlib.Path(self.inspector).write_text(self.driver('inspector')['script'])
         terminal=self.driver('console_connect',id=sid);self.assertEqual(self.driver('console_command',terminal=terminal['id'],command='pwd')['command']['stdout'].strip(),'[private]')
         self.assertNotEqual(self.driver('console_command',ok=False,terminal=terminal['id'],command='touch /tmp/forbidden').returncode,0)
-        bypass=self.driver('raw_probe',id=sid,command='touch '+self.home+'/must-not-exist');self.assertEqual(bypass['exit_code'],126);self.assertFalse(pathlib.Path(self.home+'/must-not-exist').exists())
+        bypass=self.driver('raw_probe',id=sid,command='touch '+self.home+'/must-not-exist');self.assertEqual(bypass['exit_code'],126,bypass);self.assertFalse(pathlib.Path(self.home+'/must-not-exist').exists())
         self.driver('console_disconnect',terminal=terminal['id'])
         self.driver('revoke',id=sid);self.assertNotEqual(self.driver('verify',ok=False,id=sid).returncode,0)
         self.assertFalse(list(pathlib.Path(self.home).glob('.ssh-key-*')));self.assertFalse(list(pathlib.Path(self.home).glob('.ssh-host-*')))

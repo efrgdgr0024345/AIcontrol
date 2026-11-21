@@ -27,6 +27,10 @@ try {
  $request=json_decode(\AIcontrol\ResearchTransport::$options[CURLOPT_POSTFIELDS],true);check($request['store']===false&&$request['max_output_tokens']===1600&&$request['max_tool_calls']===1,'Research bounds');check(str_contains($request['instructions'],'Useful project context')&&!str_contains(json_encode($request),'synthetic-only-secret')&&!str_contains(json_encode($request),'Never share'),'Prompt disclosure');
  $research->chat(2,'Different topic',false);$request=json_decode(\AIcontrol\ResearchTransport::$options[CURLOPT_POSTFIELDS],true);check(count($request['input'])===1&&!isset($request['tools']),'Project isolation or web opt-out');
  \AIcontrol\ResearchTransport::$ok=false;$research->chat(1,'Timeout test',false);check($research->snapshot()['messages'][5]['status']==='uncertain','Uncertain outcome mislabeled');
+ // Legacy malformed managed entries must never enter AI context, even as shared notes.
+ $key=file_get_contents($dir.'/vault.key');$raw=base64_decode(file_get_contents($dir.'/vault.json'));$items=json_decode(sodium_crypto_secretbox_open(substr($raw,24),substr($raw,0,24),$key),true,32,JSON_THROW_ON_ERROR);
+ $items['ssh_system_legacy']=['type'=>'note','value'=>'LEGACY-SSH-CONTEXT-CANARY','share'=>true,'updated_at'=>gmdate('c')];$nonce=random_bytes(24);file_put_contents($dir.'/vault.json',base64_encode($nonce.sodium_crypto_secretbox(json_encode($items,JSON_THROW_ON_ERROR),$nonce,$key)));
+ check(!str_contains($vault->context(),'LEGACY-SSH-CONTEXT-CANARY')&&$vault->value('ssh_system_legacy')==='LEGACY-SSH-CONTEXT-CANARY','Legacy managed credential shared with model or overwritten');
  $vault->change('openai_api_key','key','',false,true);check(!\AIcontrol\AgentRunner::configured(),'Key removal failed');
  echo "PASS: encrypted vault, tamper/key-loss refusal, scoped notes, research isolation, web request, citations and uncertain outcomes (fixture transport only)\n";
 } finally { foreach(glob($dir.'/*') as $file)unlink($file);rmdir($dir); }

@@ -8,12 +8,13 @@ final class SystemBootstrap
     public static function command(string $script): string
     {
         $python='import base64;exec(compile(base64.b64decode("'.base64_encode($script).'"),"aicontrol-setup","exec"))';
-        $args='env PATH=/usr/sbin:/usr/bin:/sbin:/bin AICONTROL_SSH_CONNECTION="${SSH_CONNECTION:-}" /usr/bin/python3 -c '.SystemRisk::quote($python);
+        // Both stages run with root authority: exclude cwd, user site and PYTHON* imports.
+        $args='env PATH=/usr/sbin:/usr/bin:/sbin:/bin AICONTROL_SSH_CONNECTION="${SSH_CONNECTION:-}" /usr/bin/python3 -I -c '.SystemRisk::quote($python);
         return 'if [ "$(id -u)" -eq 0 ]; then '.$args.'; else sudo '.$args.'; fi';
     }
     public static function inspector(): string
     {
-        return "#!/usr/bin/python3\n".'import os, subprocess, sys, json' ."\n".
+        return "#!/usr/bin/python3 -I\n".'import os, subprocess, sys, json' ."\n".
             'allowed=json.loads('.json_encode(json_encode(SystemRisk::commands(),JSON_UNESCAPED_SLASHES)).")\n".
             'request=os.environ.get("SSH_ORIGINAL_COMMAND", "")'."\n".
             'prefix="aicontrol-inspect "'."\n".
@@ -27,7 +28,7 @@ final class SystemBootstrap
         if($system){$config['public_key']=$system['public_key'];$config['host_fingerprint']=$system['fingerprint'];$config['machine_tag']=json_decode($enrollment['discovery_json'],true)['machine_tag'];$config['inspector']=self::inspector();$config['system_id']=(int)$system['id'];}
         $prefix='import base64, json' ."\n".'CONFIG=json.loads(base64.b64decode("'.base64_encode(json_encode($config,JSON_THROW_ON_ERROR)).'"))'."\n";
         $common= <<<'PY'
-import os, sys, pwd, grp, stat, pathlib, subprocess, tempfile, hashlib, socket, ipaddress, fcntl, shutil
+import os, sys, pwd, grp, stat, pathlib, subprocess, tempfile, hashlib, socket, ipaddress, fcntl, shutil, shlex
 ROOT=pathlib.Path('/var/lib/aicontrol')
 IDENTITY=CONFIG['id']
 USER=CONFIG['username']
@@ -186,7 +187,7 @@ if RISK=='readonly':
     secure_dir(ROOT/'inspectors',0o755)
     inspector=ROOT/'inspectors'/(IDENTITY+'.py')
     atomic(inspector,CONFIG['inspector'],0o755)
-    options+=',command="/usr/bin/python3 '+str(inspector)+'"'
+    options+=',command="/usr/bin/python3 -I '+str(inspector)+'"'
 line=options+' '+CONFIG['public_key']+' aicontrol-system-'+str(CONFIG['system_id'])
 target=directory/'authorized_keys'
 try:
@@ -197,8 +198,19 @@ try:
         existing=f.read(262145)
         if len(existing)>262144: raise SystemExit('authorized_keys is unexpectedly large')
 except FileNotFoundError: existing=''
-lines=existing.splitlines()
-if line not in lines: lines.append(line)
+# Replace every entry for this key, including older non-isolated forced commands.
+# Otherwise sshd can accept the first old entry and ignore the hardened one.
+kind,blob=CONFIG['public_key'].split()[:2]
+def same_key(entry):
+    if entry.lstrip().startswith('#'): return False
+    fields=shlex.shlex(entry,posix=True);fields.whitespace_split=True;fields.commenters=''
+    try:
+        first=next(fields,'')
+        if first!=kind: first=next(fields,'')  # Skip an optional quoted options field.
+        return first==kind and next(fields,'')==blob
+    except ValueError: return False  # Invalid key lines are not authorizations.
+lines=[entry for entry in existing.splitlines() if not same_key(entry)]
+lines.append(line)
 atomic(target,'\n'.join(lines)+'\n',0o640,0,account.pw_gid)
 raw=base64.b64decode(CONFIG['public_key'].split()[1],validate=True)
 emit('receipt',{'challenge':CONFIG['receipt_challenge'],'machine_tag':tag,'host_fingerprint':host_fingerprint,'authorized_key_sha256':'SHA256:'+base64.b64encode(hashlib.sha256(raw).digest()).decode().rstrip('='),'uid':account.pw_uid,'home_dir':str(HOME),'sudo_granted':RISK=='admin','read_only_enforced':RISK=='readonly'})

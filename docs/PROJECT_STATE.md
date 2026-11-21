@@ -1,5 +1,38 @@
 # AIcontrol — current project state
 
+## SSH bootstrap and credential boundary security fixes (2026-11-22)
+
+Both pasted Systems setup commands now run Python with `-I`: local working-directory
+modules, user site packages and inherited PYTHON* configuration cannot intercept
+imports before the root bootstrap. New readonly forced commands and inspector
+shebangs use isolated Python too. Reapplying the generated second command replaces
+all authorized-key entries for that same public key, preserving other keys; an old
+unisolated or unrestricted duplicate cannot take precedence over the new entry.
+
+The legacy public-testing profile now receives HTTP 403 for Admin, generic vault
+actions and all admin-prefixed actions, including exports and data cleanup. A demo
+session's CSRF token does not grant owner access. Verified PIN still takes priority
+over the testing flag; ordinary owner access and private development remain usable.
+The managed `ssh_system_` vault namespace rejects generic save/delete/share actions
+even for owners. Systems uses explicit managed-key methods for creation, rollback
+cleanup and revocation; Admin directs users there. Legacy malformed shared notes
+in that namespace are excluded from model context. Existing saved data, identity
+and credentials are retained, with no schema migration or key regeneration.
+
+Regressions execute the real command wrapper with a harmless payload from hostile
+directories/PYTHONPATH/PYTHONHOME, with the vulnerable invocation as a test control.
+They also verify readonly allowlists, old-key-entry replacement, demo denial with
+a valid CSRF token, unchanged vault bytes, owner CRUD and managed-key revocation.
+Root account changes remain simulated; real local SSH uses disposable fixtures.
+See [SECURITY_FIXES.md](SECURITY_FIXES.md) for scope and installation implications.
+
+Local validation passed on PHP 8.4.24: generated UI/manifest and syntax, all
+21 PHP suites, ten Python integration suites including the targeted security
+regressions and real local SSH, and the complete Chromium/accessibility suite.
+The SSH protocol fixture now lets the client consume exit status before closing
+its transport, removing a test-only connection-reset race; no command is retried.
+Required planning-panel CI must pass on the exact published security release SHA.
+
 ## Research continuity and readable selected paths (2026-11-22)
 
 Model exploration now sends compact coverage of every saved idea branch in the

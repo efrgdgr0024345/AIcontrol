@@ -41,7 +41,7 @@ final class Systems
         if($name===''||strlen($name)>120||!mb_check_encoding($name,'UTF-8')||(!filter_var($host,FILTER_VALIDATE_IP)&&!preg_match('/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/D',$host))||!ctype_digit($port)||(int)$port<1||(int)$port>65535||!preg_match('/^[a-z_][a-z0-9_-]{0,31}$/D',$user)||!in_array($access,['inspect','maintain'],true)||(trim($fingerprint)!==''&&!preg_match('~^SHA256:[A-Za-z0-9+/]{43}$~D',trim($fingerprint))))throw new RuntimeException('Enter a name, valid host, port, Linux username, access level and SHA256 SSH fingerprint.');
         if(count($this->query('SELECT id FROM systems'))>=30)throw new RuntimeException('This workspace supports up to 30 saved systems.');
         $key=self::keypair();$this->write('INSERT INTO systems(name,host,port,username,access,public_key,fingerprint,created_at)VALUES(?,?,?,?,?,?,?,?)',[$name,$host,(int)$port,$user,$access,$key['public'],trim($fingerprint),time()]);$id=(int)$this->db->lastInsertId();
-        try{(new Vault($this->directory))->change('ssh_system_'.$id,'key',$key['private'],false);}catch(\Throwable $e){$this->write('DELETE FROM systems WHERE id=?',[$id]);throw $e;}
+        try{(new Vault($this->directory))->saveSystemKey($id,$key['private']);}catch(\Throwable $e){$this->write('DELETE FROM systems WHERE id=?',[$id]);throw $e;}
         return $id;
     }
     public function script(int $id): string
@@ -58,7 +58,7 @@ final class Systems
     }
     public function revoke(int $id): void
     {
-        $this->system($id);$this->write('UPDATE systems SET enabled=0,verified_at=NULL WHERE id=?',[$id]);$this->write("UPDATE system_runs SET status='stopped',finished_at=? WHERE system_id=? AND status IN ('ready','working')",[time(),$id]);(new Vault($this->directory))->change('ssh_system_'.$id,'key','',false,true);$this->write('UPDATE systems SET key_deleted_at=? WHERE id=?',[time(),$id]);
+        $this->system($id);$this->write('UPDATE systems SET enabled=0,verified_at=NULL WHERE id=?',[$id]);$this->write("UPDATE system_runs SET status='stopped',finished_at=? WHERE system_id=? AND status IN ('ready','working')",[time(),$id]);(new Vault($this->directory))->deleteSystemKey($id);$this->write('UPDATE systems SET key_deleted_at=? WHERE id=?',[time(),$id]);
         $this->write('UPDATE system_terminals SET enabled=0 WHERE system_id=?',[$id]);$this->write("UPDATE system_runs SET status='disconnected',finished_at=? WHERE system_id=? AND status='console'",[time(),$id]);
     }
     public function purge(int $id,string $confirmation): void

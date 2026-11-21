@@ -33,10 +33,23 @@ final class Vault
     public function value(string $name): string { return $this->read()[$name]['value'] ?? ''; }
     public function context(): string {
         $text = '';
-        foreach ($this->read() as $name => $item) { if ($item['type'] === 'note' && $item['share']) { $text .= "\n" . $name . ': ' . $item['value']; } }
+        foreach ($this->read() as $name => $item) { if (!self::systemManaged($name) && $item['type'] === 'note' && $item['share']) { $text .= "\n" . $name . ': ' . $item['value']; } }
         return mb_strcut($text, 0, 12000, 'UTF-8');
     }
     public function change(string $name, string $type, string $value, bool $share, bool $delete = false): void {
+        if(self::systemManaged($name))throw new RuntimeException('SSH credentials are managed in Systems.');
+        $this->write($name,$type,$value,$share,$delete);
+    }
+    public static function systemManaged(string $name): bool { return str_starts_with($name,'ssh_system_'); }
+    public function saveSystemKey(int $id,string $privateKey): void {
+        if($id<1)throw new RuntimeException('Invalid system credential.');
+        $this->write('ssh_system_'.$id,'key',$privateKey,false,false);
+    }
+    public function deleteSystemKey(int $id): void {
+        if($id<1)throw new RuntimeException('Invalid system credential.');
+        $this->write('ssh_system_'.$id,'key','',false,true);
+    }
+    private function write(string $name,string $type,string $value,bool $share,bool $delete): void {
         if (!preg_match('/^[a-z][a-z0-9_]{0,63}$/D', $name) || !in_array($type, ['key', 'note'], true) || strlen($value) > 8000 || !mb_check_encoding($value, 'UTF-8')) { throw new RuntimeException('Use a valid name, type and value up to 8000 bytes.'); }
         if (!$delete && $name === 'openai_api_key' && ($type !== 'key' || !preg_match('/^[!-~]{1,1024}$/D', $value))) { throw new RuntimeException('Invalid provider key.'); }
         $lock = fopen($this->directory . '/vault.lock', 'c');

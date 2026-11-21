@@ -1,6 +1,6 @@
 """Execute generated bootstrap under a simulated root/account API and real temp files.
 No real accounts, sudo policies or SSH configuration are changed."""
-import base64, contextlib, io, json, os, pathlib, pwd, stat, subprocess, tempfile, types, unittest
+import base64, contextlib, io, json, os, pathlib, pwd, shlex, stat, subprocess, tempfile, types, unittest
 from unittest.mock import patch
 ROOT=pathlib.Path(__file__).resolve().parent.parent
 PHP=os.environ.get('PHP_BINARY','php')
@@ -11,6 +11,9 @@ class Bootstrap(unittest.TestCase):
   data=self.scripts(risk)
   for command in [data['command1'],data['command2']]:
    self.assertNotIn('\n',command);r=subprocess.run(['/bin/sh','-n'],input=command,text=True,capture_output=True);self.assertEqual(r.returncode,0,r.stderr)
+   tokens=shlex.split(command)
+   for i,token in enumerate(tokens):
+    if token=='/usr/bin/python3':self.assertEqual(tokens[i+1:i+3],['-I','-c'])
   with tempfile.TemporaryDirectory(prefix='aicontrol-bootstrap-') as temp:
    root=pathlib.Path(temp)/'root';username=data['enrollment']['username'];home=root/'homes'/username;accounts={};owners={}
    host=pathlib.Path(temp)/'host.pub';host.write_text(data['host_key']+' fixture\n');machine=pathlib.Path(temp)/'machine';machine.write_text('fixture-machine')
@@ -47,12 +50,33 @@ class Bootstrap(unittest.TestCase):
    receipt=execute(data['second']);keys=(home/'.ssh/authorized_keys').read_text();execute(data['second']);self.assertEqual((home/'.ssh/authorized_keys').read_text(),keys);self.assertEqual(receipt['sudo_granted'],risk=='admin');self.assertEqual(receipt['read_only_enforced'],risk=='readonly');self.assertEqual(stat.S_IMODE(realstat(home/'.ssh/authorized_keys').st_mode),0o640)
    if risk=='readonly':
     inspector=root/'inspectors'/(data['enrollment']['id']+'.py');env={**os.environ,'SSH_ORIGINAL_COMMAND':'aicontrol-inspect console_pwd','HOME':str(home)}
-    allowed=subprocess.run(['python3',str(inspector)],cwd=home,env=env,capture_output=True,text=True);self.assertEqual(allowed.returncode,0,allowed.stderr);self.assertEqual(allowed.stdout.strip(),str(home))
-    denied=subprocess.run(['python3',str(inspector)],cwd=home,env={**env,'SSH_ORIGINAL_COMMAND':'touch /tmp/not-allowed'},capture_output=True,text=True);self.assertEqual(denied.returncode,126)
+    self.assertIn('command="/usr/bin/python3 -I '+str(inspector)+'"',keys)
+    self.assertTrue(inspector.read_text().startswith('#!/usr/bin/python3 -I\n'))
+    # Emulate an old setup plus an unrestricted duplicate for the same public key.
+    public=keys.split('ssh-ed25519 ',1)[1].split()[0];other=data['host_key']+' independent-fixture-key refers to ssh-ed25519 '+public
+    (home/'.ssh/authorized_keys').write_text(keys.replace('/usr/bin/python3 -I ','/usr/bin/python3 ')+'ssh-ed25519 '+public+' stale-duplicate\n'+other+'\n')
+    execute(data['second']);upgraded=(home/'.ssh/authorized_keys').read_text();self.assertEqual(upgraded.count(public),2);self.assertIn('command="/usr/bin/python3 -I ',upgraded);self.assertNotIn('stale-duplicate',upgraded);self.assertIn(other,upgraded)
+    poison=home/'poison';poison.mkdir();marker=home/'import-hijack';(poison/'json.py').write_text('from pathlib import Path\nPath('+repr(str(marker))+').write_text("unsafe import")\nraise SystemExit(73)\n');env['PYTHONPATH']=str(poison)
+    allowed=subprocess.run(['/usr/bin/python3','-I',str(inspector)],cwd=home,env=env,capture_output=True,text=True);self.assertEqual(allowed.returncode,0,allowed.stderr);self.assertEqual(allowed.stdout.strip(),str(home));self.assertFalse(marker.exists())
+    denied=subprocess.run(['/usr/bin/python3','-I',str(inspector)],cwd=home,env={**env,'SSH_ORIGINAL_COMMAND':'touch /tmp/not-allowed'},capture_output=True,text=True);self.assertEqual(denied.returncode,126)
    target=home/'.ssh/authorized_keys';target.unlink();canary=pathlib.Path(temp)/'canary';canary.write_text('untouched');target.symlink_to(canary)
    with self.assertRaises(OSError):execute(data['second'])
    self.assertEqual(canary.read_text(),'untouched')
  def test_readonly(self):self.exercise('readonly')
  def test_account(self):self.exercise('account')
  def test_admin(self):self.exercise('admin')
+ def test_command_ignores_hostile_working_directory_and_python_environment(self):
+  # Run the real command generator with a harmless payload; never run account setup as root.
+  r=subprocess.run([PHP,'-r',"require 'src/SystemRisk.php';require 'src/SystemBootstrap.php';echo AIcontrol\\SystemBootstrap::command(\"print('ISOLATED_BOOTSTRAP_OK')\");"],cwd=ROOT,capture_output=True,text=True);self.assertEqual(r.returncode,0,r.stderr)
+  tokens=shlex.split(r.stdout);i=tokens.index('/usr/bin/python3');self.assertEqual(tokens[i+1:i+3],['-I','-c']);args=tokens[i:i+4]
+  with tempfile.TemporaryDirectory(prefix='aicontrol-hostile-import-') as temporary:
+   home=pathlib.Path(temporary);cwd=home/'cwd';inherited=home/'inherited';cwd.mkdir();inherited.mkdir();marker=home/'unsafe-import'
+   poison='from pathlib import Path\nPath('+repr(str(marker))+').write_text("unsafe import")\nraise SystemExit(73)\n'
+   (cwd/'base64.py').write_text(poison);(inherited/'base64.py').write_text(poison);(inherited/'sitecustomize.py').write_text(poison)
+   for directory in [cwd,home]:
+    with self.subTest(directory=directory.name):
+     result=subprocess.run(args,cwd=directory,env={**os.environ,'PYTHONPATH':str(inherited),'PYTHONUSERBASE':str(home/'user-site'),'PYTHONHOME':str(home/'invalid-python-home')},capture_output=True,text=True)
+     self.assertEqual(result.returncode,0,result.stderr);self.assertEqual(result.stdout.strip(),'ISOLATED_BOOTSTRAP_OK');self.assertFalse(marker.exists())
+   # A control proves the malicious fixture actually intercepts the old invocation.
+   control=subprocess.run([args[0],'-c',args[-1]],cwd=cwd,env={**os.environ,'PYTHONPATH':''},capture_output=True,text=True);self.assertEqual(control.returncode,73);self.assertTrue(marker.exists())
 if __name__=='__main__':unittest.main()

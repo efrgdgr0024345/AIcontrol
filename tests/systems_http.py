@@ -1,7 +1,47 @@
 """Systems requires owner access even when the legacy workspace uses public testing."""
-import http.cookiejar, os, pathlib, re, socket, subprocess, tempfile, time, unittest, urllib.error, urllib.parse, urllib.request
+import contextlib, http.cookiejar, os, pathlib, re, socket, subprocess, tempfile, time, unittest, urllib.error, urllib.parse, urllib.request
 ROOT=pathlib.Path(__file__).resolve().parent.parent
 class SystemsAccess(unittest.TestCase):
+ @contextlib.contextmanager
+ def credential_server(self,owner=False):
+  with tempfile.TemporaryDirectory(prefix='aicontrol-credential-http-') as home:
+   php=os.environ.get('PHP_BINARY','php');private=pathlib.Path(home)/'private';env={**os.environ,'AICONTROL_PRIVATE_DIR':str(private),'AICONTROL_LOCAL_DEV':'1','AICONTROL_PUBLIC_TESTING':'1','AICONTROL_PIN_VERIFIED':'1' if owner else ''}
+   setup=subprocess.run([php,'bin/setup.php','--access-mode=local','--private-dir='+str(private),'--public-root='+str(ROOT)],cwd=ROOT,env=env,capture_output=True,text=True);self.assertEqual(setup.returncode,0,setup.stderr)
+   seed=subprocess.run([php,'-r',"require 'src/Vault.php';$v=new AIcontrol\\Vault(getenv('AICONTROL_PRIVATE_DIR'));$v->saveSystemKey(7,'disposable-managed-ssh-key');$v->change('openai_api_key','key','disposable-provider-key',false);$v->change('owner_note','note','disposable-private-note',false);"],cwd=ROOT,env=env,capture_output=True,text=True);self.assertEqual(seed.returncode,0,seed.stderr)
+   with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
+   server=subprocess.Popen([php,'-S',f'127.0.0.1:{port}','bin/dev-router.php'],cwd=ROOT,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+   client=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()));url=f'http://127.0.0.1:{port}/loader.php'
+   def request(fields=None,query='?view=projects'):
+    try:
+     with client.open(url+query,data=urllib.parse.urlencode(fields).encode() if fields is not None else None,timeout=8) as reply:return reply.status,reply.read().decode()
+    except urllib.error.HTTPError as error:return error.code,error.read().decode()
+   try:
+    for _ in range(80):
+     try:code,page=request();break
+     except OSError:time.sleep(.05)
+    self.assertEqual(code,200);csrf=re.search(r'name="csrf" value="([a-f0-9]+)"',page).group(1)
+    yield private,csrf,request
+   finally:server.terminate();server.wait(timeout=5)
+ def test_public_testing_cannot_mutate_vault_or_use_admin(self):
+  with self.credential_server() as (private,csrf,request):
+   before=(private/'vault.json').read_bytes();key=(private/'vault.key').read_bytes()
+   code,page=request(query='?view=admin');self.assertEqual(code,403);self.assertIn('owner-authenticated',page);self.assertNotIn('owner_note',page);self.assertNotIn('disposable-',page)
+   for name in ['ssh_system_7','openai_api_key','owner_note']:
+    for action in ['vault_save','vault_delete']:
+     with self.subTest(name=name,action=action):
+      code,body=request(dict(csrf=csrf,action=action,name=name,type='note',value='replacement',share='1'));self.assertEqual(code,403);self.assertIn('owner-authenticated',body)
+   for action in ['admin_data','admin_project_json']:
+    code,_=request(dict(csrf=csrf,action=action,operation='clear_diagnostics',record_id='0',confirmation='CLEAR DIAGNOSTICS',project_id='1',run_id='0',kind='bundle'),query='?view=research');self.assertEqual(code,403)
+   self.assertEqual((private/'vault.json').read_bytes(),before);self.assertEqual((private/'vault.key').read_bytes(),key)
+ def test_owner_keeps_normal_vault_control_but_managed_keys_require_systems(self):
+  with self.credential_server(owner=True) as (private,csrf,request):
+   code,page=request(query='?view=admin');self.assertEqual(code,200);self.assertIn('managed in Systems',page);self.assertNotIn('Delete ssh_system_7',page);self.assertNotIn('disposable-managed-ssh-key',page)
+   before=(private/'vault.json').read_bytes()
+   for action in ['vault_save','vault_delete']:
+    code,body=request(dict(csrf=csrf,action=action,name='ssh_system_7',type='note',value='replacement',share='1'));self.assertEqual(code,422);self.assertIn('SSH credentials are managed in Systems.',body)
+   self.assertEqual((private/'vault.json').read_bytes(),before)
+   for action in ['vault_save','vault_delete']:
+    code,page=request(dict(csrf=csrf,action=action,name='owner_note',type='note',value='owner replacement',share='0'));self.assertEqual(code,200);self.assertIn('Private vault updated.',page)
  def test_public_testing_cannot_read_or_enroll(self):
   with tempfile.TemporaryDirectory(prefix='aicontrol-systems-http-') as home:
    php=os.environ.get('PHP_BINARY','php');env={**os.environ,'AICONTROL_PRIVATE_DIR':home+'/private','AICONTROL_LOCAL_DEV':'1','AICONTROL_PUBLIC_TESTING':'1','AICONTROL_PIN_VERIFIED':''}

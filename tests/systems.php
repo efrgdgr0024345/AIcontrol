@@ -18,6 +18,12 @@ $ssh=new class {
 try {
     $s=new Systems($dir);$id=$s->add('Linux fixture','192.0.2.10','22','aicontrol','inspect','');
     $key=$s->privateKey($id);check(!str_contains(file_get_contents($dir.'/vault.json'),'OPENSSH'),'Credential stored in plaintext');
+    $vault=new AIcontrol\Vault($dir);$beforeVault=file_get_contents($dir.'/vault.json');
+    rejects(fn()=>$vault->change('ssh_system_'.$id,'key','replacement',false));
+    rejects(fn()=>$vault->change('ssh_system_'.$id,'note','replacement',true));
+    rejects(fn()=>$vault->change('ssh_system_'.$id,'key','',false,true));
+    rejects(fn()=>$vault->change('ssh_system_new','note','replacement',true));
+    check(file_get_contents($dir.'/vault.json')===$beforeVault&&$s->privateKey($id)===$key&&!str_contains($vault->context(),$key),'Generic vault mutation altered/disclosed managed SSH credentials');
     $script=$s->script($id);check(str_contains($script,'restrict ssh-ed25519')&&str_contains($script,"useradd --password '*'")&&!str_contains($script,$key),'Invalid setup script or secret leaked');
     rejects(fn()=>$s->add('Bad','-oProxyCommand=bad','22','root','inspect',''));rejects(fn()=>$s->add('Bad','example.com','0','root','inspect',''));rejects(fn()=>$s->pin($id,'SHA256:bad'));
     $s->pin($id,'SHA256:'.str_repeat('a',43));$s->verify($id,$ssh);check((bool)$s->system($id)['verified_at'],'Connection check not saved');
