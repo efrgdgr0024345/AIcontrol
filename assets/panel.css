@@ -934,3 +934,15 @@ body.research-map-open { overflow:hidden; }
 @media(prefers-color-scheme:dark) { .nasa-workspace { background:#0f1b2c; padding:18px; border-radius:16px; }.nasa-operation[role=alert] { color:#ffc0ca; background:#341c29; } }
 @media print { .nasa-workspace { --nasa-ink:#111; --nasa-muted:#444; --nasa-line:#aaa; --nasa-table:#fff; --nasa-link:#111; background:#fff!important; padding:0!important; }.nasa-workspace .card { background:#fff!important; color:#111!important; } }
 @media(prefers-color-scheme:dark) { .nasa-workspace .btn-outline-danger { color:#ffccd5; background:#3b2432; border-color:#bd7f90; } }
+
+/* The server renders both modes; an ordinary GET form selects density without JS. */
+.nasa-density-form { display:flex!important; flex-wrap:wrap; gap:8px; align-items:center; margin:12px 0; }
+.nasa-density-form .form-select { width:auto; max-width:100%; }
+.nasa-workspace[data-nasa-density="beginner"] .nasa-practitioner { display:none; }
+.nasa-workspace[data-nasa-density="practitioner"] .nasa-beginner-note { display:none; }
+.nasa-provenance pre { max-height:22rem; overflow:auto; overflow-wrap:anywhere; white-space:pre-wrap; }
+.nasa-workspace fieldset { min-width:0; padding:12px; border:1px solid var(--nasa-line); border-radius:8px; }
+.nasa-workspace legend { float:none; width:auto; font-size:.85rem; font-weight:650; padding:0 4px; }
+@media print { .nasa-density-form { display:none!important; } .nasa-workspace .nasa-practitioner { display:block!important; } }
+
+.nasa-dashboard { flex-wrap:wrap; } .nasa-posture-details { width:100%; grid-column:1 / -1; border-top:1px solid #6b85a0; padding-top:12px; } .nasa-posture-details h3 { font-size:1rem; } .nasa-posture-details a { color:#d8ebff!important; }

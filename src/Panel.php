@@ -319,6 +319,9 @@ final class Panel
                 if(isset($_GET['nasa_project']))$data['nasa']['workspace']=$nasa->workspace(NasaStore::id($_GET['nasa_project']));
                 else{$choice=is_string($_GET['source']??null)?$_GET['source']:'';$sources=$data['nasa']['sources'];$source=$choice!==''?array_values(array_filter($sources,static fn($s)=>$s['kind'].':'.$s['id']===$choice))[0]??null:($sources[0]??null);$data['nasa']['source']=$source;if($source&&$source['managed_id'])$data['nasa']['workspace']=$nasa->workspace((int)$source['managed_id']);}
             }catch(Throwable $failure){$error='The selected managed project is unavailable. Choose a saved project.';}
+            if($data['nasa']['workspace']&&isset($_GET['promote_run'],$_GET['promote_node'])){
+                try{$selected=$nasa->researchSource((int)$data['nasa']['workspace']['project']['id'],'research_node',NasaStore::id($_GET['promote_node']),NasaStore::id($_GET['promote_run']));$data['nasa']['workspace']['research_choices'][]=['source_kind'=>'research_node','source_id'=>$selected['source_id'],'run_id'=>$selected['run_id'],'title'=>$selected['title'],'content'=>$selected['content'],'eligible_evidence'=>false];}catch(Throwable){$error='The selected research idea is unavailable in this planning project.';}
+            }
             if($data['nasa']['workspace']&&is_string($_GET['phase_preview']??null)&&isset(NasaKnowledge::phases()[$_GET['phase_preview']]))$data['nasa']['workspace']['preview']=$nasa->readiness((int)$data['nasa']['workspace']['project']['id'],$_GET['phase_preview']);
             if($data['nasa']['workspace'])foreach(array_keys(NasaKnowledge::phases()) as $phase)$data['nasa']['workspace']['phase_coverage'][$phase]=$nasa->readiness((int)$data['nasa']['workspace']['project']['id'],$phase);
         }
@@ -335,7 +338,7 @@ final class Panel
                 if($method==='POST')foreach(['discovery_reply','setup_reply','connection_host','connection_port'] as $field)$data['systems']['setup_values'][$field]=self::input($field);
             }
         }
-        if ($authenticated && $view === 'research') { $data['research'] = (new Research($directory))->snapshot(); $data['research']['workspace'] = (new Investigation($directory))->workspace((int)($_GET['project'] ?? 0), (int)($_GET['run'] ?? 0),($_GET['new']??'')==='1'||(($action??'')==='research_project'&&$error!=='')); }
+        if ($authenticated && $view === 'research') { $data['research'] = (new Research($directory))->snapshot(); $data['research']['owner_controls']=$config['access_mode']!=='testing'; $data['research']['workspace'] = (new Investigation($directory))->workspace((int)($_GET['project'] ?? 0), (int)($_GET['run'] ?? 0),($_GET['new']??'')==='1'||(($action??'')==='research_project'&&$error!=='')); }
         if(($action??'')==='research_project'&&$error!==''&&isset($data['research']))$data['research']['create_values']=['name'=>self::input('name'),'brief'=>self::input('brief')];
         $data['asset_nonce'] = $assetNonce;
         PanelView::render($data, $view, $csrf, $error, $passwordMode, $config, $authenticated);

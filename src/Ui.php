@@ -1649,6 +1649,7 @@ document.addEventListener('submit', event => {
     const rank=map.querySelector('[data-map-rank]'),pathNode=['dream_claim','question'].includes(node.type);
     rank.hidden=!pathNode||Number(node.selected??1)!==1||snapshot.run.status!=='running'||busy||!Number(snapshot.run.flow_version);
     const rankStamp=JSON.stringify([selected,node.path_weight,node.model_tier]);if(rank.dataset.stamp!==rankStamp&&!rank.contains(document.activeElement)){rank.querySelector('[name=node_id]').value=node.id;rank.querySelector('[name=path_weight]').value=node.path_weight||50;rank.querySelector('[name=model_tier]').value=node.model_tier||'primary';rank.dataset.stamp=rankStamp;}
+    const promotion=map.querySelector('[data-map-promote]');if(promotion){const eligible=/^\d+$/.test(node.id)&&['dream_claim','question','model_idea','association','counter','edge_case','reframing','synthesis'].includes(node.type);promotion.hidden=!eligible;if(eligible){const url=new URL(promotion.href,location.href);url.searchParams.set('promote_run',snapshot.run.id);url.searchParams.set('promote_node',node.id);promotion.href=url.href;}}
     const persisted=/^\d+$/.test(node.id),rawByID=new Map(snapshot.nodes.map(row=>[String(row.id),row]));
     let focusAncestor=rawByID.get(node.id);const seenAncestors=new Set();
     while(focusAncestor&&focusAncestor.type!=='dream_claim'&&!seenAncestors.has(String(focusAncestor.id))){seenAncestors.add(String(focusAncestor.id));focusAncestor=rawByID.get(String(focusAncestor.parent_id));}
@@ -1823,6 +1824,10 @@ document.addEventListener('submit', event => {
 (() => {
   'use strict';
   const root=document.querySelector('[data-nasa-workspace]');if(!root)return;
+  const density=root.querySelector('[data-nasa-density-choice]');
+  const setDensity=value=>{root.dataset.nasaDensity=value==='practitioner'?'practitioner':'beginner';if(density)density.value=root.dataset.nasaDensity;};
+  if(!new URL(location.href).searchParams.has('density')){try{setDensity(localStorage.getItem('aicontrol-nasa-density')||root.dataset.nasaDensity);}catch{}}
+  density?.addEventListener('change',()=>{setDensity(density.value);try{localStorage.setItem('aicontrol-nasa-density',density.value);}catch{}});
   const tabs=[...root.querySelectorAll('[data-nasa-tab]')],panels=[...root.querySelectorAll('[data-nasa-panel]')];
   function openPanel(key,focus=false){
     if(!panels.some(p=>p.dataset.nasaPanel===key))return;
@@ -1862,7 +1867,7 @@ document.addEventListener('submit', event => {
       if(!(response.headers.get('content-type')||'').includes('application/json'))throw Error('Session or outcome could not be verified. Refresh NASA Managed before trying again.');
       const result=await response.json();if(!response.ok)throw Error(result.error||'Planning action failed. Saved records were retained.');
       const next=new URL(result.location,location.href);if(next.origin!==location.origin)throw Error('Unexpected redirect. Refresh the workspace.');
-      const panel=form.closest('[data-nasa-panel]')?.dataset.nasaPanel;next.hash='nasa-'+(form.elements.action.value.includes('review')?'reviews':['nasa_generate','nasa_template'].includes(form.elements.action.value)?'artifacts':panel||'overview');
+      const panel=form.closest('[data-nasa-panel]')?.dataset.nasaPanel,action=form.elements.action.value;let destination=action.includes('review')?'reviews':['nasa_generate','nasa_template','nasa_promote_research'].includes(action)?'artifacts':panel||'overview';if(action==='nasa_collaborate'||action.startsWith('nasa_proposal_')||action==='nasa_generate'&&form.elements.artifact?.value==='missing')destination='overview';if(next.searchParams.get('view')==='nasa')next.hash='nasa-'+destination;
       if(next.pathname===location.pathname&&next.search===location.search){history.replaceState(null,'',next);location.reload();}else location.assign(next);
     }catch(error){uncertain=form.hasAttribute('data-nasa-ai');if(status){status.textContent=error.message+(uncertain?' Inspect AI request history before sending another request.':'');status.setAttribute('role','alert');}if(uncertain)for(const button of root.querySelectorAll('[data-nasa-ai] button'))button.disabled=true;}
     finally{busy=false;form.removeAttribute('aria-busy');if(!uncertain)for(const b of disabled)b.disabled=false;}
@@ -2810,6 +2815,18 @@ body.research-map-open { overflow:hidden; }
 @media(prefers-color-scheme:dark) { .nasa-workspace { background:#0f1b2c; padding:18px; border-radius:16px; }.nasa-operation[role=alert] { color:#ffc0ca; background:#341c29; } }
 @media print { .nasa-workspace { --nasa-ink:#111; --nasa-muted:#444; --nasa-line:#aaa; --nasa-table:#fff; --nasa-link:#111; background:#fff!important; padding:0!important; }.nasa-workspace .card { background:#fff!important; color:#111!important; } }
 @media(prefers-color-scheme:dark) { .nasa-workspace .btn-outline-danger { color:#ffccd5; background:#3b2432; border-color:#bd7f90; } }
+
+/* The server renders both modes; an ordinary GET form selects density without JS. */
+.nasa-density-form { display:flex!important; flex-wrap:wrap; gap:8px; align-items:center; margin:12px 0; }
+.nasa-density-form .form-select { width:auto; max-width:100%; }
+.nasa-workspace[data-nasa-density="beginner"] .nasa-practitioner { display:none; }
+.nasa-workspace[data-nasa-density="practitioner"] .nasa-beginner-note { display:none; }
+.nasa-provenance pre { max-height:22rem; overflow:auto; overflow-wrap:anywhere; white-space:pre-wrap; }
+.nasa-workspace fieldset { min-width:0; padding:12px; border:1px solid var(--nasa-line); border-radius:8px; }
+.nasa-workspace legend { float:none; width:auto; font-size:.85rem; font-weight:650; padding:0 4px; }
+@media print { .nasa-density-form { display:none!important; } .nasa-workspace .nasa-practitioner { display:block!important; } }
+
+.nasa-dashboard { flex-wrap:wrap; } .nasa-posture-details { width:100%; grid-column:1 / -1; border-top:1px solid #6b85a0; padding-top:12px; } .nasa-posture-details h3 { font-size:1rem; } .nasa-posture-details a { color:#d8ebff!important; }
 
 AICONTROL_UI_CSS;
     }

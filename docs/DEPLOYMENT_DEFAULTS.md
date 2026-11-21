@@ -140,3 +140,13 @@ workspace/hour and $1 estimated plus reserved risk per source project/rolling da
 ProviderGate and no automatic retries. AI output is always a draft. Phase gates
 are local planning guidance and cannot grant execution/deployment permissions.
 See NASA_MANAGED.md for integration, snapshot, export and cleanup semantics.
+
+NASA workspace evolution (2026-11-22): additive private panel tables retain
+provenance, pending collaboration proposals, focused-research origins and baseline
+restore audits. Research project/run identity tokens migrate idempotently in the
+existing research.sqlite; they are internal scope identities, never credentials.
+Owner/CSRF protection covers every NASA action and export. Existing data and
+identity stay intact; no records are cleared during install. Baseline creation
+now requires a current local review. Requirement verification requires reviewed
+linked evidence plus persisted owner confirmation. NASA drafting retains the
+existing 8/hour workspace and $1/source-project rolling-day allowance.

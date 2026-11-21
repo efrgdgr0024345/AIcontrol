@@ -54,7 +54,7 @@ try{
  $n->saveRecord($id,'risk',$risk,'Credential exposure','A compromised session could affect stored work.','accepted',$riskData,1);verify($n->readiness($id)['ready'],'Explicitly accepted risk or reviewed artifacts lost');
  denied(fn()=>$n->advance($id,$n->project($id)['revision']),'Phase advanced without owner readiness review');
  $review=$n->review($id);$n->advance($id,$n->project($id)['revision']);verify($n->project($id)['phase']==='A','Reviewed phase did not advance');
- $baseline=$n->baseline($id,'First agreed planning snapshot');$count=count($n->rows('SELECT id FROM nasa_items WHERE project_id=?',[$id]));
+ denied(fn()=>$n->baseline($id,'Stale review'),'Baseline admitted an earlier revision review');$n->review($id);$baseline=$n->baseline($id,'First agreed planning snapshot');$count=count($n->rows('SELECT id FROM nasa_items WHERE project_id=?',[$id]));
  $n->saveArtifact($id,'conops','Changed architecture assumption.','draft',1);$n->saveRecord($id,'decision','','Queue choice','Use bounded requests for now.','decided',['alternatives'=>'A worker adds hosting complexity.','revisit'=>'Revisit when latency exceeds 30 seconds.'],0);
  $n->restoreBaseline($id,$baseline,'RESTORE BASELINE '.$baseline,$n->project($id)['revision']);verify($n->current($id,'artifact','conops')['content']==='Owner journey and recovery scenario.'&&count($n->rows('SELECT id FROM nasa_items WHERE project_id=?',[$id]))>$count,'Baseline restore lost history or did not restore content');verify(!array_filter($n->items($id),fn($i)=>$i['kind']==='decision'),'Post-baseline decision was not receded with an immutable tombstone');
  denied(fn()=>$n->restoreBaseline($research,$baseline,'RESTORE BASELINE '.$baseline,0),'Cross-project baseline restored');

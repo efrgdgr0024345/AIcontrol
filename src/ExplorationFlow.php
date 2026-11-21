@@ -57,7 +57,7 @@ trait ExplorationFlow
     /** Explicit owner proposal; never source evidence or an automatic model request. */
     public function addUserIdea(int $id,string $title,string $content,string $proposalKey): int
     {
-        if(trim($title)===''||strlen($title)>700||trim($content)===''||strlen($content)>5000||!mb_check_encoding($title.$content,'UTF-8')||!preg_match('/^nasa:[1-9][0-9]*:[1-9][0-9]*:[0-9]+$/D',$proposalKey))throw new RuntimeException('Choose a valid review proposal.');
+        if(trim($title)===''||strlen($title)>700||trim($content)===''||strlen($content)>5000||!mb_check_encoding($title.$content,'UTF-8')||!preg_match('/^(?:nasa:[1-9][0-9]*:[1-9][0-9]*:[0-9]+|nasa-gap:[1-9][0-9]*:[a-f0-9]{64})$/D',$proposalKey))throw new RuntimeException('Choose a valid review proposal.');
         return ProviderGate::run($this->directory,fn()=> $this->transaction(function()use($id,$title,$content,$proposalKey):int{
             $this->livingIdle($id);
             foreach($this->rows("SELECT id,data_json FROM research_nodes WHERE run_id=? AND origin='user'",[$id]) as $old)if((json_decode($old['data_json'],true)['proposal_key']??null)===$proposalKey)return (int)$old['id'];

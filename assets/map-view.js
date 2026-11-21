@@ -404,6 +404,7 @@
     const rank=map.querySelector('[data-map-rank]'),pathNode=['dream_claim','question'].includes(node.type);
     rank.hidden=!pathNode||Number(node.selected??1)!==1||snapshot.run.status!=='running'||busy||!Number(snapshot.run.flow_version);
     const rankStamp=JSON.stringify([selected,node.path_weight,node.model_tier]);if(rank.dataset.stamp!==rankStamp&&!rank.contains(document.activeElement)){rank.querySelector('[name=node_id]').value=node.id;rank.querySelector('[name=path_weight]').value=node.path_weight||50;rank.querySelector('[name=model_tier]').value=node.model_tier||'primary';rank.dataset.stamp=rankStamp;}
+    const promotion=map.querySelector('[data-map-promote]');if(promotion){const eligible=/^\d+$/.test(node.id)&&['dream_claim','question','model_idea','association','counter','edge_case','reframing','synthesis'].includes(node.type);promotion.hidden=!eligible;if(eligible){const url=new URL(promotion.href,location.href);url.searchParams.set('promote_run',snapshot.run.id);url.searchParams.set('promote_node',node.id);promotion.href=url.href;}}
     const persisted=/^\d+$/.test(node.id),rawByID=new Map(snapshot.nodes.map(row=>[String(row.id),row]));
     let focusAncestor=rawByID.get(node.id);const seenAncestors=new Set();
     while(focusAncestor&&focusAncestor.type!=='dream_claim'&&!seenAncestors.has(String(focusAncestor.id))){seenAncestors.add(String(focusAncestor.id));focusAncestor=rawByID.get(String(focusAncestor.parent_id));}

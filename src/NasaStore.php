@@ -5,10 +5,18 @@ use PDO;
 use RuntimeException;
 require_once __DIR__.'/NasaKnowledge.php';
 require_once __DIR__.'/UsageMeter.php';
+require_once __DIR__.'/NasaIntegration.php';
+require_once __DIR__.'/NasaCollaboration.php';
+require_once __DIR__.'/NasaDiscipline.php';
+require_once __DIR__.'/NasaContextPack.php';
 
 /** Append-only engineering records in the existing private panel database. */
 final class NasaStore
 {
+    use NasaIntegration;
+    use NasaCollaboration;
+    use NasaDiscipline;
+    use NasaContextPack;
     public PDO $db;
     public function __construct(public readonly string $directory)
     {
@@ -24,12 +32,23 @@ final class NasaStore
             CREATE TABLE IF NOT EXISTS nasa_links(id INTEGER PRIMARY KEY,project_id INTEGER NOT NULL REFERENCES nasa_projects(id) ON DELETE CASCADE,review_id INTEGER NOT NULL REFERENCES nasa_reviews(id) ON DELETE CASCADE,finding_index INTEGER NOT NULL,target_kind TEXT NOT NULL,target_id INTEGER NOT NULL,UNIQUE(project_id,review_id,finding_index,target_kind));
             CREATE TABLE IF NOT EXISTS nasa_ai_requests(id INTEGER PRIMARY KEY,project_id INTEGER NOT NULL,source_kind TEXT NOT NULL,source_id INTEGER NOT NULL,revision INTEGER NOT NULL,action TEXT NOT NULL,status TEXT NOT NULL,model TEXT NOT NULL,reserved_usd REAL NOT NULL,estimated_usd REAL,billing_json TEXT,result_json TEXT,error TEXT,created_at INTEGER NOT NULL,finished_at INTEGER);
             CREATE INDEX IF NOT EXISTS nasa_ai_window ON nasa_ai_requests(created_at);');
+        self::migrateIntegration($this->db);
+        $this->initCollaboration();
+        $this->initDiscipline();
     }
     public function rows(string $sql,array $args=[]): array {$q=$this->db->prepare($sql);$q->execute($args);return $q->fetchAll();}
     public function execute(string $sql,array $args=[]): void {$q=$this->db->prepare($sql);$q->execute($args);}
-    public function transaction(callable $work): mixed
+    public function transaction(callable $work,bool $lockResearch=true): mixed
     {
-        $this->db->exec('BEGIN IMMEDIATE');try{$out=$work();$this->db->exec('COMMIT');return $out;}catch(\Throwable $e){$this->db->exec('ROLLBACK');throw $e;}
+        // A planning decision and the research fingerprint it relies on must
+        // share one SQLite write reservation. Separate PDO reads alone race.
+        $attached=false;$file=$this->directory.'/research.sqlite';
+        if($lockResearch&&is_file($file)&&!is_link($file)){
+            $already=false;foreach($this->db->query('PRAGMA database_list')->fetchAll() as $database)if($database['file']===$file)$already=true;
+            if(!$already){$q=$this->db->prepare('ATTACH DATABASE ? AS nasa_atomic_research');$q->execute([$file]);$q->closeCursor();$attached=true;}
+        }
+        try{$this->db->exec('BEGIN IMMEDIATE');try{$out=$work();$this->db->exec('COMMIT');return $out;}catch(\Throwable $e){$this->db->exec('ROLLBACK');throw $e;}}
+        finally{if($attached)$this->db->exec('DETACH DATABASE nasa_atomic_research');}
     }
     public static function text(mixed $value,int $max,bool $empty=false): string
     {
@@ -124,15 +143,17 @@ final class NasaStore
             $criteria=$d['criteria']??[];
             if(!is_array($criteria)||!array_is_list($criteria)||!$criteria||count($criteria)>8||array_filter($criteria,static fn($v)=>!is_string($v))||array_diff($criteria,array_keys(NasaKnowledge::tailoringCriteria())))throw new RuntimeException('Choose at least one handbook tailoring criterion.');
             $data=['phase'=>$d['phase'],'artifact'=>$d['artifact'],'criteria'=>array_values(array_unique($criteria)),'residual_risk'=>$need('residual_risk'),'revisit'=>$need('revisit',1000),'knowledge_version'=>NasaKnowledge::VERSION];
+        }elseif($kind==='interface'){$data=$this->validateInterfaceRecord($d,$status);
         }else throw new RuntimeException('Choose a known engineering record type.');
         return $data;
     }
     public function saveRecord(int $id,string $kind,string $key,string $title,string $content,string $status,array $data,int $version,string $by='owner'): string
     {
-        $this->project($id);$data=$this->validateRecord($id,$kind,$title,$content,$data,$status);
-        return $this->transaction(function()use($id,$kind,$key,$title,$content,$status,$data,$version,$by):string{
-            if($key===''){$prefix=['requirement'=>'REQ','risk'=>'RISK','tpm'=>'TPM','decision'=>'DEC','tailoring'=>'TAIL'][$kind];$number=(int)$this->rows('SELECT COUNT(DISTINCT item_key) AS n FROM nasa_items WHERE project_id=? AND kind=?',[$id,$kind])[0]['n']+1;$key=$prefix.'-'.str_pad((string)$number,3,'0',STR_PAD_LEFT);}
-            elseif(!preg_match('/^(REQ|RISK|TPM|DEC|TAIL)-[0-9]{3,10}$/D',$key)||!$this->current($id,$kind,$key))throw new RuntimeException('Choose a record from this project.');
+        $this->project($id);$inputData=$data;$data=$this->validateRecord($id,$kind,$title,$content,$data,$status);
+        return $this->transaction(function()use($id,$kind,$key,$title,$content,$status,$data,$inputData,$version,$by):string{
+            if($kind==='requirement'&&$status==='verified'){$this->assertVerifiedEvidence($id,$key,$title,$content,$data+['verification_confirmed'=>$inputData['verification_confirmed']??false],$by);$data['owner_confirmation']=['subject_hash'=>self::subjectHash($kind,$title,$content,$data),'by'=>'owner','created_at'=>time()];}
+            if($key===''){$prefix=['requirement'=>'REQ','risk'=>'RISK','tpm'=>'TPM','decision'=>'DEC','tailoring'=>'TAIL','interface'=>'IF'][$kind];$number=(int)$this->rows('SELECT COUNT(DISTINCT item_key) AS n FROM nasa_items WHERE project_id=? AND kind=?',[$id,$kind])[0]['n']+1;$key=$prefix.'-'.str_pad((string)$number,3,'0',STR_PAD_LEFT);}
+            elseif(!preg_match('/^(REQ|RISK|TPM|DEC|TAIL|IF)-[0-9]{3,10}$/D',$key)||!$this->current($id,$kind,$key))throw new RuntimeException('Choose a record from this project.');
             $this->append($id,$kind,$key,trim($title),trim($content),$status,$data,$by,$version);$this->bump($id);return $key;
         });
     }
@@ -145,12 +166,17 @@ final class NasaStore
     }
     public function archiveRecord(int $id,string $kind,string $key,int $version,bool $restore=false): void
     {
-        $this->project($id);if(!in_array($kind,['requirement','risk','tpm','decision','tailoring'],true))throw new RuntimeException('Choose a structured record to archive or restore.');
+        $this->project($id);if(!in_array($kind,['requirement','risk','tpm','decision','tailoring','interface'],true))throw new RuntimeException('Choose a structured record to archive or restore.');
         $this->transaction(function()use($id,$kind,$key,$version,$restore):void{
             $r=$this->current($id,$kind,$key);if(!$r||$restore&&$r['status']!=='removed'||!$restore&&$r['status']==='removed')throw new RuntimeException('Refresh the record before changing its archive state.');
-            $status=$restore?['requirement'=>'unverified','risk'=>'open','tpm'=>'recorded','decision'=>'proposed','tailoring'=>'recorded'][$kind]:'removed';
+            $status=$restore?['requirement'=>'unverified','risk'=>'open','tpm'=>'recorded','decision'=>'proposed','tailoring'=>'recorded','interface'=>'draft'][$kind]:'removed';
             $this->append($id,$kind,$key,$r['title'],$r['content'],$status,json_decode($r['data_json'],true,64,JSON_THROW_ON_ERROR),$restore?'owner_restored':'owner_archived',$version);$this->bump($id);
         });
+    }
+    public function isVerifiedRequirement(int $id,array $record): bool
+    {
+        $data=$record['data']??json_decode($record['data_json']??'{}',true,64,JSON_THROW_ON_ERROR);$confirmation=$data['owner_confirmation']??null;
+        return ($record['status']??'')==='verified'&&is_array($confirmation)&&($confirmation['by']??'')==='owner'&&is_int($confirmation['created_at']??null)&&$confirmation['created_at']>0&&is_string($confirmation['subject_hash']??null)&&hash_equals($confirmation['subject_hash'],self::subjectHash('requirement',$record['title'],$record['content'],$data))&&$this->hasReviewedEvidence($id,$record['item_key'],$record['title'],$record['content'],$data);
     }
     public function readiness(int $id,?string $phase=null): array
     {
@@ -158,7 +184,7 @@ final class NasaStore
         foreach($items as $i){if($i['kind']==='artifact')$docs[$i['item_key']]=$i;if($i['kind']==='tailoring'&&($i['data']['phase']??'')===$phase&&self::completeTailoring($i['data']))$waivers[$i['data']['artifact']]=$i;if($i['kind']==='requirement')$req[]=$i;if($i['kind']==='risk')$risks[]=$i;}
         $checks=[];foreach($spec[4] as $type){$doc=$docs[$type]??null;$waiver=$waivers[$type]??null;$checks[]=['key'=>$type,'title'=>NasaKnowledge::ARTIFACTS[$type][0],'passed'=>($doc&&in_array($doc['status'],['reviewed','baseline'],true))||!!$waiver,'waived'=>!!$waiver,'detail'=>$waiver?'Tailored: '.$waiver['content']:($doc?'Current status: '.$doc['status']:'No document saved.')];}
         if(in_array($phase,['A','B','C','D','E'],true))$checks[]=['key'=>'requirements','title'=>'Traceable, testable requirements','passed'=>isset($waivers['requirements'])||count($req)>0&&!array_filter($req,static fn($r)=>self::requirementWarnings($r['content'])!==[]),'waived'=>isset($waivers['requirements']),'detail'=>'Use the matrix: record the need, an observable shall statement and its verification method.'];
-        if(in_array($phase,['D','E'],true))$checks[]=['key'=>'verification','title'=>'Recorded requirement evidence','passed'=>isset($waivers['verification'])||count($req)>0&&!array_filter($req,static fn($r)=>$r['status']!=='verified'||$r['data']['evidence']===''),'waived'=>isset($waivers['verification']),'detail'=>'Owner-recorded evidence is needed for every active requirement; this does not run tests.'];
+        if(in_array($phase,['D','E'],true))$checks[]=['key'=>'verification','title'=>'Recorded requirement evidence','passed'=>isset($waivers['verification'])||count($req)>0&&!array_filter($req,fn($r)=>!$this->isVerifiedRequirement($id,$r)),'waived'=>isset($waivers['verification']),'detail'=>'Owner-recorded evidence is needed for every active requirement; this does not run tests.'];
         $high=array_values(array_filter($risks,static fn($r)=>$r['status']==='open'&&$r['data']['residual_likelihood']*$r['data']['residual_consequence']>=15));
         $checks[]=['key'=>'risks','title'=>'High residual risks have a recorded response','passed'=>!$high,'waived'=>false,'detail'=>$high?count($high).' high risks remain open. Mitigate or explicitly accept them with a rationale.':'No high residual risk is currently recorded as open. This is not proof all risks were found.'];
         foreach($checks as &$check)if(isset($waivers[$check['key']])){$w=$waivers[$check['key']];$check['tailoring']=['item_key'=>$w['item_key'],'version'=>$w['version'],'rationale'=>$w['content']]+$w['data'];$check['detail']='Tailored — see rationale. '.$w['content'];}unset($check);
@@ -202,38 +228,40 @@ final class NasaStore
             $this->execute("INSERT INTO events(kind,project_id,task_id,detail,created_at)VALUES('task.proposed',?,?,?,?)",[$target,$task,'Owner created a task from NASA Managed review #'.$review.'. No agent dispatched.',gmdate('c')]);$this->execute("INSERT OR REPLACE INTO nasa_links(project_id,review_id,finding_index,target_kind,target_id)VALUES(?,?,?,'task',?)",[$id,$review,$index,$task]);return $task;
         });
     }
-    public function baseline(int $id,string $title): int
+    public function baseline(int $id,string $title,?int $expectedRevision=null): int
     {
-        $title=self::text($title,160);return $this->transaction(function()use($id,$title):int{$p=$this->project($id);$snapshot=['phase'=>$p['phase'],'revision'=>$p['revision'],'knowledge_version'=>NasaKnowledge::VERSION,'items'=>$this->items($id)];$json=json_encode($snapshot,JSON_THROW_ON_ERROR);$this->execute('INSERT INTO nasa_baselines(project_id,title,snapshot_json,sha256,created_at)VALUES(?,?,?,?,?)',[$id,$title,$json,hash('sha256',$json),time()]);return (int)$this->db->lastInsertId();});
+        return $this->disciplinedBaseline($id,$title,$expectedRevision);
     }
-    public function restoreBaseline(int $id,int $baseline,string $confirmation,int $revision): void
+    public function restoreBaseline(int $id,int $baseline,string $confirmation,int $revision): array
     {
-        if(!hash_equals('RESTORE BASELINE '.$baseline,trim($confirmation)))throw new RuntimeException('Type the exact baseline confirmation. No records changed.');
-        $this->transaction(function()use($id,$baseline,$revision):void{$p=$this->project($id);if((int)$p['revision']!==$revision)throw new RuntimeException('Project changed. Refresh before restoring.');$b=$this->rows('SELECT * FROM nasa_baselines WHERE id=? AND project_id=?',[$baseline,$id])[0]??throw new RuntimeException('Choose a baseline from this project.');if(!hash_equals($b['sha256'],hash('sha256',$b['snapshot_json'])))throw new RuntimeException('Baseline integrity check failed.');$state=json_decode($b['snapshot_json'],true,64,JSON_THROW_ON_ERROR);$wanted=[];foreach($state['items'] as $i)$wanted[$i['kind'].':'.$i['item_key']]=$i;
-            foreach($this->items($id,true) as $i)if(!isset($wanted[$i['kind'].':'.$i['item_key']]))$this->append($id,$i['kind'],$i['item_key'],$i['title'],$i['content'],'removed',$i['data'],'owner_baseline_restore',(int)$i['version']);
-            foreach($wanted as $i){$current=$this->current($id,$i['kind'],$i['item_key']);$this->append($id,$i['kind'],$i['item_key'],$i['title'],$i['content'],$i['status'],$i['data'],'owner_baseline_restore',(int)($current['version']??0));}
-            $this->execute('UPDATE nasa_projects SET phase=?,revision=revision+1 WHERE id=?',[$state['phase'],$id]);
-        });
+        return $this->disciplinedRestoreBaseline($id,$baseline,$confirmation,$revision);
+    }
+    private function baselineDeltas(int $id): array
+    {
+        $out=[];foreach($this->rows('SELECT id FROM nasa_baselines WHERE project_id=? ORDER BY id DESC LIMIT 20',[$id]) as $row){try{$out[$row['id']]=$this->baselineDelta($id,(int)$row['id']);}catch(\Throwable $e){Diagnostics::record('nasa.baseline.inspect_failed',['project_id'=>$id,'baseline_id'=>$row['id']],$e);$out[$row['id']]=['error'=>'Saved baseline failed its integrity or compatibility check; inspect Admin diagnostics.'];}}return $out;
     }
     public function context(int $id): array
     {
-        $p=$this->project($id);$out=['project'=>['name'=>$p['source']['name'],'brief'=>$p['source']['brief'],'phase'=>$p['phase'],'revision'=>$p['revision']],'records'=>$this->items($id),'tasks'=>[],'research'=>[],'systems'=>[],'scope'=>'Saved workspace records only; no repository checkout or live system output inspected.'];
+        $p=$this->project($id);$out=['knowledge_version'=>NasaKnowledge::VERSION,'installed_code_sha'=>self::installedCodeReference(),'project'=>['name'=>$p['source']['name'],'brief'=>$p['source']['brief'],'phase'=>$p['phase'],'revision'=>$p['revision']],'records'=>$this->items($id),'tasks'=>[],'research'=>[],'systems'=>[],'scope'=>'Saved workspace records only; no repository checkout or live system output inspected.'];
         if($p['task_project_id']){$out['tasks']=$this->rows('SELECT id,title,criteria,status FROM tasks WHERE project_id=? ORDER BY id DESC LIMIT 40',[$p['task_project_id']]);$out['agent_outcomes']=$this->rows('SELECT a.id,a.status,a.finished_at FROM agent_runs a JOIN tasks t ON t.id=a.task_id WHERE t.project_id=? ORDER BY a.id DESC LIMIT 20',[$p['task_project_id']]);}
         $db=$this->research();if($p['linked_research_id']&&$db){$q=$db->prepare('SELECT id,name,brief FROM research_projects WHERE id=?');$q->execute([$p['linked_research_id']]);if($rp=$q->fetch()){$out['research']['project']=$rp;$q=$db->prepare("SELECT n.id,n.type,n.title,n.content,n.origin,n.provenance_tag FROM research_nodes n JOIN research_runs r ON r.id=n.run_id WHERE r.project_id=? AND n.type IN ('dream_claim','model_idea','question','association','counter','reframing','edge_case','synthesis') ORDER BY n.id DESC LIMIT 50");$q->execute([$rp['id']]);$out['research']['ideas']=$q->fetchAll();foreach($out['research']['ideas'] as &$idea)$idea['content']=mb_strcut($idea['content'],0,600,'UTF-8');unset($idea);$q=$db->prepare('SELECT s.id,s.url,s.title,s.domain,s.retrieved_at FROM research_sources s JOIN research_runs r ON r.id=s.run_id WHERE r.project_id=? ORDER BY s.id DESC LIMIT 12');$q->execute([$rp['id']]);$out['research']['sources']=$q->fetchAll();$q=$db->prepare('SELECT p.id,p.source_id,p.exact_text,p.fetch_scope,p.locator FROM research_passages p JOIN research_runs r ON r.id=p.run_id WHERE r.project_id=? ORDER BY p.id DESC LIMIT 12');$q->execute([$rp['id']]);$out['research']['passages']=$q->fetchAll();foreach($out['research']['passages'] as &$passage)$passage['exact_text']=mb_strcut($passage['exact_text'],0,600,'UTF-8');unset($passage);}}
         if(is_file($this->directory.'/systems.sqlite')&&!is_link($this->directory.'/systems.sqlite')&&$p['task_project_id']){require_once __DIR__.'/Systems.php';new Systems($this->directory);$s=new PDO('sqlite:'.$this->directory.'/systems.sqlite');$q=$s->prepare('SELECT DISTINCT s.name,s.risk_level,s.enabled,s.verified_at FROM systems s JOIN system_runs r ON r.system_id=s.id WHERE r.project_id=?');$q->execute([$p['task_project_id']]);$out['systems']=$q->fetchAll(PDO::FETCH_ASSOC);}
+        if($p['task_project_id']){$taskState=['tasks'=>$this->rows('SELECT id,title,criteria,status FROM tasks WHERE project_id=? ORDER BY id',[$p['task_project_id']]),'agent_outcomes'=>$this->rows('SELECT a.id,a.task_id,a.status,a.finished_at FROM agent_runs a JOIN tasks t ON t.id=a.task_id WHERE t.project_id=? ORDER BY a.id',[$p['task_project_id']])];$out['task_state_sha256']=hash('sha256',json_encode($taskState,JSON_THROW_ON_ERROR));}
+        $out['readiness']=$this->readiness($id);$out['research_state_sha256']=$this->researchState($id)['sha256'];$out['provenance']=[];
+        foreach(array_slice($this->provenance($id),0,20) as $link){$snapshot=$link['source_snapshot'];$out['provenance'][]=['item_key'=>$link['item_key'],'item_version'=>$link['item_version'],'source_kind'=>$link['source_kind'],'source_id'=>$link['source_id'],'source_sha256'=>$link['source_sha256'],'reviewed'=>$link['reviewed'],'source_current'=>$link['source_current'],'subject_current'=>$link['subject_current'],'note'=>$link['note'],'title'=>$snapshot['title'],'content'=>$link['source_current']?mb_strcut($snapshot['content'],0,600,'UTF-8'):'Source unavailable or no longer in the current linked scope.'];}
         return $out;
     }
     public function workspace(int $id): array
     {
-        $p=$this->project($id);$requests=$this->rows('SELECT id,action,status,model,estimated_usd,reserved_usd,error,created_at FROM nasa_ai_requests WHERE project_id=? ORDER BY id DESC LIMIT 15',[$id]);
+        $p=$this->project($id);$items=$this->items($id);foreach($items as &$item)if($item['kind']==='requirement'){$item['verification_supported']=$this->hasReviewedEvidence($id,$item['item_key'],$item['title'],$item['content'],$item['data']);$item['verification_confirmed']=$this->isVerifiedRequirement($id,$item);}unset($item);$requests=$this->rows('SELECT id,action,status,model,estimated_usd,reserved_usd,error,created_at FROM nasa_ai_requests WHERE project_id=? ORDER BY id DESC LIMIT 15',[$id]);
         $runs=[];if($p['linked_research_id']&&($db=$this->research())){$q=$db->prepare("SELECT id,phase FROM research_runs WHERE project_id=? AND flow_version>=2 AND status='running' AND phase IN ('exploring','verification_review') AND busy IS NULL ORDER BY id DESC LIMIT 10");$q->execute([$p['linked_research_id']]);$runs=$q->fetchAll();}
-        return ['project'=>$p,'items'=>$this->items($id),'history'=>$this->rows('SELECT id,kind,item_key,version,status,created_by,created_at,content FROM nasa_items WHERE project_id=? ORDER BY id DESC LIMIT 200',[$id]),'readiness'=>$this->readiness($id),
-            'reviews'=>$this->rows('SELECT * FROM nasa_reviews WHERE project_id=? ORDER BY id DESC LIMIT 20',[$id]),'baselines'=>$this->rows('SELECT id,title,sha256,created_at FROM nasa_baselines WHERE project_id=? ORDER BY id DESC',[$id]),'requests'=>$requests,'sources'=>$this->sources(),'map_runs'=>$runs,'archived'=>array_values(array_filter($this->items($id,true),static fn($i)=>$i['status']==='removed'))];
+        return ['project'=>$p,'items'=>$items,'history'=>$this->rows('SELECT id,kind,item_key,version,status,created_by,created_at,content FROM nasa_items WHERE project_id=? ORDER BY id DESC LIMIT 200',[$id]),'readiness'=>$this->readiness($id),
+            'reviews'=>$this->rows('SELECT * FROM nasa_reviews WHERE project_id=? ORDER BY id DESC LIMIT 20',[$id]),'baselines'=>$this->rows('SELECT id,title,sha256,created_at FROM nasa_baselines WHERE project_id=? ORDER BY id DESC LIMIT 20',[$id]),'requests'=>$requests,'proposals'=>$this->proposals($id),'baseline_deltas'=>$this->baselineDeltas($id),'baseline_restores'=>$this->baselineHistory($id),'provenance'=>$this->provenance($id),'research_choices'=>$this->researchChoices($id),'research_origins'=>$this->focusedResearchHistory($id),'sources'=>$this->sources(),'map_runs'=>$runs,'archived'=>array_values(array_filter($this->items($id,true),static fn($i)=>$i['status']==='removed'))];
     }
-    public function applyAi(int $id,int $revision,string $action,array $result): bool
+    public function applyAi(int $id,int $revision,string $action,array $result,?string $contextHash=null): bool
     {
-        return $this->transaction(function()use($id,$revision,$action,$result):bool{
-            if((int)$this->project($id)['revision']!==$revision)return false;
+        return $this->transaction(function()use($id,$revision,$action,$result,$contextHash):bool{
+            if((int)$this->project($id)['revision']!==$revision||$contextHash!==null&&!hash_equals($contextHash,hash('sha256',json_encode($this->context($id),JSON_THROW_ON_ERROR))))return false;
             if($action==='review'){$this->review($id,'ai_draft',$result);return true;}
             foreach($result['artifacts'] as $a){$old=$this->current($id,'artifact',$a['type']);$this->append($id,'artifact',$a['type'],NasaKnowledge::ARTIFACTS[$a['type']][0],$a['content'],'draft',['reference'=>NasaKnowledge::ARTIFACTS[$a['type']][2]],'ai_draft',(int)($old['version']??0));}
             foreach(['requirement'=>$result['requirements'],'risk'=>$result['risks']] as $kind=>$records){foreach($records as $r){$content=$kind==='requirement'?$r['statement']:$r['condition'];$existing=array_filter($this->items($id),static fn($i)=>$i['kind']===$kind&&mb_strtolower($i['title'])===mb_strtolower($r['title'])&&mb_strtolower($i['content'])===mb_strtolower($content));if($existing)continue;
@@ -245,6 +273,6 @@ final class NasaStore
     }
     public function export(int $id): array
     {
-        $s=$this->workspace($id);unset($s['sources']);$s['artifact_history']=$this->rows('SELECT * FROM nasa_items WHERE project_id=? ORDER BY id',[$id]);$s['ai_results']=$this->rows('SELECT * FROM nasa_ai_requests WHERE project_id=? ORDER BY id',[$id]);return ['format'=>'AIcontrol NASA Managed v1','generated_utc'=>gmdate('c'),'reference'=>['title'=>'NASA/SP-2016-6105 Rev 2','url'=>NasaKnowledge::SOURCE,'knowledge_version'=>NasaKnowledge::VERSION],'planning_only'=>true,'workspace'=>$s];
+        $s=$this->workspace($id);unset($s['sources']);$s['proposal_history']=$this->proposalHistory($id);$s['provenance_history']=$this->provenance($id,null,null,true);unset($s['research_choices']);$s['artifact_history']=$this->rows('SELECT * FROM nasa_items WHERE project_id=? ORDER BY id',[$id]);$s['ai_results']=$this->rows('SELECT * FROM nasa_ai_requests WHERE project_id=? ORDER BY id',[$id]);return ['format'=>'AIcontrol NASA Managed v1','generated_utc'=>gmdate('c'),'reference'=>['title'=>'NASA/SP-2016-6105 Rev 2','url'=>NasaKnowledge::SOURCE,'knowledge_version'=>NasaKnowledge::VERSION],'planning_only'=>true,'workspace'=>$s];
     }
 }

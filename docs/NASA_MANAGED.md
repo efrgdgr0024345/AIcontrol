@@ -43,7 +43,7 @@ reviews, explanations, phase guidance, baselines or exports.
 | Reviews | Free local readiness checks and optional bounded AI advisory reviews with strengths, gaps, severity and next actions; outdated revisions remain labelled |
 | Phase gates | Required reviewed documents or explicit phase-specific tailoring; traceable requirements in A–E; evidence in D/E; no high residual risk left open; current owner local review before advance |
 | Decisions | Options, choice/rationale, reconsideration trigger and proposed/decided state; phase/document tailoring exceptions retain reasons |
-| Configuration | Named SHA-256 planning snapshots; restore appends versions/tombstones and resets the planning phase; prior records remain retained |
+| Configuration | Current-revision local review before a named SHA-256 baseline; planning records, provenance, deterministic linked/focused research hash and available installed-code SHA; visible deltas and append-only restore with requirements reset to unverified |
 | Integration | Both source project types; explicit research link for task projects; scoped saved ideas, source metadata/passages, task/agent outcome metadata and linked Systems metadata |
 | Action proposals | Explicit click creates a normal draft task without dispatching an agent; explicit click adds an unchecked user-origin idea to an idle linked living map, never Evidence |
 | Export | Project-scoped Markdown and JSON review packages, full stored version history and retained AI outcomes; browser Print / Save PDF includes actual current document content |
@@ -94,7 +94,7 @@ only; it cannot waive PIN, CSRF, cost limits, SSH permissions or release checks.
 
 All new tables are additive in the existing private `panel.sqlite`:
 `nasa_projects`, `nasa_items`, `nasa_reviews`, `nasa_baselines`, `nasa_links`,
-`nasa_ai_requests`. The Admin inventory queries their actual schema and row counts.
+`nasa_ai_requests`, `nasa_baseline_restores`. The Admin inventory queries their actual schema and row counts.
 Child planning records cascade when their managed project is deleted. Deleting
 the corresponding source project through Admin removes its planning records too;
 another project's records remain untouched. Resetting tasks/research history alone
@@ -119,7 +119,7 @@ Official source: https://www.nasa.gov/wp-content/uploads/2018/09/nasa_systems_en
 
 Retrieved during development; PDF SHA-256:
 `8eeb4887a4dc57a23049da7dd2ed556833cf98e214b240468d987873164ff688`.
-Knowledge version: `2026-11-22.1`, in `src/NasaKnowledge.php`. References are
+Knowledge version: `2026-11-22.2`, in `src/NasaKnowledge.php`. References are
 handbook sections/appendices, avoiding confusion between printed and viewer pages.
 The PDF/full book is not shipped or required at runtime. Explanations and software
 examples are original adaptations. Future knowledge changes should update the
@@ -135,6 +135,7 @@ PHP loopback router and frozen Node dependency lock remain sufficient.
 php bin/build-ui.php
 php bin/build-manifest.php
 php tests/nasa.php
+php tests/nasa_discipline.php
 PHP_BINARY=php python3 -B -m unittest -v tests/nasa_http.py
 PHP_BINARY=php node tests/nasa_ui.cjs
 ```
@@ -158,3 +159,44 @@ incomplete exceptions need an owner update before they count. The handbook helpe
 search covers 17 process purposes/failure modes, phase entrance/success prompts,
 recursive practice, SEMP and maturity. These are software adaptations, not quoted
 NASA certification criteria; see NASA_KNOWLEDGE_PROVENANCE.md.
+
+### Configuration discipline and interface contracts
+
+A planning baseline requires a local readiness review recorded against the exact
+current NASA revision. A review may honestly contain open gaps: a baseline is a
+configuration snapshot, not a gate approval. AI advisory reviews do not satisfy
+this requirement. The ordinary form carries the expected revision; stale forms
+are rejected without creating a snapshot.
+
+The v2 baseline retains current planning records, their provenance, the local
+review ID, knowledge version, a linked/focused research content snapshot and
+SHA-256, and `AICONTROL_INSTALLED_SHA` when the installed loader supplied a valid
+40-character release SHA. Unknown code references remain null. Research reads
+are scoped and consistent; they do not reconcile timeouts, invoke a provider,
+change a map or inspect external systems. Camera state, focus timestamps,
+render-size caches, spend and worker heartbeats do not affect the research hash.
+Owner-created focused research is included only while its immutable project
+identity matches the saved origin, preventing reused numeric IDs from adding
+unrelated content. Other projects, Vault notes and worker identities are excluded.
+
+The Reviews area shows added, missing and changed planning records plus the
+baseline/current research hashes, provenance counts and available code SHAs.
+Typed restore appends versions and tombstones in one transaction, retains the
+before-restore comparison in `nasa_baseline_restores`, and resets restored
+requirements to unverified. Current research, evidence reviews, code, tasks,
+servers and billed usage remain as recorded. Old snapshots without research
+metadata remain usable and are labelled as not having captured a research hash.
+Corrupt, cross-project or structurally inconsistent snapshots are rejected.
+
+Living interface contracts are versioned `interface` records in `nasa_items`
+with stable `IF-###` keys: name, purpose, both sides, payload/schema/compatibility,
+error and recovery behaviour, authentication/authorisation, owner, and change
+review rule. The state is draft or owner-reviewed. Editing appends a version;
+archive/restore retains history, and a restored contract returns as draft. The
+structured contract complements the existing Interfaces document. No contract
+violation detection or automatic enforcement is claimed.
+
+`tests/nasa_discipline.php` covers local-review/CAS gates, scoped and stable
+research hashes, focused-source identity, comparison and legacy restoration,
+malformed snapshots, forced mid-restore rollback and versioned interfaces, with
+no provider requests.

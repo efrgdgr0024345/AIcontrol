@@ -2,6 +2,10 @@
 (() => {
   'use strict';
   const root=document.querySelector('[data-nasa-workspace]');if(!root)return;
+  const density=root.querySelector('[data-nasa-density-choice]');
+  const setDensity=value=>{root.dataset.nasaDensity=value==='practitioner'?'practitioner':'beginner';if(density)density.value=root.dataset.nasaDensity;};
+  if(!new URL(location.href).searchParams.has('density')){try{setDensity(localStorage.getItem('aicontrol-nasa-density')||root.dataset.nasaDensity);}catch{}}
+  density?.addEventListener('change',()=>{setDensity(density.value);try{localStorage.setItem('aicontrol-nasa-density',density.value);}catch{}});
   const tabs=[...root.querySelectorAll('[data-nasa-tab]')],panels=[...root.querySelectorAll('[data-nasa-panel]')];
   function openPanel(key,focus=false){
     if(!panels.some(p=>p.dataset.nasaPanel===key))return;
@@ -41,7 +45,7 @@
       if(!(response.headers.get('content-type')||'').includes('application/json'))throw Error('Session or outcome could not be verified. Refresh NASA Managed before trying again.');
       const result=await response.json();if(!response.ok)throw Error(result.error||'Planning action failed. Saved records were retained.');
       const next=new URL(result.location,location.href);if(next.origin!==location.origin)throw Error('Unexpected redirect. Refresh the workspace.');
-      const panel=form.closest('[data-nasa-panel]')?.dataset.nasaPanel;next.hash='nasa-'+(form.elements.action.value.includes('review')?'reviews':['nasa_generate','nasa_template'].includes(form.elements.action.value)?'artifacts':panel||'overview');
+      const panel=form.closest('[data-nasa-panel]')?.dataset.nasaPanel,action=form.elements.action.value;let destination=action.includes('review')?'reviews':['nasa_generate','nasa_template','nasa_promote_research'].includes(action)?'artifacts':panel||'overview';if(action==='nasa_collaborate'||action.startsWith('nasa_proposal_')||action==='nasa_generate'&&form.elements.artifact?.value==='missing')destination='overview';if(next.searchParams.get('view')==='nasa')next.hash='nasa-'+destination;
       if(next.pathname===location.pathname&&next.search===location.search){history.replaceState(null,'',next);location.reload();}else location.assign(next);
     }catch(error){uncertain=form.hasAttribute('data-nasa-ai');if(status){status.textContent=error.message+(uncertain?' Inspect AI request history before sending another request.':'');status.setAttribute('role','alert');}if(uncertain)for(const button of root.querySelectorAll('[data-nasa-ai] button'))button.disabled=true;}
     finally{busy=false;form.removeAttribute('aria-busy');if(!uncertain)for(const b of disabled)b.disabled=false;}

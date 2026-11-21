@@ -51,6 +51,16 @@ final class Investigation
             token_input INTEGER, token_output INTEGER);
             CREATE INDEX IF NOT EXISTS research_run_nodes ON research_nodes(run_id,id);
             CREATE INDEX IF NOT EXISTS research_request_window ON research_requests(created_at);');
+        $projectColumns=array_column($db->query('PRAGMA table_info(research_projects)')->fetchAll(PDO::FETCH_ASSOC),'name');
+        if(!in_array('identity_token',$projectColumns,true))$db->exec("ALTER TABLE research_projects ADD COLUMN identity_token TEXT NOT NULL DEFAULT ''");
+        $db->exec("UPDATE research_projects SET identity_token=lower(hex(randomblob(16))) WHERE identity_token='';
+            CREATE UNIQUE INDEX IF NOT EXISTS research_project_identity ON research_projects(identity_token) WHERE identity_token<>'';
+            CREATE TRIGGER IF NOT EXISTS research_project_new_identity AFTER INSERT ON research_projects WHEN NEW.identity_token='' BEGIN UPDATE research_projects SET identity_token=lower(hex(randomblob(16))) WHERE id=NEW.id; END;");
+        $runColumns=array_column($db->query('PRAGMA table_info(research_runs)')->fetchAll(PDO::FETCH_ASSOC),'name');
+        if(!in_array('identity_token',$runColumns,true))$db->exec("ALTER TABLE research_runs ADD COLUMN identity_token TEXT NOT NULL DEFAULT ''");
+        $db->exec("UPDATE research_runs SET identity_token=lower(hex(randomblob(16))) WHERE identity_token='';
+            CREATE UNIQUE INDEX IF NOT EXISTS research_run_identity ON research_runs(identity_token) WHERE identity_token<>'';
+            CREATE TRIGGER IF NOT EXISTS research_run_new_identity AFTER INSERT ON research_runs WHEN NEW.identity_token='' BEGIN UPDATE research_runs SET identity_token=lower(hex(randomblob(16))) WHERE id=NEW.id; END;");
         self::migrateLedger($db);
         self::migrateFlow($db);
         self::migrateExploration($db);

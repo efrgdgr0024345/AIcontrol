@@ -835,3 +835,59 @@ legacy tailoring, readiness/version/export; Chromium tailoring, process search,
 existing first-day workflow and accessibility; full required regression suite.
 No new live-provider success is claimed: the unchanged environment binding was
 previously rejected as expired_secret_key. No deployment changes credentials.
+
+## NASA workspace evolution — integrated slices 2–5 (2026-11-22)
+
+Research ideas, sources, captured passages and ledger records can now seed
+versioned NASA drafts or attach as immutable provenance. The map inspector and
+native node tree link into the promotion form. Scope comes from the linked
+research project or an explicit owner-created focused project, with immutable
+project/run identities protecting Admin reset and numeric-ID reuse. Gaps and
+open high risks can seed a linked idle run or create focused research. A new
+focused project prepares a model-only run when a connection and admission allow;
+otherwise it remains ready for explicit Start. No Evidence stage starts here.
+
+Requirements need a declared method, suitable owner-reviewed linked evidence,
+and an explicit confirmation POST for the exact subject/method to become
+verified. The saved owner-confirmation marker is hash-bound. Legacy verified
+rows without this confirmation remain historical claims, not effective verified
+readiness. Edits and baseline restores remove effective verification. Model
+ideas, citation cards and model claim verdicts cannot become verification evidence.
+
+The tool-free SE collaborator proposes one primary move, 2–3 alternatives,
+assumptions/unknowns and an optional exact-scope 1–3-document bundle. Missing
+artifacts use these bundles. Proposals, edits and owner dispositions are append-only;
+nothing materialises until explicit acceptance, which writes all members in one
+transaction as draft/unverified/open. Existing per-document generation/review URLs
+remain. All modes share eight workspace calls/hour and $1/source-project/rolling
+day, including unknown-outcome reservations and no automatic retry.
+
+Freshness includes full selected research/task fingerprints, beyond the bounded
+prompt summaries. Planning decisions acquire SQLite write reservations on panel
+and research storage together before checking context and writing drafts,
+verification or baselines. Concurrency tests prove stale contexts supersede and
+mid-bundle failures roll back. An unchecked idea added to an existing research
+run uses the research engine's own transaction/idempotence key; an interrupted
+origin write is safely repairable on retry and never approves planning work.
+
+Baselines require an explicit local review of the current revision and capture
+planning, provenance, deterministic linked/focused research hashes and the installed
+release SHA when available. Comparisons and restore audit show planning/research
+changes; restores never roll research/code/servers back. Current baselines are
+bounded to the latest 20 in the interactive view; all snapshots remain stored.
+Structured IF records version both sides, payload/errors/auth, owner and change rule.
+
+Beginner guidance remains. Practitioner mode adds phase entrance/success and
+recursive detail and works through a native GET form. Current posture combines
+phase, risk, readiness, top-three blockers and one next move. SE Context Pack
+JSON/Markdown exports current scoped planning/provenance without full histories;
+excerpts/omissions are explicit. Full review-package and print/PDF exports remain.
+See NASA_MANAGED.md, NASA_FIRST_DAY_CHECKS.md and NASA_EVOLUTION_RELEASE.md.
+
+Validation adds nasa_integration.php, nasa_collaborator.php, nasa_discipline.php,
+nasa_context_pack.php and nasa_atomicity.php to required CI, alongside nasa.php,
+eight real PHP/SQLite HTTP cases and Chromium first-day/accessibility/no-JS flows.
+The environment plugin confirms the runtime is connected/running. AI responses in
+regression tests are synthetic; the unchanged live key previously returned
+expired_secret_key, so no successful new live-model run or cPanel activation is
+claimed. PIN, Vault keys, signing identity, provider limits and update checks remain.

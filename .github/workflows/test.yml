@@ -30,6 +30,11 @@ jobs:
           php tests/agent_adapter.php
           php tests/workspace.php
           php tests/nasa.php
+          php tests/nasa_integration.php
+          php tests/nasa_collaborator.php
+          php tests/nasa_discipline.php
+          php tests/nasa_context_pack.php
+          php tests/nasa_atomicity.php
           python3 -B -m unittest -v tests/nasa_http.py
           php tests/systems.php
           php tests/system_setup.php

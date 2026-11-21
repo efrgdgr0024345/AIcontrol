@@ -322,3 +322,36 @@ These support the security foundations; the particular architecture and limits a
 - OWASP, [Transaction Authorization](https://cheatsheetseries.owasp.org/cheatsheets/Transaction_Authorization_Cheat_Sheet.html): significant action details, server-side validation, unique/time-limited authorization and execution checks.
 
 **Team instruction:** implement the server-custody and independent-authorization boundaries before presenting AIcontrol as safe for use through an untrusted laptop. Build the smallest verifiable coding workflow, make its history useful, then expand the supported systems.
+
+## 15. NASA planning workspace evolution (2026-11-22)
+
+The owner’s later NASA evolution plan extends the separate local NASA Managed
+workspace; it does not declare the broader production agent architecture in
+this handover complete. The controlling implementation notes are PROJECT_STATE.md,
+NASA_MANAGED.md and NASA_KNOWLEDGE_PROVENANCE.md. The workspace remains an
+original software adaptation of NASA/SP-2016-6105 Rev 2, not NASA affiliation,
+certification or independently observed software assurance.
+
+The knowledge foundation now exposes the actual eight §3.11.2 tailoring criteria,
+software entrance/success prompts, all 17 process purposes/failure modes, and
+recursive/SEMP/maturity guidance. Structured tailoring keeps criterion, residual
+risk and revisit rationale as immutable versions and exposes the applied version
+in readiness and review packages. Historical incomplete exceptions remain saved
+but need an owner update to count.
+
+Configuration discipline requires an explicit local review at the current NASA
+revision before a baseline. Snapshots retain planning/provenance, a deterministic
+scoped linked/focused research hash and the installed code SHA when available.
+Comparison and restore preserve a before-restore delta; restore appends planning
+versions and resets requirement verification without modifying research, evidence
+reviews, code, server state, tasks or usage. Structured interface contracts use
+versioned `IF-###` records with both sides, payload/errors/authentication, owner
+and change rule. Old baselines remain usable with missing research metadata
+labelled explicitly.
+
+AI is a tool-free draft proposer only. It cannot approve records, verify
+requirements, create baselines, advance phases or execute a proposed task.
+Owner authentication, CSRF, append-only history, ordinary no-JavaScript forms
+and bounded provider admission remain hard boundaries. Report synthetic provider
+checks separately from live model/SSH/host evidence, and verify the required
+planning-panel check on the exact published release SHA.
