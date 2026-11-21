@@ -22,7 +22,8 @@ final class NasaActions
                     case 'nasa_archive_record':case 'nasa_restore_record':$s->archiveRecord($id,self::input('kind'),self::input('item_key'),$version,$action==='nasa_restore_record');break;
                     case 'nasa_save_record':
                         $kind=self::input('kind');$data=[];
-                        foreach(['source','method','evidence','owner','mitigation','requirement','artifact','units','direction','alternatives','revisit','phase'] as $key)$data[$key]=self::input($key);
+                        foreach(['source','method','evidence','owner','mitigation','requirement','artifact','units','direction','alternatives','revisit','phase','residual_risk'] as $key)$data[$key]=self::input($key);
+                        if($kind==='tailoring'){$criteria=$_POST['criteria']??[];if(!is_array($criteria)||!array_is_list($criteria)||count($criteria)>8||array_filter($criteria,static fn($v)=>!is_string($v)))throw new \RuntimeException('Choose valid tailoring criteria.');$data['criteria']=$criteria;}
                         foreach(['likelihood','consequence','residual_likelihood','residual_consequence'] as $key)if(isset($_POST[$key]))$data[$key]=NasaStore::id(self::input($key));
                         foreach(['target','observed'] as $key)if(isset($_POST[$key])){$v=filter_var(self::input($key),FILTER_VALIDATE_FLOAT);if($v===false)throw new \RuntimeException('Use a finite numeric measurement.');$data[$key]=$v;}
                         $s->saveRecord($id,$kind,self::input('item_key'),self::input('title'),self::input('content'),self::input('status'),$data,$version);break;

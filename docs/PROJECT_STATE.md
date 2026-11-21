@@ -814,3 +814,24 @@ private worker tokens, vault/config/session files are not exported. Tests cover
 scope, read-only pending/stale state, malformed data, no-JS/subfolder downloads,
 source/node IDs and parity with AIcontrolMap.project. This adds diagnosis tools;
 it does not by itself establish the cause of a hosted map disconnect.
+
+## NASA workspace evolution — Slice 1 (2026-11-22)
+
+Knowledge version 2026-11-22.2 adds the actual eight tailoring criteria from
+§3.11.2, software-adapted phase entrance/success prompts, the purpose and common
+failure of all 17 processes, and recursive/SEMP/product-maturity guidance. See
+NASA_KNOWLEDGE_PROVENANCE.md for the verified handbook source and adaptation scope.
+The searchable helper and tool-free AI context include this guidance.
+
+Tailoring is an append-only structured record: phase/artifact, criterion IDs,
+rationale, residual risk, and revisit trigger. Current readiness and saved local
+review packages retain the exact exception version and rationale. Historical
+exceptions remain readable but must gain the required fields before counting as
+a current waiver. JSON/Markdown exports include the fields and review snapshot.
+All ordinary POST forms remain usable without JavaScript.
+
+Validation: PHP NASA storage/provider boundaries; HTTP no-JS form validation,
+legacy tailoring, readiness/version/export; Chromium tailoring, process search,
+existing first-day workflow and accessibility; full required regression suite.
+No new live-provider success is claimed: the unchanged environment binding was
+previously rejected as expired_secret_key. No deployment changes credentials.

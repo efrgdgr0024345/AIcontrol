@@ -1,5 +1,5 @@
 """First-day manual workflow and security boundaries against real PHP, without a provider key."""
-import contextlib, http.cookiejar, json, os, pathlib, re, socket, subprocess, tempfile, time, unittest, urllib.error, urllib.parse, urllib.request
+import contextlib, http.cookiejar, json, os, pathlib, re, socket, sqlite3, subprocess, tempfile, time, unittest, urllib.error, urllib.parse, urllib.request
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 PHP=os.environ.get('PHP_BINARY','php')
 class NasaHttp(unittest.TestCase):
@@ -13,7 +13,7 @@ class NasaHttp(unittest.TestCase):
    server=subprocess.Popen([PHP,'-S',f'127.0.0.1:{port}','bin/dev-router.php'],cwd=ROOT,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);url=f'http://127.0.0.1:{port}/loader.php';client=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
    def request(fields=None,query='?view=nasa&source=project:1'):
     try:
-     with client.open(url+query,data=urllib.parse.urlencode(fields).encode() if fields is not None else None,timeout=10) as r:return r.status,r.headers,r.read().decode()
+     with client.open(url+query,data=urllib.parse.urlencode(fields,doseq=True).encode() if fields is not None else None,timeout=10) as r:return r.status,r.headers,r.read().decode()
     except urllib.error.HTTPError as e:return e.code,e.headers,e.read().decode()
    try:
     for _ in range(80):
@@ -41,6 +41,36 @@ class NasaHttp(unittest.TestCase):
    self.assertEqual(request(dict(csrf=csrf,action='nasa_export',nasa_project='1 OR 1=1',format='json'))[0],422)
    self.assertEqual(action('nasa_baseline',title='First-day baseline')[0],200)
    for name,value in protected.items():self.assertEqual((home/name).read_bytes(),value)
+ def test_structured_tailoring_native_form_review_and_export(self):
+  with self.workspace() as (home,csrf,request):
+   code,_,page=request(dict(csrf=csrf,action='nasa_start',source_kind='project',source_id='1'));self.assertEqual(code,200)
+   self.assertIn('name="criteria[]"',page);self.assertIn('Type of mission',page);self.assertIn('Launch constraints',page)
+   def action(name,**fields):return request(dict(csrf=csrf,action=name,nasa_project='1',**fields))
+   fields=dict(kind='tailoring',item_key='',version='0',title='Private pilot planning',content='Use a compact operating story for the private pilot.',status='recorded',phase='pre',artifact='conops',residual_risk='The recovery journey has not yet been observed by a second user.',revisit='Before inviting a second user, or 2026-12-01.')
+   for criteria in [[],['unknown'],['mission_type','unknown']]:
+    with self.subTest(criteria=criteria):self.assertEqual(action('nasa_save_record',**fields,**{'criteria[]':criteria})[0],422)
+   self.assertEqual(action('nasa_save_record',**fields,**{'criteria[][]':['mission_type']})[0],422)
+   self.assertEqual(action('nasa_save_record',**fields,**{'criteria[named]':'mission_type'})[0],422)
+   self.assertEqual(action('nasa_save_record',**{**fields,'residual_risk':''},**{'criteria[]':['mission_type']})[0],422)
+   self.assertEqual(action('nasa_save_record',**{**fields,'revisit':''},**{'criteria[]':['mission_type']})[0],422)
+   code,_,page=action('nasa_save_record',**fields,**{'criteria[]':['mission_type','complexity']});self.assertEqual(code,200);self.assertIn('Tailored',page);self.assertIn(fields['residual_risk'],page);self.assertIn(fields['revisit'],page)
+   code,_,text=action('nasa_export',format='json');self.assertEqual(code,200);bundle=json.loads(text)
+   records=[record for record in bundle['workspace']['items'] if record['kind']=='tailoring'];self.assertEqual(len(records),1);record=records[0]
+   self.assertEqual(record['data']['criteria'],['mission_type','complexity']);self.assertEqual(record['data']['residual_risk'],fields['residual_risk']);self.assertEqual(record['data']['revisit'],fields['revisit']);self.assertEqual(record['data']['knowledge_version'],bundle['reference']['knowledge_version'])
+   check=next(check for check in bundle['workspace']['readiness']['checks'] if check['key']=='conops');self.assertTrue(check['passed']);self.assertTrue(check['waived']);self.assertEqual(check['tailoring']['version'],1)
+   self.assertEqual(action('nasa_review')[0],200);code,_,text=action('nasa_export',format='json');self.assertEqual(code,200);bundle=json.loads(text);report=json.loads(bundle['workspace']['reviews'][0]['report_json']);check=next(check for check in report['recorded_checks'] if check['key']=='conops');self.assertEqual(check['tailoring']['residual_risk'],fields['residual_risk']);self.assertEqual(check['tailoring']['revisit'],fields['revisit'])
+   updated={**fields,'item_key':record['item_key'],'version':'1','residual_risk':'The pilot restore path remains unobserved on the target host.'}
+   self.assertEqual(action('nasa_save_record',**updated,**{'criteria[]':['complexity']})[0],200);self.assertEqual(action('nasa_save_record',**updated,**{'criteria[]':['complexity']})[0],422)
+   code,headers,text=action('nasa_export',format='markdown');self.assertEqual(code,200);self.assertIn('text/markdown',headers['Content-Type']);self.assertIn(updated['residual_risk'],text);self.assertIn(fields['revisit'],text);self.assertIn('complexity',text)
+   code,_,text=action('nasa_export',format='json');self.assertEqual(code,200);bundle=json.loads(text);history=[entry for entry in bundle['workspace']['artifact_history'] if entry['kind']=='tailoring'];self.assertEqual([entry['version'] for entry in history],[1,2]);self.assertEqual(json.loads(history[0]['data_json'])['residual_risk'],fields['residual_risk']);self.assertFalse(bundle['workspace']['ai_results'])
+   with sqlite3.connect(home/'panel.sqlite') as database:self.assertEqual(database.execute('SELECT COUNT(*) FROM nasa_ai_requests').fetchone()[0],0)
+ def test_legacy_tailoring_is_readable_without_silently_waiving_readiness(self):
+  with self.workspace() as (home,csrf,request):
+   self.assertEqual(request(dict(csrf=csrf,action='nasa_start',source_kind='project',source_id='1'))[0],200)
+   with sqlite3.connect(home/'panel.sqlite') as database:
+    database.execute('INSERT INTO nasa_items(project_id,kind,item_key,version,title,content,status,data_json,created_by,created_at)VALUES(?,?,?,?,?,?,?,?,?,?)',(1,'tailoring','TAIL-001',1,'Earlier pilot exception','Retain the earlier rationale while its residual risk is completed.','recorded',json.dumps({'phase':'pre','artifact':'conops'}),'owner',int(time.time())))
+   code,_,page=request(query='?view=nasa&nasa_project=1');self.assertEqual(code,200);self.assertIn('Earlier pilot exception',page);self.assertIn('Retain the earlier rationale',page)
+   code,_,text=request(dict(csrf=csrf,action='nasa_export',nasa_project='1',format='json'));self.assertEqual(code,200);bundle=json.loads(text);check=next(check for check in bundle['workspace']['readiness']['checks'] if check['key']=='conops');self.assertFalse(check['waived']);self.assertFalse(check['passed']);record=next(record for record in bundle['workspace']['items'] if record['kind']=='tailoring');self.assertEqual(record['version'],1);self.assertEqual(record['data'],{'phase':'pre','artifact':'conops'})
  def test_public_testing_cannot_read_or_write_engineering_state(self):
   with self.workspace('testing') as (home,csrf,request):
    self.assertEqual(request()[0],403)

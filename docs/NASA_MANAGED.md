@@ -147,3 +147,14 @@ XSS-safe rendering, task/map proposals, light/dark mobile/desktop axe, keyboard,
 no-JS forms, scoped downloads and actual Chromium PDF generation. Model replies
 are explicitly synthetic in these tests. A live-provider check must be reported
 separately, with any credential/provider blocker left explicit.
+
+### Structured tailoring and process mechanics
+
+Each new exception requires one or more of the eight handbook §3.11.2 criteria,
+a residual-risk explanation and a revisit trigger/date/condition, alongside the
+phase, artifact and rationale. Edit creates another immutable version. Readiness
+shows the applied exception and saved local review packages retain it. Historical
+incomplete exceptions need an owner update before they count. The handbook helper
+search covers 17 process purposes/failure modes, phase entrance/success prompts,
+recursive practice, SEMP and maturity. These are software adaptations, not quoted
+NASA certification criteria; see NASA_KNOWLEDGE_PROVENANCE.md.

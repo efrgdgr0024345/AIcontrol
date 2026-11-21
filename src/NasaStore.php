@@ -121,7 +121,9 @@ final class NasaStore
             if(!in_array($status,['proposed','decided'],true))throw new RuntimeException('Choose a decision state.');$data=['alternatives'=>$need('alternatives'),'revisit'=>$need('revisit',1000)];
         }elseif($kind==='tailoring'){
             if($status!=='recorded'||!isset(NasaKnowledge::phases()[$d['phase']??''])||!isset(NasaKnowledge::ARTIFACTS[$d['artifact']??'']))throw new RuntimeException('Choose a phase and artifact to tailor.');
-            $data=['phase'=>$d['phase'],'artifact'=>$d['artifact']];
+            $criteria=$d['criteria']??[];
+            if(!is_array($criteria)||!array_is_list($criteria)||!$criteria||count($criteria)>8||array_filter($criteria,static fn($v)=>!is_string($v))||array_diff($criteria,array_keys(NasaKnowledge::tailoringCriteria())))throw new RuntimeException('Choose at least one handbook tailoring criterion.');
+            $data=['phase'=>$d['phase'],'artifact'=>$d['artifact'],'criteria'=>array_values(array_unique($criteria)),'residual_risk'=>$need('residual_risk'),'revisit'=>$need('revisit',1000),'knowledge_version'=>NasaKnowledge::VERSION];
         }else throw new RuntimeException('Choose a known engineering record type.');
         return $data;
     }
@@ -153,19 +155,26 @@ final class NasaStore
     public function readiness(int $id,?string $phase=null): array
     {
         $p=$this->project($id);$phase??=$p['phase'];$spec=NasaKnowledge::phases()[$phase]??throw new RuntimeException('Choose a known phase.');$items=$this->items($id);$docs=[];$waivers=[];$req=[];$risks=[];
-        foreach($items as $i){if($i['kind']==='artifact')$docs[$i['item_key']]=$i;if($i['kind']==='tailoring'&&$i['data']['phase']===$phase)$waivers[$i['data']['artifact']]=$i;if($i['kind']==='requirement')$req[]=$i;if($i['kind']==='risk')$risks[]=$i;}
+        foreach($items as $i){if($i['kind']==='artifact')$docs[$i['item_key']]=$i;if($i['kind']==='tailoring'&&($i['data']['phase']??'')===$phase&&self::completeTailoring($i['data']))$waivers[$i['data']['artifact']]=$i;if($i['kind']==='requirement')$req[]=$i;if($i['kind']==='risk')$risks[]=$i;}
         $checks=[];foreach($spec[4] as $type){$doc=$docs[$type]??null;$waiver=$waivers[$type]??null;$checks[]=['key'=>$type,'title'=>NasaKnowledge::ARTIFACTS[$type][0],'passed'=>($doc&&in_array($doc['status'],['reviewed','baseline'],true))||!!$waiver,'waived'=>!!$waiver,'detail'=>$waiver?'Tailored: '.$waiver['content']:($doc?'Current status: '.$doc['status']:'No document saved.')];}
         if(in_array($phase,['A','B','C','D','E'],true))$checks[]=['key'=>'requirements','title'=>'Traceable, testable requirements','passed'=>isset($waivers['requirements'])||count($req)>0&&!array_filter($req,static fn($r)=>self::requirementWarnings($r['content'])!==[]),'waived'=>isset($waivers['requirements']),'detail'=>'Use the matrix: record the need, an observable shall statement and its verification method.'];
         if(in_array($phase,['D','E'],true))$checks[]=['key'=>'verification','title'=>'Recorded requirement evidence','passed'=>isset($waivers['verification'])||count($req)>0&&!array_filter($req,static fn($r)=>$r['status']!=='verified'||$r['data']['evidence']===''),'waived'=>isset($waivers['verification']),'detail'=>'Owner-recorded evidence is needed for every active requirement; this does not run tests.'];
         $high=array_values(array_filter($risks,static fn($r)=>$r['status']==='open'&&$r['data']['residual_likelihood']*$r['data']['residual_consequence']>=15));
         $checks[]=['key'=>'risks','title'=>'High residual risks have a recorded response','passed'=>!$high,'waived'=>false,'detail'=>$high?count($high).' high risks remain open. Mitigate or explicitly accept them with a rationale.':'No high residual risk is currently recorded as open. This is not proof all risks were found.'];
+        foreach($checks as &$check)if(isset($waivers[$check['key']])){$w=$waivers[$check['key']];$check['tailoring']=['item_key'=>$w['item_key'],'version'=>$w['version'],'rationale'=>$w['content']]+$w['data'];$check['detail']='Tailored — see rationale. '.$w['content'];}unset($check);
         $passed=count(array_filter($checks,static fn($c)=>$c['passed']));return ['checks'=>$checks,'passed'=>$passed,'total'=>count($checks),'percent'=>(int)round(100*$passed/max(1,count($checks))),'ready'=>$passed===count($checks),'phase'=>$phase];
+    }
+    public static function completeTailoring(array $data): bool
+    {
+        $criteria=$data['criteria']??null;
+        return is_array($criteria)&&array_is_list($criteria)&&count($criteria)>0&&count($criteria)<=8&&!array_filter($criteria,static fn($v)=>!is_string($v))&&!array_diff($criteria,array_keys(NasaKnowledge::tailoringCriteria()))&&is_string($data['residual_risk']??null)&&trim($data['residual_risk'])!==''&&is_string($data['revisit']??null)&&trim($data['revisit'])!=='';
     }
     public function review(int $id,string $by='local',?array $ai=null): int
     {
         $p=$this->project($id);$ready=$this->readiness($id);$gaps=[];
         foreach($ready['checks'] as $c)if(!$c['passed'])$gaps[]=['severity'=>$c['key']==='risks'?'high':'medium','title'=>$c['title'],'detail'=>$c['detail'],'artifact'=>$c['key']];
         $report=$ai??['strengths'=>[$ready['passed'].' of '.$ready['total'].' local checks recorded.'],'gaps'=>$gaps,'next_actions'=>array_map(static fn($g)=>'Address: '.$g['title'],$gaps),'summary'=>$ready['ready']?'Recorded readiness checks are complete. Review assumptions before advancing.':'Start with the first gap. Draft, inspect and review one useful artifact at a time.'];
+        $report['recorded_checks']=$ready['checks'];$report['knowledge_version']=NasaKnowledge::VERSION;
         $this->execute('INSERT INTO nasa_reviews(project_id,revision,review_type,created_by,report_json,created_at)VALUES(?,?,?,?,?,?)',[$id,$p['revision'],NasaKnowledge::phases()[$p['phase']][5],$by,json_encode($report,JSON_THROW_ON_ERROR),time()]);return (int)$this->db->lastInsertId();
     }
     public function finding(int $project,int $review,int $index): array
