@@ -130,3 +130,13 @@ automatic model-only growth defaults to five rounds, accepts 1–20, dispatches
 sequentially and pauses on user interruption/errors/limits. It uses the existing
 research API, model, spend cap, rate limit and flow-2 permissions. No new daemon,
 provider allowance, database field or automatic Evidence stage is introduced.
+
+NASA Managed defaults (2026-11-22): owner-only planning for explicitly selected
+task/research projects, additive nasa_* tables in panel.sqlite, original versioned
+handbook guidance, manual use without an API key, and tool-free optional drafts
+using the existing server model/key. Separate NASA admission is eight calls per
+workspace/hour and $1 estimated plus reserved risk per source project/rolling day;
+6,000 output tokens, 120,000 input JSON bytes, 45-second provider timeout, shared
+ProviderGate and no automatic retries. AI output is always a draft. Phase gates
+are local planning guidance and cannot grant execution/deployment permissions.
+See NASA_MANAGED.md for integration, snapshot, export and cleanup semantics.

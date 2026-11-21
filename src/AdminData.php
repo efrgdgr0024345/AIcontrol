@@ -44,6 +44,16 @@ final class AdminData
         self::exec($db,'DELETE FROM main.agent_runs WHERE task_id IN (SELECT id FROM main.tasks WHERE '.$condition.')',$params);
         self::exec($db,'DELETE FROM main.events WHERE task_id IN (SELECT id FROM main.tasks WHERE '.$condition.')',$params);
     }
+    private static function deleteEngineering(PDO $db,?string $kind=null,?int $id=null): void
+    {
+        if(!self::rows($db,"SELECT name FROM main.sqlite_master WHERE type='table' AND name='nasa_projects'"))return;
+        $where=$kind===null?'':' WHERE source_kind=? AND source_id=?';$args=$kind===null?[]:[$kind,$id];
+        // Keep request counters/reservations for abuse resistance, remove retained project output.
+        self::exec($db,'UPDATE main.nasa_ai_requests SET result_json=NULL,error=NULL'.$where,$args);
+        if($kind==='research')self::exec($db,'UPDATE main.nasa_projects SET linked_research_id=NULL,revision=revision+1 WHERE linked_research_id=?',[$id]);
+        if($kind==='project')self::exec($db,'UPDATE main.nasa_projects SET task_project_id=NULL,revision=revision+1 WHERE task_project_id=?',[$id]);
+        self::exec($db,'DELETE FROM main.nasa_projects'.$where,$args);
+    }
     public function change(string $operation,int $id,string $confirmation): void
     {
         $expected=self::token($operation,$id);
@@ -53,29 +63,33 @@ final class AdminData
             if($operation==='clear_diagnostics'){$this->clearLog();}
             elseif($operation==='clear_suggestions'){$this->clearSuggestions();}
             else {
-                $db=$this->connect('panel.sqlite');$query=$db->prepare('ATTACH DATABASE ? AS research');$query->execute([$this->directory.'/research.sqlite']);$db->exec('BEGIN IMMEDIATE');
+                $db=$this->connect('panel.sqlite');$query=$db->prepare('ATTACH DATABASE ? AS research');$query->execute([$this->directory.'/research.sqlite']);
+                $hasSystems=is_file($this->directory.'/systems.sqlite');if(is_link($this->directory.'/systems.sqlite'))throw new RuntimeException('A managed database is unavailable.');
+                if($hasSystems){$query=$db->prepare('ATTACH DATABASE ? AS systems');$query->execute([$this->directory.'/systems.sqlite']);}$db->exec('BEGIN IMMEDIATE');
                 try {
                     if(in_array($operation,['delete_research_project','reset_research_project','clear_research_chat'],true)){
                         self::requireRow($db,'SELECT id FROM research.research_projects WHERE id=?',$id);
                         if($operation!=='clear_research_chat')self::deleteRuns($db,'project_id=?',[$id]);
                         self::exec($db,'DELETE FROM research.research_messages WHERE project_id=?',[$id]);
-                        if($operation==='delete_research_project')self::exec($db,'DELETE FROM research.research_projects WHERE id=?',[$id]);
+                        if($operation==='delete_research_project'){self::deleteEngineering($db,'research',$id);self::exec($db,'DELETE FROM research.research_projects WHERE id=?',[$id]);}
                     } elseif($operation==='delete_research_run'){
                         self::requireRow($db,'SELECT id FROM research.research_runs WHERE id=?',$id);self::deleteRuns($db,'id=?',[$id]);
                     } elseif(in_array($operation,['delete_project','reset_project'],true)){
                         self::requireRow($db,'SELECT id FROM main.projects WHERE id=?',$id);self::taskHistory($db,'project_id=?',[$id]);
                         self::exec($db,'DELETE FROM main.events WHERE project_id=?',[$id]);self::exec($db,'DELETE FROM main.tasks WHERE project_id=?',[$id]);
-                        if($operation==='delete_project')self::exec($db,'DELETE FROM main.projects WHERE id=?',[$id]);
+                        if($operation==='delete_project'){self::deleteEngineering($db,'project',$id);if($hasSystems)self::exec($db,'UPDATE systems.system_runs SET project_id=NULL WHERE project_id=?',[$id]);self::exec($db,'DELETE FROM main.projects WHERE id=?',[$id]);}
                     } elseif(in_array($operation,['delete_task','reset_task'],true)){
                         self::requireRow($db,'SELECT id FROM main.tasks WHERE id=?',$id);self::taskHistory($db,'id=?',[$id]);
                         if($operation==='delete_task')self::exec($db,'DELETE FROM main.tasks WHERE id=?',[$id]);
                         else self::exec($db,"UPDATE main.tasks SET status='draft',evidence='' WHERE id=?",[$id]);
                     } elseif($operation==='clear_activity'){$db->exec('DELETE FROM main.events');}
                     elseif($operation==='reset_workspace'){
+                        self::deleteEngineering($db);
+                        if($hasSystems)$db->exec('UPDATE systems.system_runs SET project_id=NULL');
                         self::deleteRuns($db,'');$db->exec('DELETE FROM research.research_messages; DELETE FROM research.research_projects; DELETE FROM main.agent_runs; DELETE FROM main.events; DELETE FROM main.tasks; DELETE FROM main.projects');
                     }
-                    // Check both attached databases before committing any destructive change.
-                    if(self::rows($db,'PRAGMA main.foreign_key_check')||self::rows($db,'PRAGMA research.foreign_key_check'))throw new RuntimeException('Database relationships require repair; no data was changed.');
+                    // Check each managed database before committing a destructive change.
+                    if(self::rows($db,'PRAGMA main.foreign_key_check')||self::rows($db,'PRAGMA research.foreign_key_check')||$hasSystems&&self::rows($db,'PRAGMA systems.foreign_key_check'))throw new RuntimeException('Database relationships require repair; no data was changed.');
                     $db->exec('COMMIT');
                 } catch(\Throwable $e){$db->exec('ROLLBACK');throw $e;}
             }
@@ -109,7 +123,7 @@ final class AdminData
             'database_setup'=>'Embedded SQLite through PDO; no MySQL server is used by this application.',
             'php'=>['version'=>PHP_VERSION,'sapi'=>PHP_SAPI,'os_family'=>PHP_OS_FAMILY,'ini_file'=>php_ini_loaded_file()?:null,'additional_ini_files'=>php_ini_scanned_files()?:null,'error_reporting_mask'=>error_reporting(),'timezone'=>date_default_timezone_get(),'pdo_drivers'=>PDO::getAvailableDrivers(),'memory_used_bytes'=>memory_get_usage(true),'settings'=>$settings,'extensions'=>$extensions],
             'databases'=>[],'private_files'=>[]];
-        $databases=['panel.sqlite'=>'Task projects, tasks, agent outputs, activity and login throttling','research.sqlite'=>'Research projects, conversations, investigations, evidence ledger and usage'];
+        $databases=['panel.sqlite'=>'Task projects, tasks, agent outputs, activity, login throttling and NASA Managed engineering records','research.sqlite'=>'Research projects, conversations, investigations, evidence ledger and usage'];
         if(file_exists($this->directory.'/systems.sqlite'))$databases['systems.sqlite']='Linux systems, pinned SSH identities, agent tasks and command results; credentials are encrypted in the vault';
         foreach($databases as $file=>$purpose){
             $db=$this->connect($file);$db->exec('PRAGMA query_only=ON');$list=self::rows($db,'PRAGMA database_list');$path=$list[0]['file'];$tables=[];

@@ -62,8 +62,9 @@ final class PanelView
 
     public static function render(array $data, string $view, string $csrf, string $error, bool $passwordMode, array $config, bool $authenticated): void
     {
-        $views = ['overview' => ['Overview', 'grid'], 'research' => ['Research projects', 'search'], 'admin' => ['Admin', 'lock'], 'projects' => ['Projects & tasks', 'folder'], 'runs' => ['Agent runs', 'robot'], 'systems' => ['Systems', 'plug'], 'history' => ['Activity', 'clock']];
+        $views = ['overview' => ['Overview', 'grid'], 'research' => ['Research projects', 'search'],'nasa'=>['NASA Managed','grid'], 'admin' => ['Admin', 'lock'], 'projects' => ['Projects & tasks', 'folder'], 'runs' => ['Agent runs', 'robot'], 'systems' => ['Systems', 'plug'], 'history' => ['Activity', 'clock']];
         $subtitle = [
+            'nasa'=>'See the next step. Build a clear, testable project.',
             'admin' => 'Connections, diagnostics and application updates.',
             'research' => 'Explore ideas, check sources, and keep the conversation with the project.',
             'overview' => 'A clear view of your projects, tasks, and next steps.',
@@ -108,7 +109,7 @@ final class PanelView
             }
             echo '</div>';
             match ($view) {
-                'admin' => WorkspaceView::admin($data['vault'], $csrf), 'research' => WorkspaceView::research($data['research'], $csrf),
+                'admin' => WorkspaceView::admin($data['vault'], $csrf), 'research' => WorkspaceView::research($data['research'], $csrf),'nasa'=>NasaView::render($data['nasa'],$csrf),
                 'overview' => self::overview($data), 'projects' => self::projects($data, $csrf),
                 'runs' => self::runs($data), 'systems' => self::systems($data,$csrf), 'history' => self::history($data),
             };

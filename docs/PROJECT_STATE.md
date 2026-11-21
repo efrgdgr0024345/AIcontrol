@@ -1,5 +1,43 @@
 # AIcontrol — current project state
 
+## NASA Managed project engineering workspace (2026-11-22)
+
+NASA Managed adds a visual seven-phase dashboard, local readiness coverage and
+next steps, 17-process/term explanations with software examples, eight versioned
+artifact types, structured requirements/evidence, residual risks, measures,
+reviews, decisions, tailoring, SHA-256 planning snapshots and Markdown/JSON/print
+packages. It works manually without OpenAI. Both task and research projects are
+supported with distinct source identities; research context linking is explicit.
+
+AI drafts/reviews use bounded tool-free Responses calls, shared ProviderGate,
+eight calls/workspace/hour and a separate $1/source-project/day estimated/risk
+allowance. Input is capped, model output schema/scope validated, late changed-
+context replies retained without overwriting owner work, and no unknown call is
+retried. AI cannot approve evidence, accept risk or advance a phase. Explicit owner
+actions can create ordinary draft tasks or unchecked user-origin map proposals.
+
+Storage is additive `nasa_*` tables in private panel.sqlite. Admin inventories
+them and removes project content on source deletion/workspace reset while keeping
+provider allowance history and credentials. Snapshot restore appends versions;
+it does not roll back code, tasks, servers or charges. Public-testing sessions
+cannot read/write NASA planning. Existing PIN, vault, signing, SSH and research
+controls remain authoritative.
+
+[NASA_MANAGED.md](NASA_MANAGED.md) maps the handover features and exact contracts;
+[NASA_FIRST_DAY_CHECKS.md](NASA_FIRST_DAY_CHECKS.md) records plugin-led environment
+and first-use validation. The official handbook was verified over HTTPS and only
+original structured explanations are shipped. The environment's live API binding
+currently returns `expired_secret_key` (401); model tests remain explicitly
+synthetic until the owner replaces that binding and a live request succeeds.
+
+Local validation passed on PHP 8.4.24: generated UI/manifest and all PHP syntax,
+22 PHP suites (61 NASA assertions), eleven Python integration suites including
+empty/no-key/owner/public-testing/password NASA HTTP paths and real local SSH,
+and the complete Chromium suite. NASA desktop/mobile light/dark axe, keyboard,
+no-JS, archive/restore, scoped JSON download and actual PDF generation pass. A
+final NASA browser rerun and targeted source/bridge cleanup checks cover the
+last changes. GitHub planning-panel must pass on the exact published release SHA.
+
 ## SSH bootstrap and credential boundary security fixes (2026-11-22)
 
 Both pasted Systems setup commands now run Python with `-I`: local working-directory

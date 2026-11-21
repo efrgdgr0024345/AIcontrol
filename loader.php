@@ -1827,6 +1827,56 @@ document.addEventListener('submit', event => {
   if(location.hash==='#ssh-console')input.focus({preventScroll:true});
 })();
 
+// Progressive enhancement only; all planning actions also work as ordinary POST forms.
+(() => {
+  'use strict';
+  const root=document.querySelector('[data-nasa-workspace]');if(!root)return;
+  const tabs=[...root.querySelectorAll('[data-nasa-tab]')],panels=[...root.querySelectorAll('[data-nasa-panel]')];
+  function openPanel(key,focus=false){
+    if(!panels.some(p=>p.dataset.nasaPanel===key))return;
+    for(const p of panels)p.hidden=p.dataset.nasaPanel!==key;
+    for(const t of tabs){const on=t.dataset.nasaTab===key;t.setAttribute('aria-selected',String(on));t.tabIndex=on?0:-1;}
+    if(focus)tabs.find(t=>t.dataset.nasaTab===key)?.focus();
+  }
+  root.querySelector('[data-nasa-tabs]')?.setAttribute('role','tablist');
+  for(const tab of tabs){tab.setAttribute('role','tab');tab.setAttribute('aria-controls','nasa-'+tab.dataset.nasaTab);tab.addEventListener('click',event=>{event.preventDefault();openPanel(tab.dataset.nasaTab);history.replaceState(null,'','#nasa-'+tab.dataset.nasaTab);});tab.addEventListener('keydown',event=>{const index=tabs.indexOf(tab),next=event.key==='ArrowRight'?tabs[(index+1)%tabs.length]:event.key==='ArrowLeft'?tabs[(index-1+tabs.length)%tabs.length]:event.key==='Home'?tabs[0]:event.key==='End'?tabs.at(-1):null;if(next){event.preventDefault();openPanel(next.dataset.nasaTab,true);}});}
+  for(const panel of panels){panel.setAttribute('role','tabpanel');panel.setAttribute('aria-labelledby','nasa-tab-'+panel.dataset.nasaPanel);}
+  openPanel(location.hash.replace('#nasa-','')||'overview');
+  const editType=new URLSearchParams(location.search).get('edit_artifact'),editor=editType?document.getElementById('nasa-artifact-'+editType):null;
+  if(editor&&!editor.closest('[data-nasa-panel]')?.hidden)editor.querySelector('textarea')?.focus({preventScroll:true});
+  for(const link of root.querySelectorAll('[data-nasa-open],[data-nasa-next]'))link.addEventListener('click',()=>openPanel(link.dataset.nasaOpen||'overview'));
+  const beginner=root.querySelector('[data-nasa-beginner]');
+  function guidance(){for(const note of root.querySelectorAll('.nasa-beginner-note'))note.hidden=!beginner.checked;try{localStorage.setItem('aicontrol-nasa-beginner',String(beginner.checked));}catch{}}
+  if(beginner){try{beginner.checked=localStorage.getItem('aicontrol-nasa-beginner')!=='false';}catch{}beginner.addEventListener('change',guidance);guidance();}
+  const inspector=root.querySelector('[data-nasa-inspector]'),content=root.querySelector('[data-nasa-inspector-content]');let helpTrigger;
+  const close=()=>{if(!inspector)return;inspector.hidden=true;helpTrigger?.focus({preventScroll:true});};
+  root.querySelector('[data-nasa-help-close]')?.addEventListener('click',close);
+  root.addEventListener('keydown',event=>{if(event.key==='Escape'&&inspector&&!inspector.hidden){event.preventDefault();close();}});
+  for(const term of root.querySelectorAll('[data-nasa-term]'))term.addEventListener('click',event=>{
+    const source=root.querySelector(`[data-nasa-help-content="${term.dataset.nasaTerm}"]`);if(!source||!inspector)return;event.preventDefault();helpTrigger=term;content.replaceChildren();const copy=source.cloneNode(true);copy.removeAttribute('id');for(const node of copy.querySelectorAll('[id]'))node.removeAttribute('id');content.append(copy);inspector.hidden=false;const heading=content.querySelector('h4');heading.tabIndex=-1;heading.focus({preventScroll:true});
+  });
+  root.querySelector('[data-nasa-help-search]')?.addEventListener('input',event=>{const term=event.target.value.trim().toLocaleLowerCase();for(const item of root.querySelectorAll('[data-nasa-glossary]'))item.hidden=!!term&&!item.textContent.toLocaleLowerCase().includes(term);});
+  for(const cell of root.querySelectorAll('[data-nasa-risk-cell]'))cell.addEventListener('click',()=>{for(const card of root.querySelectorAll('[data-nasa-risk]'))card.hidden=card.dataset.nasaRisk!==cell.dataset.nasaRiskCell;});
+  root.querySelector('[data-nasa-risk-reset]')?.addEventListener('click',()=>{for(const card of root.querySelectorAll('[data-nasa-risk]'))card.hidden=false;});
+  root.querySelector('[data-nasa-print]')?.addEventListener('click',()=>{const hidden=panels.filter(p=>p.hidden),closed=[...root.querySelectorAll('details:not([open])')];for(const p of hidden)p.hidden=false;for(const d of closed)d.open=true;window.print();for(const p of hidden)p.hidden=true;for(const d of closed)d.open=false;});
+  let busy=false,uncertain=false;const status=root.querySelector('[data-nasa-operation]');
+  root.addEventListener('submit',async event=>{
+    const form=event.target;if(!form.matches('[data-nasa-form]'))return;event.preventDefault();if(busy||uncertain&&form.hasAttribute('data-nasa-ai'))return;
+    const submitter=event.submitter;const disabled=[...form.querySelectorAll('button:not(:disabled)')];const body=new FormData(form);if(submitter?.name)body.set(submitter.name,submitter.value);
+    busy=true;form.setAttribute('aria-busy','true');for(const b of disabled)b.disabled=true;
+    if(status)status.textContent=form.hasAttribute('data-nasa-ai')?'Preparing one bounded AI request. Drafts need your review; no automatic retry.':'Saving planning records…';
+    try{
+      const url=new URL(form.getAttribute('action')||location.href,location.href);url.searchParams.set('nasa_api','1');const response=await fetch(url,{method:'POST',body,credentials:'same-origin',headers:{Accept:'application/json'}});
+      if(!(response.headers.get('content-type')||'').includes('application/json'))throw Error('Session or outcome could not be verified. Refresh NASA Managed before trying again.');
+      const result=await response.json();if(!response.ok)throw Error(result.error||'Planning action failed. Saved records were retained.');
+      const next=new URL(result.location,location.href);if(next.origin!==location.origin)throw Error('Unexpected redirect. Refresh the workspace.');
+      const panel=form.closest('[data-nasa-panel]')?.dataset.nasaPanel;next.hash='nasa-'+(form.elements.action.value.includes('review')?'reviews':['nasa_generate','nasa_template'].includes(form.elements.action.value)?'artifacts':panel||'overview');
+      if(next.pathname===location.pathname&&next.search===location.search){history.replaceState(null,'',next);location.reload();}else location.assign(next);
+    }catch(error){uncertain=form.hasAttribute('data-nasa-ai');if(status){status.textContent=error.message+(uncertain?' Inspect AI request history before sending another request.':'');status.setAttribute('role','alert');}if(uncertain)for(const button of root.querySelectorAll('[data-nasa-ai] button'))button.disabled=true;}
+    finally{busy=false;form.removeAttribute('aria-busy');if(!uncertain)for(const b of disabled)b.disabled=false;}
+  });
+})();
+
 AICONTROL_UI_JS;
     }
     public static function css(): string
@@ -2710,6 +2760,64 @@ body.research-map-open { overflow:hidden; }
 .map-grow-progress { color:#d4f4e7; font-size:11px; white-space:nowrap; }
 .research-map-open .map-screen-header { gap:9px; }
 @media(max-width:700px) { .research-map-open .map-screen-header { gap:6px; padding-left:8px; padding-right:8px; }.map-quick-controls { gap:4px; } }
+
+/* NASA Managed: visible progress, readable guidance and bounded mobile layouts. */
+.nasa-workspace { --nasa-ink:#203149; --nasa-muted:#53637b; --nasa-line:#d9e1eb; color:var(--nasa-ink); min-width:0; }
+.nasa-workspace *, .nasa-workspace *::before, .nasa-workspace *::after { box-sizing:border-box; }
+.nasa-workspace .card { margin:0 0 18px; min-width:0; border-color:var(--nasa-line); border-radius:14px; overflow-wrap:anywhere; }
+.nasa-workspace .card-body { padding:22px; }
+.nasa-intro { display:flex; align-items:center; justify-content:space-between; gap:20px; margin-bottom:20px; }
+.nasa-intro h2 { font-size:clamp(1.6rem,3vw,2.25rem); letter-spacing:-.035em; margin:7px 0; }
+.nasa-intro p { color:var(--nasa-muted); max-width:690px; }
+.nasa-eyebrow { font-size:.68rem; font-weight:750; letter-spacing:.13em; color:#49658a; }
+.nasa-beginner { display:flex; align-items:center; gap:8px; flex-shrink:0; font-size:.85rem; }
+.nasa-project-picker { display:flex!important; flex-wrap:wrap; gap:10px!important; align-items:center; margin-bottom:18px; }
+.nasa-project-picker label { margin:0!important; font-weight:650; }.nasa-project-picker select { flex:1; min-width:160px; max-width:680px; }
+.nasa-dashboard { background:linear-gradient(120deg,#14273f,#294768); color:#fff; padding:28px; border-radius:18px; display:flex; justify-content:space-between; gap:20px; align-items:center; }
+.nasa-dashboard h2 { color:#fff; font-size:clamp(1.5rem,3vw,2.2rem); margin:10px 0; overflow-wrap:anywhere; }.nasa-dashboard .nasa-eyebrow { color:#bfd3ea; }
+.nasa-dashboard .nasa-term { color:#d0eaff; }.nasa-dashboard-copy { min-width:0; }.nasa-readiness { text-align:center; min-width:155px; }
+.nasa-readiness p { font-size:.75rem; color:#d6e3f1; margin:7px 0 0; }.nasa-ring { position:relative; width:124px; height:124px; margin:auto; }
+.nasa-ring svg { width:100%; height:100%; transform:rotate(-90deg); }.nasa-ring circle { fill:none; stroke-width:9; }.nasa-ring-track { stroke:#51677e; }.nasa-ring-value { stroke:#8fe2db; stroke-linecap:round; }
+.nasa-ring strong { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:2rem; font-weight:700; }.nasa-ring small { font-size:.8rem; margin-top:10px; }
+.nasa-risk-summary,.nasa-package-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }.nasa-chip { display:inline-flex; align-items:center; border-radius:6px; padding:4px 8px; font-size:.7rem; font-weight:650; background:#e8eef6; color:#30445f; margin:2px 5px 2px 0; }
+.nasa-chip.high,.nasa-risk-cell.high { background:#fde0e3; color:#7a1829; }.nasa-chip.medium,.nasa-risk-cell.medium { background:#fff0c4; color:#6d4b00; }.nasa-chip.low,.nasa-risk-cell.low { background:#dcefe7; color:#17563e; }
+.nasa-timeline { display:grid; grid-template-columns:repeat(7,minmax(115px,1fr)); overflow-x:auto; gap:7px; padding:18px 0 7px; scroll-snap-type:x proximity; }
+.nasa-phase { display:flex; flex-direction:column; align-items:flex-start; gap:5px; padding:13px 11px; border:1px solid var(--nasa-line); border-radius:12px; color:var(--nasa-ink); text-decoration:none; background:#fff; scroll-snap-align:start; }
+.nasa-phase span { border-radius:50%; width:27px; height:27px; display:grid; place-items:center; background:#e9edf4; color:#344f72; font-size:.75rem; font-weight:750; }.nasa-phase strong { font-size:.8rem; }.nasa-phase small { color:var(--nasa-muted); font-size:.7rem; line-height:1.4; }
+.nasa-phase.current { border:2px solid #346aae; background:#edf4ff; padding:12px 10px; }.nasa-phase.current span { background:#285f9e; color:white; }
+.nasa-term { text-decoration:underline dotted; text-underline-offset:4px; color:#285e96; }.nasa-term span { font-size:.72em; font-weight:750; }
+.nasa-hint,.nasa-allowance { color:var(--nasa-muted); font-size:.78rem; line-height:1.6; }.nasa-beginner-note { color:var(--nasa-muted); font-size:.85rem; line-height:1.6; }
+.nasa-quick-actions { display:flex; flex-wrap:wrap; gap:8px; margin:16px 0 8px; align-items:center; }.nasa-quick-actions form { display:block!important; }
+.nasa-workspace form { display:grid; gap:8px; min-width:0; }.nasa-workspace form label { display:block; margin:8px 0 0; font-size:.8rem; font-weight:650; }.nasa-workspace .btn { white-space:normal; max-width:100%; justify-self:start; margin-top:5px; }
+.nasa-workspace input,.nasa-workspace textarea,.nasa-workspace select { max-width:100%; min-width:0; }.nasa-operation { color:#234e7b; font-weight:650; overflow-wrap:anywhere; }.nasa-operation[role=alert] { color:#8c2334; padding:12px; border:1px solid #dca0aa; border-radius:8px; }
+.nasa-tabs { display:flex; flex-wrap:wrap; gap:4px; border-bottom:1px solid var(--nasa-line); margin:20px 0; }.nasa-tabs a { padding:10px 12px; color:#405879; text-decoration:none; font-size:.8rem; border-bottom:3px solid transparent; }.nasa-tabs a[aria-selected=true] { color:#173f71; border-color:#346eaf; font-weight:750; }
+.nasa-workspace [data-nasa-panel] > h3 { margin:22px 0 12px; }.nasa-overview-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }.nasa-next { background:#edf4fc; }.nasa-next h3 { margin-top:10px; font-size:1.35rem; }
+.nasa-stat-row { display:flex; gap:22px; margin:20px 0; flex-wrap:wrap; }.nasa-stat-row strong { font-size:1.5rem; color:#285078; }.nasa-stat-row small { display:block; font-size:.72rem; color:var(--nasa-muted); font-weight:500; }
+.nasa-checks { list-style:none; padding:0; margin:15px 0; }.nasa-checks li { display:flex; gap:12px; border-top:1px solid var(--nasa-line); padding:13px 0; }.nasa-checks li > span { flex-shrink:0; width:25px; height:25px; border-radius:50%; display:grid; place-items:center; background:#fff0c4; color:#6d4b00; }.nasa-checks .passed > span { background:#dcefe7; color:#17563e; }.nasa-checks p { margin:5px 0 0; font-size:.8rem; color:var(--nasa-muted); }
+.nasa-artifact-grid,.nasa-record-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr)); gap:16px; }.nasa-artifact-grid .card { margin:0; }.nasa-artifact-grid { margin-bottom:22px; }.nasa-card-heading { display:flex; gap:8px; justify-content:space-between; align-items:flex-start; }.nasa-card-heading h4 { font-size:1rem; margin:0; }.nasa-artifact p { font-size:.83rem; color:var(--nasa-muted); margin-top:12px; }
+.nasa-workspace details { margin:12px 0; }.nasa-workspace details.card { padding:16px; }.nasa-workspace summary { cursor:pointer; font-size:.85rem; font-weight:650; padding:7px 0; }.nasa-workspace details[open] > summary { margin-bottom:8px; }.nasa-matrix { min-width:600px; font-size:.8rem; }.nasa-matrix th { white-space:normal; max-width:360px; }.nasa-matrix p { font-size:.75rem; }
+.nasa-risk-matrix { display:grid; grid-template-columns:minmax(70px,1.3fr) repeat(5,minmax(24px,1fr)); gap:6px; max-width:700px; margin:18px 0 24px; align-items:stretch; text-align:center; }.nasa-risk-matrix > span { font-size:.65rem; align-self:center; }.nasa-risk-matrix > strong { display:grid; place-items:center; font-size:.8rem; }.nasa-risk-cell { border:0; min-height:43px; border-radius:7px; font-weight:750; cursor:pointer; }.nasa-risk-cell:focus-visible { outline:3px solid #285f9e; outline-offset:2px; }
+.nasa-section-heading { display:flex; gap:12px; justify-content:space-between; align-items:flex-start; }.nasa-measure { font-size:2rem; font-weight:700; margin:12px 0; }.nasa-measure small { font-size:.85rem; font-weight:500; }.nasa-prewrap { white-space:pre-wrap; }
+.nasa-review h4 { margin-top:20px; }.nasa-finding { border-left:3px solid #9bb4d3; background:#f2f6fb; padding:16px; margin:12px 0; border-radius:0 8px 8px 0; }.nasa-finding h5 { font-size:.95rem; margin:10px 0; }.nasa-finding p { font-size:.83rem; }.nasa-finding form { max-width:100%; }
+.nasa-processes { display:grid; grid-template-columns:repeat(3,1fr); gap:15px; margin:20px 0; }.nasa-processes > div { border:1px solid var(--nasa-line); border-radius:12px; padding:16px; background:#f1f5fa; }.nasa-processes p { font-size:.8rem; }
+.nasa-handbook > details { border-bottom:1px solid var(--nasa-line); padding:10px 0; }.nasa-handbook > input { max-width:650px; }.nasa-handbook [data-nasa-help-content] { padding:10px 14px; background:#f3f6fa; border-radius:9px; }.nasa-handbook [data-nasa-help-content]:target { outline:2px solid #487bad; }
+.nasa-inspector { position:fixed; z-index:100; right:22px; top:78px; width:min(420px,calc(100vw - 24px)); max-height:calc(100vh - 100px); overflow:auto; padding:20px; box-shadow:0 14px 50px #172b4650; background:#fff; }.nasa-inspector h4 { margin-top:20px; }.nasa-inspector h5 { font-size:.9rem; }.nasa-inspector p { font-size:.85rem; line-height:1.6; }.nasa-inspector [data-nasa-help-close] { margin-bottom:12px; }
+.nasa-welcome { text-align:center; padding:28px; }.nasa-welcome form { justify-items:center; }.nasa-welcome-orbit { display:block; color:#38699b; font-size:4rem; }.nasa-package { margin-top:28px!important; }.nasa-package-actions form { display:block; }
+@media(max-width:850px) { .nasa-overview-grid { grid-template-columns:1fr; }.nasa-intro { align-items:flex-start; flex-direction:column; }.nasa-processes { grid-template-columns:1fr; } }
+@media(max-width:500px) { .nasa-dashboard { padding:18px 15px; gap:10px; }.nasa-readiness { min-width:100px; }.nasa-ring { width:94px; height:94px; }.nasa-ring strong { font-size:1.5rem; }.nasa-readiness p { font-size:.65rem; }.nasa-dashboard h2 { font-size:1.3rem; }.nasa-workspace .card-body { padding:16px; }.nasa-project-picker { align-items:stretch; }.nasa-project-picker label { width:100%; }.nasa-tabs a { padding:9px; }.nasa-inspector { top:auto; bottom:10px; right:12px; max-height:62vh; }.nasa-welcome { padding:8px; }.nasa-section-heading { flex-direction:column; } }
+@media(prefers-color-scheme:dark) { .nasa-workspace { --nasa-ink:#e2ebf6; --nasa-muted:#bacbdd; --nasa-line:#435770; }.nasa-workspace .card,.nasa-phase,.nasa-inspector { background:#142338; color:var(--nasa-ink); }.nasa-workspace h2,.nasa-workspace h3,.nasa-workspace h4,.nasa-workspace h5 { color:var(--nasa-ink); }.nasa-eyebrow,.nasa-term,.nasa-tabs a,.nasa-stat-row strong { color:#b8d9ff; }.nasa-phase.current,.nasa-next,.nasa-finding,.nasa-processes > div,.nasa-handbook [data-nasa-help-content] { background:#1d3550; }.nasa-workspace .form-control,.nasa-workspace .form-select { background:#102034; color:#e2ebf6; border-color:#788da7; color-scheme:dark; }.nasa-tabs a[aria-selected=true] { color:#d7eaff; }.nasa-operation { color:#bfdcff; } }
+@media print { .app-sidebar,.app-topbar,.app-footer,.page-heading,.nasa-workspace form,.nasa-tabs,.nasa-quick-actions,.nasa-beginner,.nasa-project-picker,.nasa-inspector,.nasa-workspace button { display:none!important; }.app-main,.app-content { margin:0!important; padding:0!important; }.nasa-workspace [data-nasa-panel] { display:block!important; }.nasa-workspace .card { break-inside:avoid; box-shadow:none; }.nasa-workspace { color:#111; }.nasa-dashboard { background:#eee; color:#111; }.nasa-dashboard h2 { color:#111; }.nasa-artifact-grid,.nasa-record-grid { display:block; }.nasa-timeline { display:none; } }
+.nasa-print-document { display:none; }
+@media print { .nasa-print-document { display:block; padding:12px 0; }.nasa-workspace details,.nasa-workspace #nasa-handbook { display:none!important; }.app-shell { display:block!important; } }
+.nasa-workspace .nasa-matrix th,.nasa-workspace .nasa-matrix td { color:var(--nasa-ink); background-color:var(--nasa-table,#f6f8fb); font-size:.8rem; }
+.nasa-workspace .nasa-matrix tbody th { font-weight:650; }
+@media(prefers-color-scheme:dark) { .nasa-workspace { --nasa-table:#142338; }.nasa-workspace .btn-outline-primary,.nasa-workspace .btn-outline-secondary { color:#d8ebff; background:#203956; border-color:#7394b7; } }
+.nasa-workspace summary { color:var(--nasa-ink); }
+.nasa-workspace a:not(.btn):not(.nasa-phase):not([data-nasa-tab]):not(.nasa-term) { color:var(--nasa-link,#285e96); text-decoration:underline; }
+@media(prefers-color-scheme:dark) { .nasa-workspace { --nasa-link:#b8d9ff; } }
+@media(prefers-color-scheme:dark) { .nasa-workspace { background:#0f1b2c; padding:18px; border-radius:16px; }.nasa-operation[role=alert] { color:#ffc0ca; background:#341c29; } }
+@media print { .nasa-workspace { --nasa-ink:#111; --nasa-muted:#444; --nasa-line:#aaa; --nasa-table:#fff; --nasa-link:#111; background:#fff!important; padding:0!important; }.nasa-workspace .card { background:#fff!important; color:#111!important; } }
+@media(prefers-color-scheme:dark) { .nasa-workspace .btn-outline-danger { color:#ffccd5; background:#3b2432; border-color:#bd7f90; } }
 
 AICONTROL_UI_CSS;
     }

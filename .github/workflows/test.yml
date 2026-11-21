@@ -29,6 +29,8 @@ jobs:
           php tests/agent.php
           php tests/agent_adapter.php
           php tests/workspace.php
+          php tests/nasa.php
+          python3 -B -m unittest -v tests/nasa_http.py
           php tests/systems.php
           php tests/system_setup.php
           python3 -B -m unittest -v tests/system_bootstrap.py

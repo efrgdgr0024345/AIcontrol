@@ -9,6 +9,8 @@ require_once __DIR__.'/SystemsAgent.php';
 require_once __DIR__.'/SystemsView.php';
 require_once __DIR__.'/SystemEnrollment.php';
 require_once __DIR__.'/SystemTerminal.php';
+require_once __DIR__.'/NasaActions.php';
+require_once __DIR__.'/NasaView.php';
 
 final class Panel
 {
@@ -109,10 +111,10 @@ final class Panel
         $error = '';
         // Public demo sessions are not owner authentication, even with a valid CSRF token.
         $postedAction=is_string($_POST['action']??null)?$_POST['action']:'';
-        if($config['access_mode']==='testing'&& (($_GET['view']??null)==='admin'
-            ||$method==='POST'&&(str_starts_with($postedAction,'admin_')||str_starts_with($postedAction,'vault_')))){
+        if($config['access_mode']==='testing'&& (in_array($_GET['view']??null,['admin','nasa'],true)
+            ||$method==='POST'&&(str_starts_with($postedAction,'admin_')||str_starts_with($postedAction,'vault_')||str_starts_with($postedAction,'nasa_')))){
             http_response_code(403);header('Content-Type: application/json; charset=utf-8');
-            echo '{"error":"Admin and vault management require owner-authenticated access."}';return;
+            echo '{"error":"Admin, credentials and NASA Managed require owner-authenticated access."}';return;
         }
         if (($_GET['research_api'] ?? '') === 'status' && $method === 'GET') {
             if (!($_SESSION['authenticated'] ?? false) || !hash_equals($_SESSION['csrf'], $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '')) {
@@ -154,6 +156,8 @@ final class Panel
             } elseif (!($_SESSION['authenticated'] ?? false)) {
                 http_response_code(401);
                 $error = 'Sign in to record a proposal.';
+            } elseif (str_starts_with($action,'nasa_')) {
+                session_write_close();NasaActions::serve($directory,$action,self::entry());return;
             } elseif (str_starts_with($action,'system_')) {
                 $json=($_GET['systems_api']??'')==='1';
                 try {
@@ -304,11 +308,20 @@ final class Panel
             $html
         ));
         $csrf = '<input type="hidden" name="csrf" value="' . self::escape($_SESSION['csrf']) . '">';
-        $views = ['overview', 'projects', 'runs', 'systems', 'history', 'admin', 'research'];
+        $views = ['overview', 'projects', 'runs', 'systems', 'history', 'admin', 'research','nasa'];
         $view = is_string($_GET['view'] ?? null) && in_array($_GET['view'], $views, true) ? $_GET['view'] : 'overview';
         $authenticated = (bool) ($_SESSION['authenticated'] ?? false);
         $data = $authenticated ? $store->snapshot() : ['projects' => [], 'tasks' => [], 'events' => [], 'runs' => []];
         if ($authenticated && $view === 'admin') { $data['vault'] = (new Vault($directory))->entries(); }
+        if($authenticated&&$view==='nasa'){
+            $nasa=new NasaStore($directory);$data['nasa']=['sources'=>$nasa->sources(),'workspace'=>null,'source'=>null];
+            try{
+                if(isset($_GET['nasa_project']))$data['nasa']['workspace']=$nasa->workspace(NasaStore::id($_GET['nasa_project']));
+                else{$choice=is_string($_GET['source']??null)?$_GET['source']:'';$sources=$data['nasa']['sources'];$source=$choice!==''?array_values(array_filter($sources,static fn($s)=>$s['kind'].':'.$s['id']===$choice))[0]??null:($sources[0]??null);$data['nasa']['source']=$source;if($source&&$source['managed_id'])$data['nasa']['workspace']=$nasa->workspace((int)$source['managed_id']);}
+            }catch(Throwable $failure){$error='The selected managed project is unavailable. Choose a saved project.';}
+            if($data['nasa']['workspace']&&is_string($_GET['phase_preview']??null)&&isset(NasaKnowledge::phases()[$_GET['phase_preview']]))$data['nasa']['workspace']['preview']=$nasa->readiness((int)$data['nasa']['workspace']['project']['id'],$_GET['phase_preview']);
+            if($data['nasa']['workspace'])foreach(array_keys(NasaKnowledge::phases()) as $phase)$data['nasa']['workspace']['phase_coverage'][$phase]=$nasa->readiness((int)$data['nasa']['workspace']['project']['id'],$phase);
+        }
         if($authenticated&&$view==='systems'){
             try{$data['systems']=$config['access_mode']==='testing'?['allowed'=>false]:(new Systems($directory))->snapshot((int)($_GET['system']??($id??0)),(int)($_GET['system_run']??($runId??0)));}
             catch(Throwable $failure){$error='The selected system or task is unavailable.';$data['systems']=(new Systems($directory))->snapshot();}
