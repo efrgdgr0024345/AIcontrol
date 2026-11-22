@@ -280,7 +280,7 @@ class Site:
         sha = self.installed()
         for view in ("overview", "research", "nasa"):
             status, content_type, body = self.request({"view": view})
-            if status != 200 or content_type != "text/html" or Page(body).pin_gate() or Page(body).form("action", "login") is not None or re.search(r'class=["\'][^"\']*\bapp-shell\b', body) is None:
+            if status != 200 or content_type != "text/html" or Page(body).pin_gate() or Page(body).form("action", "login") is not None or re.search(r'class=["\'][^"\']*\bapp-layout\b', body) is None:
                 self.observe("view_" + view, "Open " + view + " view", "failed", "The owner view did not return its normal authenticated HTML page.", http_status=status)
                 raise DeliveryError("hosted_view_check_failed")
             self.observe("view_" + view, "Open " + view + " view", "passed", "The owner GET route returned authenticated HTML. This checks page availability, not model execution or project mutations.", http_status=status, installed_sha=sha)

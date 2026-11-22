@@ -958,3 +958,9 @@ legacy password admission are included, with focused regression coverage; normal
 standalone PIN/updater controls are unchanged. A valid owner login is now available
 for the confirmed AIadmin host. Published source, live activation and actual
 provider outcomes must still be reported separately and supported by checks.
+
+Hosted page smoke checks now use the actual `app-layout` wrapper. The previous
+`app-shell` expectation falsely rejected healthy owner pages; PIN/login rejection,
+exact-release identity and read-only checks remain enforced. The delivery fixture
+uses the same page structure. Live installation and interaction outcomes are
+retained in Admin test reports rather than inferred from fixture passes.

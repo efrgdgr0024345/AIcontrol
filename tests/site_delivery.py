@@ -73,7 +73,7 @@ def website(**settings):
 
         def admin_page(self):
             technical = html.escape(json.dumps({"installed_release": state["installed"]}))
-            return '<div class="app-shell"><form method="post"><input name="action" value="vault_save"><input name="csrf" value="' + CSRF + '"></form><textarea id="admin-technical-report">' + technical + '</textarea></div>'
+            return '<div class="app-layout"><form method="post"><input name="action" value="vault_save"><input name="csrf" value="' + CSRF + '"></form><textarea id="admin-technical-report">' + technical + '</textarea></div>'
 
         def do_GET(self):
             q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
@@ -93,7 +93,7 @@ def website(**settings):
                 return self.send(self.admin_page())
             if state.get("view_login") == view:
                 return self.send(self.login_page())
-            return self.send('<div class="app-shell"><h1>' + html.escape(view) + '</h1></div>')
+            return self.send('<div class="app-layout"><h1>' + html.escape(view) + '</h1></div>')
 
         def do_POST(self):
             q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
