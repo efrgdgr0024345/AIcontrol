@@ -2,7 +2,7 @@
     "version": 2,
     "files": {
         "app.php": "031b76861c650413202b1c66a125b488e2986709cd99cce26f2f32762b850284",
-        "assets/panel.css": "2787311ba070a90c5820211575ba68716abf83fc403142103219a0c93601c259",
+        "assets/panel.css": "923cac4ae5e67b973c6ac134c7c86f9790ef04eba3c24efa9885793de5810d1d",
         "assets/panel.js": "0a73f4495491d4cd1b010c141e3b14193fad58eeb008c555640ea00d70ff99b3",
         "src/AccessPolicy.php": "44469fc613bb1704d857e06e6d70d484d44083b33753e99feaec93baed561cd8",
         "src/AdminData.php": "983e9c48c45e227235142211f2ed263908e4415adeb091e20478803f3ae3545e",
@@ -56,13 +56,13 @@
         "src/Systems.php": "f4a17949d5b0ac7409025c8b448e0c905dacf4bbf878b4aa47f6090c73731461",
         "src/SystemsAgent.php": "255350d6724d82035a41b91949c22a9a0943ff45e784afb32c75e64740c6eb3e",
         "src/SystemsView.php": "7e7934f49fe2862efc01f96962de9cd8b4375497e30d305ba5d75419933667c5",
-        "src/Ui.php": "95d316aa5827887aa36b28606bd85d5533c22b4070b838430823b5c5565bd333",
+        "src/Ui.php": "900f512eb9fd5a309a64a7b2f36ef22ad32c62ea1497bbef5bd928d893490336",
         "src/UsageMeter.php": "71b6b2af9377430023dd20b42ac48cce17c98ae0cae987c6ca557a90c8b7e48a",
         "src/Vault.php": "ca0225b1c4e251d443755deb09bce97ba63bfcb7a056b4b82d5c5df44be318bc",
         "src/WorkspaceView.php": "4eff257da749e63bfd1549c8c697c95cea1955ad25aa1ea87ff6525fda74aecc"
     },
     "bootstrap": {
         "path": "loader.php",
-        "sha256": "fc0688581e9a90237dc96549c9cf641a404defd3e6f3286d0e5bc7b3592eb575"
+        "sha256": "ac7d793a322e14685b9409d753967bb111e3f5edde7b7b88b14912f0648b8442"
     }
 }

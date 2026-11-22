@@ -1131,6 +1131,8 @@ body.research-map-open { overflow:hidden; }
 .map-branch-heading [role=status] { color:#bfd2e7; font-size:.85rem; }
 .map-branch-list { list-style:none; margin:0; padding:0 4px 0 0; overflow:auto; flex:1; min-height:0; scrollbar-width:thin; }
 .map-branch-list li { margin:0 0 7px; }
+.map-branch-children { list-style:none; margin:7px 0 0; padding:0 0 0 12px; border-left:1px solid #43566b; }
+.map-branch-children.map-branch-deep { padding-left:0; border-left:0; }
 .map-branch-item { display:block; text-align:left; width:100%; padding:13px 14px; border:1px solid #30465c; border-left:3px solid var(--branch-colour,#9ddcec); border-radius:9px; background:#152335; color:#eef6ff; min-height:64px; }
 .map-branch-item:hover,.map-branch-item[aria-current=true] { background:#223a51; border-color:#8bb7d1; border-left-color:var(--branch-colour,#9ddcec); }
 .map-branch-item strong { display:block; font-size:.94rem; line-height:1.45; font-weight:600; overflow-wrap:anywhere; }

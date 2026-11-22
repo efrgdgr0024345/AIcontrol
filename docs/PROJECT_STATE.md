@@ -964,3 +964,14 @@ Hosted page smoke checks now use the actual `app-layout` wrapper. The previous
 exact-release identity and read-only checks remain enforced. The delivery fixture
 uses the same page structure. Live installation and interaction outcomes are
 retained in Admin test reports rather than inferred from fixture passes.
+
+## Nested map branches and canvas dismissal (2026-11-23)
+
+The Branches panel now uses actual nested lists in parent-first order instead of
+creation order with a shallow indent. New children and grandchildren remain under
+their source branch; search includes ancestors. Missing/cyclic parent records
+stay visible once and deep indentation is bounded. No saved data is rewritten.
+Clicking exposed map background dismisses the reading window and controls while
+node selection and 3D navigation keep their existing behavior. Chromium regression
+coverage grows two separate families, checks grandchild search/ancestry and verifies
+that an orbit drag keeps details open while a background click closes them.

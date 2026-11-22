@@ -320,6 +320,12 @@ AI summaries or assessments of truth. Search and reading do not call a provider.
 Selection opens the full saved body in a reading window. Connections, activity,
 source details and advanced layer/evidence/priority controls are folded away.
 Back to Branches restores keyboard focus and preserves the search/scroll state.
+The list uses nested parent/child lists in depth-first order: new growth stays
+inside its owning branch, before unrelated siblings. Search retains the matching
+idea's ancestor chain for context. Orphaned/cyclic legacy records remain visible
+once; deep nesting keeps bounded visual indentation. A click/tap on exposed map
+background closes the reading window and controls; node clicks still open details,
+and orbit/pan/pinch gestures do not dismiss it.
 
 Expand this pathway explicitly runs the existing model-only explore action for
 the selected saved concept. It respects idle phases, Stop, admission and budgets;

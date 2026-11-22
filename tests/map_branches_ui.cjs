@@ -15,6 +15,11 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   const width=await page.locator('[data-branch-browser]').evaluate(n=>n.getBoundingClientRect().width);if(width<350)throw Error('Branch browser is too narrow');
   const a=await rows.nth(0).getAttribute('data-branch-id'),b=await rows.nth(1).getAttribute('data-branch-id');
   await rows.nth(0).click();await page.locator('[data-map-inspector]').waitFor({state:'visible'});if(await page.locator('[data-map-advanced]').evaluate(n=>n.open))throw Error('Advanced controls crowded the reading window');
+  const emptyMapPoint=()=>page.locator('.map-viewport').evaluate(viewport=>{const r=viewport.getBoundingClientRect();for(const x of [.08,.2,.4,.6])for(const y of [.2,.6,.8]){const point={x:r.left+r.width*x,y:r.top+r.height*y},target=document.elementFromPoint(point.x,point.y);if(target&&viewport.contains(target)&&!target.closest('[data-map-node],button,input,label,a'))return point;}throw Error('No exposed map background');});
+  let point=await emptyMapPoint();await page.mouse.move(point.x,point.y);await page.mouse.down();await page.mouse.move(point.x+35,point.y+12,{steps:5});await page.mouse.up();if(!await page.locator('[data-map-inspector]').isVisible())throw Error('Orbit drag dismissed the concept reader');
+  point=await emptyMapPoint();await page.mouse.click(point.x,point.y);await page.locator('[data-map-inspector]').waitFor({state:'hidden'});
+  await page.getByRole('button',{name:'Map controls',exact:true}).click();point=await emptyMapPoint();await page.mouse.click(point.x,point.y);await page.locator('#map-controls-tray').waitFor({state:'hidden'});
+  await page.locator(`[data-map-node="${a}"] .map-node-button`).click();await page.locator('[data-map-inspector]').waitFor({state:'visible'});
   await page.locator('[data-concept-chat-toggle]').click();await page.getByLabel('Your question',{exact:true}).fill('FIRST-BRANCH-QUESTION: explain this idea simply.');
   await page.getByRole('button',{name:'Ask about this concept',exact:true}).click();await page.locator('.map-conversation-turn').getByText(/Synthetic concept reply/).waitFor();
   await page.locator('[data-branch-back]').click();await rows.nth(1).click();if((await page.locator('.map-conversation-thread').innerText()).includes('FIRST-BRANCH-QUESTION'))throw Error('Thread leaked across concepts');
@@ -22,6 +27,14 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   await page.locator('[data-branch-back]').click();await rows.nth(1).click();if(await page.getByLabel('Your question',{exact:true}).inputValue()!=='Draft for second concept')throw Error('Switching lost draft');
   await page.locator('[data-branch-back]').click();await page.getByLabel('Search branches',{exact:true}).fill('no-such-concept');if(await rows.count())throw Error('Search did not filter');await page.getByLabel('Search branches',{exact:true}).fill('');
   await rows.nth(0).click();await page.getByRole('button',{name:'Expand this pathway',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('[data-branch-id]').length>2);
+  const child=await list.locator(`[data-branch-id="${a}"]`).evaluate(button=>button.parentElement.querySelector(':scope > ul > li > button')?.dataset.branchId);if(!child)throw Error('Growth was appended outside its parent branch');
+  let order=await rows.evaluateAll(buttons=>buttons.map(b=>b.dataset.branchId));if(order.indexOf(child)>order.indexOf(b))throw Error('New child appeared after an unrelated root');
+  await list.locator(`[data-branch-id="${child}"]`).click();await page.getByRole('button',{name:'Expand this pathway',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('[data-branch-id]').length>3);
+  const grandchild=await list.locator(`[data-branch-id="${child}"]`).evaluate(button=>button.parentElement.querySelector(':scope > ul > li > button')?.dataset.branchId);if(!grandchild)throw Error('Second-level growth did not nest');
+  await page.locator('[data-branch-back]').click();const grandTitle=await list.locator(`[data-branch-id="${grandchild}"]`).getAttribute('aria-label');await page.getByLabel('Search branches',{exact:true}).fill(grandTitle);
+  if(await rows.count()!==3||!await list.locator(`[data-branch-id="${a}"]`).count()||!await list.locator(`[data-branch-id="${child}"]`).count())throw Error('Search lost the matching idea’s ancestry');
+  await page.getByLabel('Search branches',{exact:true}).fill('');await list.locator(`[data-branch-id="${b}"]`).click();await page.getByRole('button',{name:'Expand this pathway',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('[data-branch-id]').length>4);
+  if(!await list.locator(`[data-branch-id="${b}"]`).evaluate(button=>button.parentElement.querySelector(':scope > ul > li > button')!==null))throw Error('Growth on the second root joined the wrong family');
   const csrf=await page.locator('input[name=csrf]').first().inputValue();const run=await page.locator('[data-investigation]').getAttribute('data-run-id');
   let response=await page.request.post(url+'?research_api=1',{form:{csrf:'invalid',action:'research_concept_chat',run_id:run,node_id:a,question:'Should fail'}});if(response.status()!==403)throw Error('Chat bypassed CSRF');
   response=await page.request.post(url+'?research_api=1',{form:{csrf,action:'research_concept_chat',run_id:run,node_id:'999999',question:'Should fail'}});if(response.status()!==422)throw Error('Chat accepted another node');
@@ -32,6 +45,6 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   await page.setViewportSize({width:390,height:844});await audit();await list.locator(`[data-branch-id="${a}"]`).click();await audit();await page.screenshot({path:path.join(root,'test-artifacts','ui-branch-chat-mobile.png')});
   await page.getByLabel('Your question',{exact:true}).focus();await page.keyboard.press('Escape');if(!await page.locator('[data-map-inspector]').isHidden())throw Error('Escape did not return to branches');
   if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1))throw Error('Branch view overflows mobile');if(errors.length)throw Error(errors.join('\n'));
-  console.log('PASS: spacious searchable branch list, full concept reader, one-click scoped growth, saved isolated chat/drafts/reload, CSRF/node boundaries, desktop/mobile axe and keyboard return (synthetic provider)');
+  console.log('PASS: nested multi-family growth and ancestor search; map-background dismissal with drag preserved; spacious branch list, full reader, isolated chat/drafts/reload, CSRF/node boundaries, desktop/mobile axe and keyboard return (synthetic provider)');
  }finally{if(browser)await browser.close();server.kill();await new Promise(r=>server.exitCode!==null?r():server.once('exit',r));fs.rmSync(tmp,{recursive:true,force:true});}
 })().catch(e=>{console.error(e.stack||e.message);process.exitCode=1;});

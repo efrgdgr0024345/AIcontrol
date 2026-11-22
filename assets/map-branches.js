@@ -35,19 +35,29 @@
  function renderList(){
   if(!snapshot)return;const all=snapshot.nodes.filter(n=>types.has(n.type));const query=search.value.trim().toLocaleLowerCase();
   const filtered=all.filter(n=>(n.title+' '+n.content).toLocaleLowerCase().includes(query));
-  const stamp=JSON.stringify([query,filtered.map(n=>[n.id,n.title,n.content,n.layer,n.locked_at]),snapshot.requests.filter(r=>r.status==='pending').map(r=>r.path_node_id)]);
+  // Old runs may place non-concept records between an idea and its parent.
+  const byId=new Map(all.map(n=>[String(n.id),n])),saved=new Map(snapshot.nodes.map(n=>[String(n.id),n])),parents=new Map(),children=new Map();
+  for(const n of all){let parent=saved.get(String(n.parent_id));const seen=new Set([String(n.id)]);while(parent&&!seen.has(String(parent.id))&&!byId.has(String(parent.id))){seen.add(String(parent.id));parent=saved.get(String(parent.parent_id));}const id=String(n.id),parentId=parent&&!seen.has(String(parent.id))?String(parent.id):null;parents.set(id,parentId);if(!children.has(parentId))children.set(parentId,[]);children.get(parentId).push(n);}
+  const shown=new Set(filtered.map(n=>String(n.id)));if(query)for(const n of filtered){let parent=parents.get(String(n.id));const seen=new Set([String(n.id)]);while(parent&&!seen.has(parent)){seen.add(parent);shown.add(parent);parent=parents.get(parent);}}
+  const stamp=JSON.stringify([query,all.map(n=>[n.id,parents.get(String(n.id)),n.title,n.content,n.layer,n.locked_at]),snapshot.requests.filter(r=>r.status==='pending').map(r=>r.path_node_id)]);
   if(stamp!==listStamp){listStamp=stamp;const scroll=query===lastQuery?list.scrollTop:0;lastQuery=query;const focused=list.contains(document.activeElement)?document.activeElement.closest('[data-branch-id]')?.dataset.branchId:null;list.replaceChildren();
-   const byId=new Map(all.map(n=>[String(n.id),n])),childCounts=new Map();for(const n of all)childCounts.set(String(n.parent_id),(childCounts.get(String(n.parent_id))||0)+1);
    const graph=window.AIcontrolMap.project(snapshot),families=new Map(graph.nodes.map(n=>[String(n.id),n.knowledge_line_id]));
-   for(const n of filtered){const row=make('li');const button=make('button',undefined,'map-branch-item');button.type='button';button.dataset.branchId=String(n.id);button.style.setProperty('--branch-colour',window.AIcontrolMap.familyColour(families.get(String(n.id))));
-    let title=window.AIcontrolMap.sentence(n.title||n.content).replace(/^(association|counter|reframing|edge case|idea|question|claim)\s*:\s*/i,'')||'Untitled idea';if(title.length>110)title=title.slice(0,107).replace(/\s+\S*$/,'')+'…';button.append(make('strong',title));button.title=n.title;button.setAttribute('aria-label',n.title);let parent=byId.get(String(n.parent_id)),depth=0;const visited=new Set();while(parent&&!visited.has(String(parent.id))&&depth<3){visited.add(String(parent.id));depth++;parent=byId.get(String(parent.parent_id));}row.style.marginLeft=(Math.min(depth,2)*12)+'px';
-    const working=snapshot.requests.some(r=>r.status==='pending'&&Number(r.path_node_id)===Number(n.id));const state=working?'Thinking…':n.locked_at?'Evidence locked':Number(n.layer)===2?'Parked idea':'Unchecked idea';const children=childCounts.get(String(n.id))||0;
-    button.append(make('small',state+(children?' · '+children+' related idea'+(children===1?'':'s'):'')));button.addEventListener('click',()=>select(String(n.id),button));row.append(button);list.append(row);
-   }
+   const placed=new Set(),matches=new Set(filtered.map(n=>String(n.id)));
+   // Depth-first DOM order keeps new descendants beside their parent, not at the end.
+   const appendTree=start=>{const stack=[{node:start,container:list,depth:0}];while(stack.length){const {node:n,container,depth}=stack.pop(),id=String(n.id);if(!shown.has(id)||placed.has(id))continue;placed.add(id);
+    const row=make('li');row.dataset.branchDepth=String(depth);const button=make('button',undefined,'map-branch-item');button.type='button';button.dataset.branchId=id;button.style.setProperty('--branch-colour',window.AIcontrolMap.familyColour(families.get(id)));
+    let title=window.AIcontrolMap.sentence(n.title||n.content).replace(/^(association|counter|reframing|edge case|idea|question|claim)\s*:\s*/i,'')||'Untitled idea';if(title.length>110)title=title.slice(0,107).replace(/\s+\S*$/,'')+'…';button.append(make('strong',title));button.title=n.title;button.setAttribute('aria-label',n.title);
+    const working=snapshot.requests.some(r=>r.status==='pending'&&Number(r.path_node_id)===Number(n.id));const state=working?'Thinking…':n.locked_at?'Evidence locked':Number(n.layer)===2?'Parked idea':'Unchecked idea';const related=children.get(id)||[];
+    button.append(make('small',(query&&!matches.has(id)?'Parent branch · ':'')+state+(related.length?' · '+related.length+' related idea'+(related.length===1?'':'s'):'')));button.addEventListener('click',()=>select(id,button));row.append(button);container.append(row);
+    const descendants=related.filter(n=>shown.has(String(n.id))&&!placed.has(String(n.id)));if(descendants.length){const nested=make('ul',undefined,'map-branch-children');if(depth>=4)nested.classList.add('map-branch-deep');row.append(nested);for(let i=descendants.length-1;i>=0;i--)stack.push({node:descendants[i],container:nested,depth:depth+1});}
+   }};
+   for(const n of all)if(!shown.has(parents.get(String(n.id))))appendTree(n);
+   // Retain orphaned or cyclic legacy records without duplicating any idea.
+   for(const n of all)if(!placed.has(String(n.id)))appendTree(n);
    list.scrollTop=scroll;if(focused)list.querySelector(`[data-branch-id="${focused}"]`)?.focus({preventScroll:true});
   }
   for(const button of list.querySelectorAll('[data-branch-id]'))button.setAttribute('aria-current',button.dataset.branchId===selected?'true':'false');
-  count.textContent=query?`${filtered.length} / ${all.length}`:String(all.length);empty.hidden=filtered.length>0;empty.textContent=query?'No matching branches. Try another word.':'Research ideas will appear here.';
+  count.textContent=query?`${filtered.length} / ${all.length}`:String(all.length);count.title=query?'Matching ideas; parent branches are shown for context.':'Saved ideas';empty.hidden=filtered.length>0;empty.textContent=query?'No matching branches. Try another word.':'Research ideas will appear here.';
  }
  function renderThread(){
   if(!snapshot)return;const notes=snapshot.nodes.filter(n=>{if(n.type!=='learn'||String(n.parent_id)!==selected)return false;try{return JSON.parse(n.data_json).kind==='concept_chat';}catch{return false;}});
