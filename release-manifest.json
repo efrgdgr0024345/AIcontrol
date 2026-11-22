@@ -16,7 +16,7 @@
         "src/Diagnostics.php": "2eaf7ed1dfece09cdc3ed522ab924d42ac7aa816bc730f77ccea7b0381b6d10f",
         "src/EverydayActions.php": "afd3221ca2ea06e391f17f431bc3a7f0776e41afa1b0e81f6209cb2a7138f4b9",
         "src/EverydayEngineering.php": "039ec4777f04321e6429842627b4aaf6a523c6d1442e1ca63005412222a7edf8",
-        "src/EverydayEngineeringView.php": "f4f3ba16b12aa4b4fa2e8880968c535321608d42a011b5731d6e201f908eb861",
+        "src/EverydayEngineeringView.php": "8d1a12c11de538b870e772bbaee669d30269bb139b03a0d02c81f8646e814f44",
         "src/EverydayPrompt.php": "36c622eaf07080722fc7d94541260485d90a2c49fb513785e5524e1367d25f5b",
         "src/EvidenceLedger.php": "ff0e21311e5869648a35c3f99b5227c6f11db9f16e26b308d9323fbdbd8ebce0",
         "src/ExplorationFlow.php": "5950820e0bf21feb0316e1202894de2fd3f7d646a3358afc02a7a0efc815c0d0",
