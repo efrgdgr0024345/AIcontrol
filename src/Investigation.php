@@ -191,6 +191,11 @@ final class Investigation
             $run = $this->run($id);
             $pending = $this->rows("SELECT id FROM research_requests WHERE run_id=? AND status='pending'",[$id]);
             if (!in_array($run['status'],['pending','running'],true) && !$pending) { return; }
+            $this->execute("UPDATE research_nodes SET status='uncertain',content='Conversation stopped; provider outcome may be unknown. No automatic retry.',updated_at=? WHERE id IN (SELECT node_id FROM research_requests WHERE run_id=? AND status='pending' AND kind='concept_chat')",[time(),$id]);
+            if(!in_array($run['status'],['pending','running'],true)&&$pending&&!$this->rows("SELECT id FROM research_requests WHERE run_id=? AND status='pending' AND kind<>'concept_chat'",[$id])){
+                $this->execute("UPDATE research_requests SET status='uncertain' WHERE run_id=? AND status='pending'",[$id]);
+                $this->execute('UPDATE research_runs SET usage_unknown=1 WHERE id=?',[$id]);return;
+            }
             $this->updateRunStatus($id,'interrupted',$pending ? 'Stopped; an in-flight provider outcome and billing may remain unknown. No automatic retry.' : 'Stopped before the next phase. No automatic retry.');
             $this->execute("UPDATE research_requests SET status='uncertain' WHERE run_id=? AND status='pending'",[$id]);
             if ($pending) { $this->execute('UPDATE research_runs SET usage_unknown=1 WHERE id=?',[$id]); }

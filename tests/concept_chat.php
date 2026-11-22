@@ -22,6 +22,6 @@ try{
  $db->exec('UPDATE research_requests SET estimated_usd='.(float)$cost.' WHERE id=(SELECT MIN(id) FROM research_requests)');$db->exec('UPDATE research_projects SET spend_cap_usd=5 WHERE id=1');
  \AIcontrol\InvestigationWire::$handler=static function($body)use($engine,$run){$engine->stop($run);return reply('LATE-RESPONSE-CANARY');};
  $snapshot=$engine->discussConcept($run,$a,'Stop this pending question.');$last=end($snapshot['nodes']);verify($last['status']==='uncertain'&&!str_contains($last['content'],'LATE-RESPONSE-CANARY'),'Late response applied after Stop');
- verify(count(\AIcontrol\InvestigationWire::$bodies)===5,'Unexpected automatic provider retry');
+ verify($snapshot['run']['status']==='complete'&&(int)$snapshot['run']['evidence_frozen']===1,'Stopping a conversation changed the completed research result');verify(count(\AIcontrol\InvestigationWire::$bodies)===5,'Unexpected automatic provider retry');
  echo "PASS: $checks scoped concept chat, persistence, isolation, no tools/evidence mutations, frozen results, shared budget and Stop checks (synthetic provider)\n";
 }catch(Throwable $error){fwrite(STDERR,$error->getMessage()."\n".$error->getTraceAsString()."\n");exit(1);}finally{foreach($dirs as $dir){foreach(glob($dir.'/*') as $file)@unlink($file);@rmdir($dir);}}

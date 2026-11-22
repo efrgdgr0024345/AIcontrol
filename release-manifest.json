@@ -22,7 +22,7 @@
         "src/EvidenceLedger.php": "ff0e21311e5869648a35c3f99b5227c6f11db9f16e26b308d9323fbdbd8ebce0",
         "src/ExplorationFlow.php": "5950820e0bf21feb0316e1202894de2fd3f7d646a3358afc02a7a0efc815c0d0",
         "src/HostingRequirements.php": "7d062f0a54c10dc206ce731d31ad7b7efb9993900d3f87c24a7bc5cb110e655b",
-        "src/Investigation.php": "d770a4285d1b8b6766b1dfd5e0274a55a7259249619e884fe887da2c0e95d007",
+        "src/Investigation.php": "1d0b127323977717640d0b5aa3c97b0ef827ac69cac9eab7b7f51c4b2449f1ad",
         "src/NasaActions.php": "0be2342c7ef4f8a62b2531d69e72daaf9654fd9fcb5b8b598948898b467381f4",
         "src/NasaCollaboration.php": "ed39ac7c2dc99365afac84648f8e6bccd3bb72dc0a18c6300a2b6411178cafaa",
         "src/NasaCollaborationView.php": "c4c6b2eb69b9c07060ceff4a448c40efb2e25cd36a15b02676882c499a71d8cf",
