@@ -943,3 +943,18 @@ mobile/dark-mode contrast and the native mode-entry GET boundary. Tests remain
 local and synthetic where declared. Installation/login on the live host requires
 the protected AICONTROL_SITE_PIN credential; the runtime and saved environment
 configuration did not expose that binding during this refinement.
+
+## Branch-first map reading and conversation (2026-11-22)
+
+The owner requested a wider, quiet left panel focused on Branches. Saved concepts
+now have concise searchable titles with family colours/nesting. A reading window
+opens full text, explicit model-only pathway expansion and a chat icon. Context
+and advanced controls are folded away; Back restores list focus. Scoped chat
+retains each concept's thread and drafts, uses the shared provider/budget controls,
+and stays separate from Evidence and authority. See RESEARCH_MAP_CONTRACT.md.
+
+The pending security fixes for public-testing AI note disclosure and concurrent
+legacy password admission are included, with focused regression coverage; normal
+standalone PIN/updater controls are unchanged. A valid owner login is now available
+for the confirmed AIadmin host. Published source, live activation and actual
+provider outcomes must still be reported separately and supported by checks.

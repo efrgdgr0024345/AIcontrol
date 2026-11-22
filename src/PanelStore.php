@@ -36,6 +36,10 @@ final class PanelStore
             provider_request_id TEXT, input_tokens INTEGER, output_tokens INTEGER,
             started_at INTEGER NOT NULL, finished_at INTEGER)');
         UsageMeter::migrate($this->db,'agent_runs');
+        // Accounting identity only; this value never authenticates a browser or
+        // leaves the server. Old failure rows continue counting with a NULL key.
+        UsageMeter::columns($this->db,'login_failures',['attempt_key'=>'TEXT']);
+        $this->db->exec('CREATE UNIQUE INDEX IF NOT EXISTS login_attempt_identity ON login_failures(attempt_key) WHERE attempt_key IS NOT NULL');
     }
 
     private function transaction(callable $work): int
@@ -166,6 +170,27 @@ final class PanelStore
         $query = $this->db->prepare('SELECT COUNT(*) FROM login_failures WHERE client=? AND attempted_at>?');
         $query->execute([$client, time() - 600]);
         return (int) $query->fetchColumn() < 5;
+    }
+
+    /** Reserve before password verification so concurrent sessions share the bound. */
+    public function reserveLoginAttempt(string $client): ?string
+    {
+        $key=bin2hex(random_bytes(16));
+        $admitted=$this->transaction(function()use($client,$key):int{
+            $now=time();$cutoff=$now-600;
+            $this->db->prepare('DELETE FROM login_failures WHERE attempted_at<=?')->execute([$cutoff]);
+            $query=$this->db->prepare('SELECT COUNT(*) FROM login_failures WHERE client=? AND attempted_at>?');$query->execute([$client,$cutoff]);
+            if((int)$query->fetchColumn()>=5)return 0;
+            $this->db->prepare('INSERT INTO login_failures(client,attempted_at,attempt_key)VALUES(?,?,?)')->execute([$client,$now,$key]);
+            return 1;
+        });
+        return $admitted?$key:null;
+    }
+
+    /** Remove only this verified attempt, retaining other failures or pending work. */
+    public function releaseSuccessfulLoginAttempt(string $client,string $attempt): void
+    {
+        $this->db->prepare('DELETE FROM login_failures WHERE client=? AND attempt_key=?')->execute([$client,$attempt]);
     }
 
     public function failedLogin(string $client): void

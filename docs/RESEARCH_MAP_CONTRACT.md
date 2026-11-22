@@ -310,3 +310,33 @@ and the exact AIcontrolMap.project implementation. It exposes the difference
 between stored rows, delivered payload and filtered/grouped cards, including
 source IDs versus persisted/display-only node IDs. Inspection does not advance
 research. See PROJECT_JSON_INSPECTION.md for scope, export and view-state limits.
+
+## Branch browser and scoped concept discussion (2026-11-22)
+
+The full-screen map reserves a wider left panel for Branches: searchable saved
+concept titles, family colours, nesting, small unchecked/locked/parked indicators
+and related-idea counts. Titles are deterministic excerpts of saved text, not new
+AI summaries or assessments of truth. Search and reading do not call a provider.
+Selection opens the full saved body in a reading window. Connections, activity,
+source details and advanced layer/evidence/priority controls are folded away.
+Back to Branches restores keyboard focus and preserves the search/scroll state.
+
+Expand this pathway explicitly runs the existing model-only explore action for
+the selected saved concept. It respects idle phases, Stop, admission and budgets;
+it never starts web Evidence. The small chat icon opens a separate conversation
+scoped to the selected run/node, bounded ancestors/children and its prior turns.
+Switching concepts preserves unsent drafts; saved conversations survive reload.
+
+`research_concept_chat` uses the existing provider gate, hourly admission and
+project spending reservation. Conversations are `learn` nodes with
+`data_json.kind=concept_chat`, parented to the exact saved concept, and requests
+are recorded as `concept_chat` with the selected path ID. No new table is needed.
+They have no tools/search, do not verify or mutate the concept, and work on frozen
+results without thawing evidence. Stop discards late answers; uncertainty and
+failed preparation are retained without automatic retry. Existing unversioned
+and first-version runs remain readable. Backend scoping rejects other-run IDs.
+
+Validation: concept_chat.php exercises scope, history, immutable concepts,
+completed/frozen runs, hourly/project caps and Stop. map_branches_ui.cjs covers
+search/reader/growth, saved and isolated chat, drafts, reload, owner CSRF, mobile,
+keyboard return and accessibility using a synthetic provider.

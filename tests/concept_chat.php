@@ -1,0 +1,27 @@
+<?php
+declare(strict_types=1);
+require __DIR__.'/investigation_fixtures.php';
+try{
+ [$dir,$engine,$research,$db]=fixture(true);$run=$engine->createRun(1);$db->exec("UPDATE research_runs SET phase='exploring' WHERE id=$run");
+ $a=$engine->appendNode($run,null,'model_idea','complete','Repair training','Explain practical volunteer training, not proven evidence.');$b=$engine->appendNode($run,null,'model_idea','complete','Battery storage','OTHER-BRANCH-CANARY');
+ $before=$db->query("SELECT * FROM research_nodes WHERE id=$a")->fetch(PDO::FETCH_ASSOC);
+ \AIcontrol\InvestigationWire::$handler=static fn($body)=>reply('A bounded synthetic explanation.');
+ denied(fn()=>$engine->discussConcept($run,$a,''),'Empty chat accepted');denied(fn()=>$engine->discussConcept($run,$a,str_repeat('x',2001)),'Oversize chat accepted');denied(fn()=>$engine->discussConcept($run,999999,'Why?'),'Unknown node accepted');
+ $project=$research->create('Separate context','OTHER-PROJECT-PRIVATE');$db->exec("INSERT INTO research_runs(project_id,status,phase,started_at,model) VALUES($project,'complete','complete',".time().",'gpt-4.1-mini')");$other=(int)$db->lastInsertId();$foreign=$engine->appendNode($other,null,'model_idea','complete','Other project node','FOREIGN-CONCEPT-PRIVATE');
+ denied(fn()=>$engine->discussConcept($run,$foreign,'Why?'),'Cross-run node accepted');
+ $snapshot=$engine->discussConcept($run,$a,'FIRST-QUESTION: explain the trade-off.');$body=end(\AIcontrol\InvestigationWire::$bodies);
+ verify(!isset($body['tools'])&&$body['max_output_tokens']===1600&&$body['store']===false,'Chat tool/token/storage boundary changed');verify(str_contains($body['input'],'Repair training')&&!str_contains($body['input'],'OTHER-BRANCH-CANARY')&&!str_contains($body['input'],'OTHER-PROJECT-PRIVATE'),'Chat included unrelated context');
+ verify($snapshot['run']['phase']==='exploring'&&$snapshot['run']['status']==='running'&&!$snapshot['sources'],'Chat advanced research or created evidence');verify($db->query("SELECT * FROM research_nodes WHERE id=$a")->fetch(PDO::FETCH_ASSOC)===$before,'Chat mutated selected concept');
+ $notes=array_values(array_filter($snapshot['nodes'],static fn($n)=>$n['type']==='learn'));verify(count($notes)===1&&(int)$notes[0]['parent_id']===$a&&$notes[0]['status']==='complete','Chat not persisted under exact concept');verify(json_decode($notes[0]['data_json'],true)['kind']==='concept_chat'&&str_contains($notes[0]['content'],'FIRST-QUESTION'),'Question or reply lost');
+ $engine->discussConcept($run,$a,'Follow up on the explanation.');$body=end(\AIcontrol\InvestigationWire::$bodies);verify(str_contains($body['input'],'FIRST-QUESTION')&&str_contains($body['input'],'A bounded synthetic explanation'),'Follow-up lost its concept conversation');
+ $engine->discussConcept($run,$b,'Explain this other concept.');$body=end(\AIcontrol\InvestigationWire::$bodies);verify(!str_contains($body['input'],'FIRST-QUESTION'),'Conversation leaked across concepts');
+ $db->exec("INSERT INTO research_messages(project_id,role,text,status,created_at) SELECT 1,'assistant','BUDGET-FIXTURE','complete',".time()." FROM (SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7)");$calls=count(\AIcontrol\InvestigationWire::$bodies);denied(fn()=>$engine->discussConcept($run,$a,'Over limit'),'Shared hourly budget bypassed');verify(count(\AIcontrol\InvestigationWire::$bodies)===$calls,'Rejected question dispatched');$db->exec("DELETE FROM research_messages WHERE text='BUDGET-FIXTURE'");
+ $db->exec("UPDATE research_runs SET status='complete',phase='complete',evidence_frozen=1 WHERE id=$run");$engine->discussConcept($run,$a,'Explain the frozen result.');verify((int)$engine->getRunSnapshot($run)['run']['evidence_frozen']===1,'Chat thawed frozen evidence');verify($db->query("SELECT * FROM research_nodes WHERE id=$a")->fetch(PDO::FETCH_ASSOC)===$before,'Frozen concept changed');
+ $cost=$db->query('SELECT estimated_usd FROM research_requests ORDER BY id LIMIT 1')->fetchColumn();$db->exec('UPDATE research_requests SET estimated_usd=1 WHERE id=(SELECT MIN(id) FROM research_requests)');$db->exec('UPDATE research_projects SET spend_cap_usd=0.05 WHERE id=1');$calls=count(\AIcontrol\InvestigationWire::$bodies);
+ $capped=$engine->discussConcept($run,$a,'A capped question must not dispatch.');$note=end($capped['nodes']);verify($note['status']==='incomplete'&&count(\AIcontrol\InvestigationWire::$bodies)===$calls,'Project spend cap bypassed');
+ $db->exec('UPDATE research_requests SET estimated_usd='.(float)$cost.' WHERE id=(SELECT MIN(id) FROM research_requests)');$db->exec('UPDATE research_projects SET spend_cap_usd=5 WHERE id=1');
+ \AIcontrol\InvestigationWire::$handler=static function($body)use($engine,$run){$engine->stop($run);return reply('LATE-RESPONSE-CANARY');};
+ $snapshot=$engine->discussConcept($run,$a,'Stop this pending question.');$last=end($snapshot['nodes']);verify($last['status']==='uncertain'&&!str_contains($last['content'],'LATE-RESPONSE-CANARY'),'Late response applied after Stop');
+ verify(count(\AIcontrol\InvestigationWire::$bodies)===5,'Unexpected automatic provider retry');
+ echo "PASS: $checks scoped concept chat, persistence, isolation, no tools/evidence mutations, frozen results, shared budget and Stop checks (synthetic provider)\n";
+}catch(Throwable $error){fwrite(STDERR,$error->getMessage()."\n".$error->getTraceAsString()."\n");exit(1);}finally{foreach($dirs as $dir){foreach(glob($dir.'/*') as $file)@unlink($file);@rmdir($dir);}}

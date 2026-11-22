@@ -27,7 +27,9 @@ final class AgentRunner
     public static function sharedContext(): string
     {
         $directory = getenv('AICONTROL_PRIVATE_DIR');
-        return class_exists(Vault::class) && is_string($directory) && $directory !== '' ? (new Vault($directory))->context() : '';
+        if(!class_exists(Vault::class)||!is_string($directory)||$directory==='')return '';
+        try { return (new Vault($directory))->context(); }
+        catch(Throwable) { return ''; }
     }
 
     public static function run(PanelStore $store, int $task): void

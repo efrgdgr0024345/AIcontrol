@@ -69,7 +69,7 @@
   const familyLegend=el('ul');familyLegend.dataset.mapFamilyLegend='1';familyLegend.tabIndex=0;familyLegend.setAttribute('aria-label','Idea family colours');connectionLegend.append(familyLegend);
   const relatedToggle=el('button','Show related idea links','btn btn-outline-secondary');relatedToggle.type='button';relatedToggle.setAttribute('aria-pressed','true');relatedToggle.addEventListener('click',()=>{showRelated=!showRelated;relatedToggle.setAttribute('aria-pressed',String(showRelated));renderCamera(camera.getState());});connectionLegend.append(relatedToggle);tray.append(connectionLegend);
   const activityPanel=el('details',undefined,'map-current-work'),activitySummary=el('summary','Current model work · idle'),activityList=el('div');activityPanel.append(activitySummary,activityList);tray.append(activityPanel);
-  const workingNow=el('div',undefined,'map-working-now');workingNow.dataset.mapWorkingNow='1';workingNow.setAttribute('role','status');workingNow.setAttribute('aria-live','polite');workingNow.hidden=true;const workingButton=el('button','','btn');workingButton.type='button';workingNow.append(workingButton);map.append(workingNow);workingButton.addEventListener('click',()=>{workingButton.dataset.nodeId?inspect(workingButton.dataset.nodeId):controls(true);});
+  const workingNow=el('div',undefined,'map-working-now');workingNow.dataset.mapWorkingNow='1';workingNow.setAttribute('role','status');workingNow.setAttribute('aria-live','polite');workingNow.hidden=true;const workingButton=el('button','','btn');workingButton.type='button';workingNow.append(workingButton);map.append(workingNow);workingButton.addEventListener('click',()=>{if(workingButton.dataset.nodeId){inspect(workingButton.dataset.nodeId);const context=inspector.querySelector('.map-concept-context');if(context)context.open=true;}else controls(true);});
   const legend=el('p','Brightest: current logic line. Other ideas recede; none are deleted. Drag to orbit/look in 3D · Shift-drag pans · W/A/S/D fly · R/F up/down · wheel moves forward/back. Size and light indicate attention, not truth.','map-star-legend');legend.id='map-star-help';map.append(legend);viewport.setAttribute('aria-describedby','map-star-help');
 
   const live=el('p');live.dataset.liveActivity='1';live.setAttribute('role','status');const clock=el('small');clock.dataset.liveClock='1';clock.setAttribute('aria-live','off');const spend=el('p');spend.dataset.projectSpend='1';
@@ -136,7 +136,7 @@
     notification.hidden=!requestError&&!['failed','uncertain','incomplete','interrupted'].includes(snapshot.run.status)&&!verificationReview;notification.textContent=requestError?'Research needs attention · open controls':verificationReview?'Verification ready · review':snapshot.run.status+' · open controls';handle.dataset.state=snapshot.run.status;handle.title=active?'Research active · open controls to stop (Alt+S)':'Map controls and usage';
     heading.querySelector('span').textContent=`${reviewing()?'Review claims to continue':verificationReview?'Review verification findings · finish or review gaps':snapshot.run.status+' · '+snapshot.run.phase} · ${snapshot.run.token_input} in / ${snapshot.run.token_output} out tokens${snapshot.run.usage_unknown?' · some usage unknown':''}${snapshot.budget?' · '+snapshot.budget.remaining+'/'+(snapshot.budget.limit||10)+' requests remaining':''}`;
   }
-  function details(open){if(open)controls(false);side.hidden=!open;map.classList.toggle('map-details-open',open);actions.querySelector('[data-map-screen-action=details]').setAttribute('aria-expanded',String(open));if(snapshot&&!map.hidden)renderCamera(camera.getState());}
+  function details(open){map.dataset.readerOpen=String(open);if(open)controls(false);side.hidden=!open;if(open&&!side.contains(document.activeElement))closeSide.focus({preventScroll:true});map.classList.toggle('map-details-open',open);actions.querySelector('[data-map-screen-action=details]').setAttribute('aria-expanded',String(open));if(snapshot&&!map.hidden)renderCamera(camera.getState());}
   header.addEventListener('click',event=>{
     const action=event.target.closest('[data-map-screen-action]')?.dataset.mapScreenAction;if(!action)return;
     if(action==='list'){showView('list');return;}
@@ -150,7 +150,7 @@
     if(event.altKey&&event.key.toLowerCase()==='s'){event.preventDefault();root.querySelector('[data-research-action=research_stop]')?.requestSubmit();return;}
     if(event.key==='Escape'){event.preventDefault();if(camera.getState().transitionType==='flight'){clearFlight();camera.interact();viewport.focus({preventScroll:true});return;}if(!tray.hidden){controls(false);handle.focus();}else if(!side.hidden){details(false);viewport.focus();}else showView('list');return;}
     if(event.key!=='Tab')return;
-    const stops=[...map.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],[tabindex="0"]')].filter(node=>node.getClientRects().length);
+    const stops=[...map.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],[tabindex="0"]')].filter(node=>node.getClientRects().length&&getComputedStyle(node).visibility!=='hidden');
     const first=stops[0],last=stops.at(-1);
     if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus({preventScroll:true});}
     else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus({preventScroll:true});}
@@ -346,6 +346,7 @@
   }
   function updateInspector() {
     const node=nodes.find(node=>node.id===selected)||nodes[0];
+    map.dispatchEvent(new CustomEvent('research:concept-selected',{detail:{nodeId:node.id}}));
     const linked=links(node),sourceIDs=sourceIds(node),sources=snapshot.sources.filter(source=>sourceIDs.includes(Number(source.id)));
     const passages=snapshot.ledger.passages.filter(p=>sourceIDs.includes(Number(p.source_id)));
     const edges=snapshot.ledger.edges.filter(edge=>node.type==='edge'?`edge-${edge.id}`===node.id:linked.includes(Number(edge.claim_id))||sourceIDs.includes(Number(edge.source_id)));
@@ -382,6 +383,10 @@
       const persistedIDs=new Set(snapshot.nodes.map(row=>String(row.id)));
       const listID=persistedIDs.has(node.id)?node.id:sources.find(source=>persistedIDs.has(String(source.node_id)))?.node_id;
       if(listID){const jump=el('button','Jump to List entry','btn btn-outline-secondary');jump.type='button';jump.dataset.mapListNode=String(listID);inspector.append(jump);}
+      if(conceptTypes.includes(node.type)){
+        const more=el('details',undefined,'map-concept-context');more.append(el('summary','Connections, sources and activity'));
+        while(inspector.children.length>3)more.append(inspector.children[3]);inspector.append(more);
+      }
       for(const detail of inspector.querySelectorAll('details'))if(opened.has(detail.querySelector('summary')?.textContent))detail.open=true;
       inspector.dataset.stamp=stamp;
     }
@@ -441,6 +446,8 @@
     controls(false);selected=id;details(true);draw();geometry();camera.focus(id);targetPicker.value=id;
     root.dispatchEvent(new CustomEvent('research:interest',{detail:{nodeId:id}}));
   }
+  map.addEventListener('research:inspect-concept',event=>inspect(event.detail.nodeId));
+  map.addEventListener('research:close-concept',()=>details(false));
   map.addEventListener('click',async event=>{
     const command=event.target.closest('[data-map-command]');
     if(command){const key=command.dataset.mapCommand;if(key==='fit'){manualViewport=false;fit();}if(key==='in'){manualViewport=true;setScale(scale*1.2);}if(key==='out'){manualViewport=true;setScale(scale/1.2);}if(key==='reset'){positions.clear();sizes.clear();layoutSignature='';manualViewport=false;draw();fit();}if(key==='collapse'){nodes.filter(node=>node.id!=='root').forEach(node=>collapsed.add(node.id));draw();fit();}if(key==='expand'){collapsed.clear();draw();fit();}return;}
@@ -467,7 +474,7 @@
     if(event.key==='ArrowRight'){if(collapsed.has(node.id)){collapsed.delete(node.id);draw();}next=visible.find(child=>child.parent_id===node.id);}
     if(event.key==='ArrowLeft')next=visible.find(parent=>parent.id===node.parent_id);
     if(event.key==='ArrowDown')next=visible[visible.indexOf(node)+1];if(event.key==='ArrowUp')next=visible[visible.indexOf(node)-1];
-    if(next){event.preventDefault();inspect(next.id);const target=world.querySelector(`[data-map-node="${next.id}"] button`);if(target&&!target.disabled&&!target.closest('[hidden]'))target.focus({preventScroll:true});else{pendingKeyboardFocus=next.id;viewport.focus({preventScroll:true});}}
+    if(next){event.preventDefault();const reading=!side.hidden;inspect(next.id);if(!reading)details(false);const target=world.querySelector(`[data-map-node="${next.id}"] button`);if(target&&!target.disabled&&!target.closest('[hidden]'))target.focus({preventScroll:true});else{pendingKeyboardFocus=next.id;viewport.focus({preventScroll:true});}}
   });
   root.addEventListener('research:contact',()=>{if(!activityVerified&&snapshot){activityVerified=true;updateActivity();renderCamera(camera.getState());}});
   root.addEventListener('research:snapshot',event=>{

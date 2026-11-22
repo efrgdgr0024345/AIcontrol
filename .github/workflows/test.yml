@@ -40,7 +40,7 @@ jobs:
           php tests/everyday_evidence.php
           php tests/everyday_context_pack.php
           php tests/admin_test_reports.php
-          python3 -B -m unittest -v tests/everyday_http.py tests/admin_test_http.py tests/site_delivery.py
+          python3 -B -m unittest -v tests/everyday_http.py tests/admin_test_http.py tests/site_delivery.py tests/public_context_security.py
           python3 -B -m unittest -v tests/nasa_http.py
           php tests/systems.php
           php tests/system_setup.php
@@ -58,6 +58,7 @@ jobs:
           php tests/exploration.php
           php tests/exploration_context.php
           php tests/star_map.php
+          php tests/concept_chat.php
           php tests/map_steering.php
           python3 -B -m unittest -v tests/investigation_http.py
           python3 -B -m unittest -v tests/http_smoke.py

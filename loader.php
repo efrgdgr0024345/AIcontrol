@@ -1322,7 +1322,7 @@ document.addEventListener('submit', event => {
   const familyLegend=el('ul');familyLegend.dataset.mapFamilyLegend='1';familyLegend.tabIndex=0;familyLegend.setAttribute('aria-label','Idea family colours');connectionLegend.append(familyLegend);
   const relatedToggle=el('button','Show related idea links','btn btn-outline-secondary');relatedToggle.type='button';relatedToggle.setAttribute('aria-pressed','true');relatedToggle.addEventListener('click',()=>{showRelated=!showRelated;relatedToggle.setAttribute('aria-pressed',String(showRelated));renderCamera(camera.getState());});connectionLegend.append(relatedToggle);tray.append(connectionLegend);
   const activityPanel=el('details',undefined,'map-current-work'),activitySummary=el('summary','Current model work · idle'),activityList=el('div');activityPanel.append(activitySummary,activityList);tray.append(activityPanel);
-  const workingNow=el('div',undefined,'map-working-now');workingNow.dataset.mapWorkingNow='1';workingNow.setAttribute('role','status');workingNow.setAttribute('aria-live','polite');workingNow.hidden=true;const workingButton=el('button','','btn');workingButton.type='button';workingNow.append(workingButton);map.append(workingNow);workingButton.addEventListener('click',()=>{workingButton.dataset.nodeId?inspect(workingButton.dataset.nodeId):controls(true);});
+  const workingNow=el('div',undefined,'map-working-now');workingNow.dataset.mapWorkingNow='1';workingNow.setAttribute('role','status');workingNow.setAttribute('aria-live','polite');workingNow.hidden=true;const workingButton=el('button','','btn');workingButton.type='button';workingNow.append(workingButton);map.append(workingNow);workingButton.addEventListener('click',()=>{if(workingButton.dataset.nodeId){inspect(workingButton.dataset.nodeId);const context=inspector.querySelector('.map-concept-context');if(context)context.open=true;}else controls(true);});
   const legend=el('p','Brightest: current logic line. Other ideas recede; none are deleted. Drag to orbit/look in 3D · Shift-drag pans · W/A/S/D fly · R/F up/down · wheel moves forward/back. Size and light indicate attention, not truth.','map-star-legend');legend.id='map-star-help';map.append(legend);viewport.setAttribute('aria-describedby','map-star-help');
 
   const live=el('p');live.dataset.liveActivity='1';live.setAttribute('role','status');const clock=el('small');clock.dataset.liveClock='1';clock.setAttribute('aria-live','off');const spend=el('p');spend.dataset.projectSpend='1';
@@ -1389,7 +1389,7 @@ document.addEventListener('submit', event => {
     notification.hidden=!requestError&&!['failed','uncertain','incomplete','interrupted'].includes(snapshot.run.status)&&!verificationReview;notification.textContent=requestError?'Research needs attention · open controls':verificationReview?'Verification ready · review':snapshot.run.status+' · open controls';handle.dataset.state=snapshot.run.status;handle.title=active?'Research active · open controls to stop (Alt+S)':'Map controls and usage';
     heading.querySelector('span').textContent=`${reviewing()?'Review claims to continue':verificationReview?'Review verification findings · finish or review gaps':snapshot.run.status+' · '+snapshot.run.phase} · ${snapshot.run.token_input} in / ${snapshot.run.token_output} out tokens${snapshot.run.usage_unknown?' · some usage unknown':''}${snapshot.budget?' · '+snapshot.budget.remaining+'/'+(snapshot.budget.limit||10)+' requests remaining':''}`;
   }
-  function details(open){if(open)controls(false);side.hidden=!open;map.classList.toggle('map-details-open',open);actions.querySelector('[data-map-screen-action=details]').setAttribute('aria-expanded',String(open));if(snapshot&&!map.hidden)renderCamera(camera.getState());}
+  function details(open){map.dataset.readerOpen=String(open);if(open)controls(false);side.hidden=!open;if(open&&!side.contains(document.activeElement))closeSide.focus({preventScroll:true});map.classList.toggle('map-details-open',open);actions.querySelector('[data-map-screen-action=details]').setAttribute('aria-expanded',String(open));if(snapshot&&!map.hidden)renderCamera(camera.getState());}
   header.addEventListener('click',event=>{
     const action=event.target.closest('[data-map-screen-action]')?.dataset.mapScreenAction;if(!action)return;
     if(action==='list'){showView('list');return;}
@@ -1403,7 +1403,7 @@ document.addEventListener('submit', event => {
     if(event.altKey&&event.key.toLowerCase()==='s'){event.preventDefault();root.querySelector('[data-research-action=research_stop]')?.requestSubmit();return;}
     if(event.key==='Escape'){event.preventDefault();if(camera.getState().transitionType==='flight'){clearFlight();camera.interact();viewport.focus({preventScroll:true});return;}if(!tray.hidden){controls(false);handle.focus();}else if(!side.hidden){details(false);viewport.focus();}else showView('list');return;}
     if(event.key!=='Tab')return;
-    const stops=[...map.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],[tabindex="0"]')].filter(node=>node.getClientRects().length);
+    const stops=[...map.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],[tabindex="0"]')].filter(node=>node.getClientRects().length&&getComputedStyle(node).visibility!=='hidden');
     const first=stops[0],last=stops.at(-1);
     if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus({preventScroll:true});}
     else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus({preventScroll:true});}
@@ -1599,6 +1599,7 @@ document.addEventListener('submit', event => {
   }
   function updateInspector() {
     const node=nodes.find(node=>node.id===selected)||nodes[0];
+    map.dispatchEvent(new CustomEvent('research:concept-selected',{detail:{nodeId:node.id}}));
     const linked=links(node),sourceIDs=sourceIds(node),sources=snapshot.sources.filter(source=>sourceIDs.includes(Number(source.id)));
     const passages=snapshot.ledger.passages.filter(p=>sourceIDs.includes(Number(p.source_id)));
     const edges=snapshot.ledger.edges.filter(edge=>node.type==='edge'?`edge-${edge.id}`===node.id:linked.includes(Number(edge.claim_id))||sourceIDs.includes(Number(edge.source_id)));
@@ -1635,6 +1636,10 @@ document.addEventListener('submit', event => {
       const persistedIDs=new Set(snapshot.nodes.map(row=>String(row.id)));
       const listID=persistedIDs.has(node.id)?node.id:sources.find(source=>persistedIDs.has(String(source.node_id)))?.node_id;
       if(listID){const jump=el('button','Jump to List entry','btn btn-outline-secondary');jump.type='button';jump.dataset.mapListNode=String(listID);inspector.append(jump);}
+      if(conceptTypes.includes(node.type)){
+        const more=el('details',undefined,'map-concept-context');more.append(el('summary','Connections, sources and activity'));
+        while(inspector.children.length>3)more.append(inspector.children[3]);inspector.append(more);
+      }
       for(const detail of inspector.querySelectorAll('details'))if(opened.has(detail.querySelector('summary')?.textContent))detail.open=true;
       inspector.dataset.stamp=stamp;
     }
@@ -1694,6 +1699,8 @@ document.addEventListener('submit', event => {
     controls(false);selected=id;details(true);draw();geometry();camera.focus(id);targetPicker.value=id;
     root.dispatchEvent(new CustomEvent('research:interest',{detail:{nodeId:id}}));
   }
+  map.addEventListener('research:inspect-concept',event=>inspect(event.detail.nodeId));
+  map.addEventListener('research:close-concept',()=>details(false));
   map.addEventListener('click',async event=>{
     const command=event.target.closest('[data-map-command]');
     if(command){const key=command.dataset.mapCommand;if(key==='fit'){manualViewport=false;fit();}if(key==='in'){manualViewport=true;setScale(scale*1.2);}if(key==='out'){manualViewport=true;setScale(scale/1.2);}if(key==='reset'){positions.clear();sizes.clear();layoutSignature='';manualViewport=false;draw();fit();}if(key==='collapse'){nodes.filter(node=>node.id!=='root').forEach(node=>collapsed.add(node.id));draw();fit();}if(key==='expand'){collapsed.clear();draw();fit();}return;}
@@ -1720,7 +1727,7 @@ document.addEventListener('submit', event => {
     if(event.key==='ArrowRight'){if(collapsed.has(node.id)){collapsed.delete(node.id);draw();}next=visible.find(child=>child.parent_id===node.id);}
     if(event.key==='ArrowLeft')next=visible.find(parent=>parent.id===node.parent_id);
     if(event.key==='ArrowDown')next=visible[visible.indexOf(node)+1];if(event.key==='ArrowUp')next=visible[visible.indexOf(node)-1];
-    if(next){event.preventDefault();inspect(next.id);const target=world.querySelector(`[data-map-node="${next.id}"] button`);if(target&&!target.disabled&&!target.closest('[hidden]'))target.focus({preventScroll:true});else{pendingKeyboardFocus=next.id;viewport.focus({preventScroll:true});}}
+    if(next){event.preventDefault();const reading=!side.hidden;inspect(next.id);if(!reading)details(false);const target=world.querySelector(`[data-map-node="${next.id}"] button`);if(target&&!target.disabled&&!target.closest('[hidden]'))target.focus({preventScroll:true});else{pendingKeyboardFocus=next.id;viewport.focus({preventScroll:true});}}
   });
   root.addEventListener('research:contact',()=>{if(!activityVerified&&snapshot){activityVerified=true;updateActivity();renderCamera(camera.getState());}});
   root.addEventListener('research:snapshot',event=>{
@@ -1751,6 +1758,83 @@ document.addEventListener('submit', event => {
   motion.addEventListener('change',()=>{if(motion.matches&&camera.transition){const state=camera.getState();camera.cancel();if(state.transitionType==='focus'&&positions.has(state.focusNodeId))camera.focus(state.focusNodeId);else camera.restoreState(state);}renderCamera(camera.getState());});
   document.addEventListener('visibilitychange',()=>{if(document.hidden){clearFlight();camera.cancel();}});
   showView(view);
+})();
+
+// A quiet branch browser and a saved, concept-scoped conversation in the map.
+(() => {
+ 'use strict';
+ const root=document.querySelector('[data-investigation]'),map=document.querySelector('[data-mindmap]');if(!root||!map)return;
+ const types=new Set(['dream_claim','question','model_idea','association','counter','edge_case','reframing']);
+ const make=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;};
+ const side=map.querySelector('[data-map-inspector]'),content=side.querySelector('[data-map-inspector-content]');
+ let snapshot=null,selected='',verified=true,listStamp='',lastQuery='',threadStamp='',lastTrigger=null,pendingDraft=null;
+ const drafts=new Map();
+ const browser=make('aside',undefined,'map-branch-browser');browser.setAttribute('aria-label','Branches');browser.dataset.branchBrowser='1';
+ const heading=make('div',undefined,'map-branch-heading');heading.append(make('h2','Branches'));const count=make('span');count.setAttribute('role','status');heading.append(count);
+ const search=make('input',undefined,'form-control');search.type='search';search.placeholder='Find an idea…';search.setAttribute('aria-label','Search branches');
+ const list=make('ul',undefined,'map-branch-list');list.dataset.branchList='1';const empty=make('p','Research ideas will appear here.','map-branch-empty');
+ browser.append(heading,search,list,empty);map.append(browser);
+ const actions=make('div',undefined,'map-concept-actions');const back=make('button','← Branches','btn btn-outline-secondary');back.type='button';back.dataset.branchBack='1';
+ const expand=make('button','Expand this pathway','btn btn-primary');expand.type='button';expand.dataset.branchExpand='1';expand.disabled=true;
+ const chat=make('button',undefined,'btn btn-outline-secondary map-concept-chat-toggle');chat.type='button';chat.dataset.conceptChatToggle='1';chat.setAttribute('aria-label','Chat about this concept');chat.setAttribute('aria-expanded','false');chat.setAttribute('aria-controls','map-concept-conversation');
+ const icon=document.createElementNS('http://www.w3.org/2000/svg','svg');icon.setAttribute('viewBox','0 0 24 24');icon.setAttribute('aria-hidden','true');const path=document.createElementNS(icon.namespaceURI,'path');path.setAttribute('d','M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-6 4V6a2 2 0 0 1 2-2ZM7 9h10M7 13h7');icon.append(path);chat.append(icon);
+ const currentLabel=make('p','','map-concept-current');actions.append(currentLabel,back,expand,chat);side.insertBefore(actions,content);const problem=side.querySelector('.map-request-error')||make('p','','map-request-error');problem.hidden=true;problem.setAttribute('role','alert');side.insertBefore(problem,content);
+ const advanced=make('details',undefined,'map-concept-advanced');advanced.dataset.mapAdvanced='1';advanced.append(make('summary','More options · layers, evidence and priority'));
+ for(const child of [...side.children])if(child!==content&&child!==actions&&child!==problem&&!child.classList.contains('map-inspector-close'))advanced.append(child);
+ side.append(advanced);
+ const conversation=make('section',undefined,'map-concept-conversation');conversation.id='map-concept-conversation';conversation.hidden=true;conversation.setAttribute('aria-label','Selected concept conversation');
+ conversation.append(make('h4','Talk about this concept'),make('p','Ask for an explanation, challenge an assumption, or explore an implication. AI discussion is not verified evidence.','map-conversation-note'));
+ const thread=make('div',undefined,'map-conversation-thread');thread.setAttribute('role','log');thread.setAttribute('aria-live','polite');
+ const form=make('form');form.method='post';form.action=root.dataset.entry||location.pathname;form.dataset.researchAction='research_concept_chat';
+ for(const [name,value]of Object.entries({action:'research_concept_chat',csrf:root.querySelector('input[name=csrf]')?.value||'',run_id:root.dataset.runId||'',node_id:''})){const input=make('input');input.type='hidden';input.name=name;input.value=value;form.append(input);}
+ const label=make('label','Your question');label.htmlFor='map-concept-question';const question=make('textarea',undefined,'form-control');question.id=label.htmlFor;question.name='question';question.rows=3;question.maxLength=2000;question.required=true;question.placeholder='What does this idea mean for the project?';
+ const send=make('button','Ask about this concept','btn btn-primary');send.type='submit';send.disabled=true;const help=make('p','','map-conversation-note');help.setAttribute('role','status');form.append(label,question,send,help);conversation.append(thread,form);side.insertBefore(conversation,advanced);
+ function close(){map.dispatchEvent(new Event('research:close-concept'));(lastTrigger?.isConnected?lastTrigger:(list.querySelector(`[data-branch-id="${selected}"]`)||search))?.focus({preventScroll:true});}
+ back.addEventListener('click',close);side.querySelector('.map-inspector-close')?.addEventListener('click',()=>list.querySelector(`[data-branch-id="${selected}"]`)?.focus({preventScroll:true}));
+ function openChat(){conversation.hidden=!conversation.hidden;chat.setAttribute('aria-expanded',String(!conversation.hidden));if(!conversation.hidden){renderThread();question.focus({preventScroll:true});conversation.scrollIntoView({block:'nearest'});}}
+ chat.addEventListener('click',openChat);
+ function select(id,trigger){lastTrigger=trigger;map.dispatchEvent(new CustomEvent('research:inspect-concept',{detail:{nodeId:id}}));const title=content.querySelector('h3');if(title){title.tabIndex=-1;title.focus({preventScroll:true});}}
+ function renderList(){
+  if(!snapshot)return;const all=snapshot.nodes.filter(n=>types.has(n.type));const query=search.value.trim().toLocaleLowerCase();
+  const filtered=all.filter(n=>(n.title+' '+n.content).toLocaleLowerCase().includes(query));
+  const stamp=JSON.stringify([query,filtered.map(n=>[n.id,n.title,n.content,n.layer,n.locked_at]),snapshot.requests.filter(r=>r.status==='pending').map(r=>r.path_node_id)]);
+  if(stamp!==listStamp){listStamp=stamp;const scroll=query===lastQuery?list.scrollTop:0;lastQuery=query;const focused=list.contains(document.activeElement)?document.activeElement.closest('[data-branch-id]')?.dataset.branchId:null;list.replaceChildren();
+   const byId=new Map(all.map(n=>[String(n.id),n])),childCounts=new Map();for(const n of all)childCounts.set(String(n.parent_id),(childCounts.get(String(n.parent_id))||0)+1);
+   const graph=window.AIcontrolMap.project(snapshot),families=new Map(graph.nodes.map(n=>[String(n.id),n.knowledge_line_id]));
+   for(const n of filtered){const row=make('li');const button=make('button',undefined,'map-branch-item');button.type='button';button.dataset.branchId=String(n.id);button.style.setProperty('--branch-colour',window.AIcontrolMap.familyColour(families.get(String(n.id))));
+    let title=window.AIcontrolMap.sentence(n.title||n.content).replace(/^(association|counter|reframing|edge case|idea|question|claim)\s*:\s*/i,'')||'Untitled idea';if(title.length>110)title=title.slice(0,107).replace(/\s+\S*$/,'')+'…';button.append(make('strong',title));button.title=n.title;button.setAttribute('aria-label',n.title);let parent=byId.get(String(n.parent_id)),depth=0;const visited=new Set();while(parent&&!visited.has(String(parent.id))&&depth<3){visited.add(String(parent.id));depth++;parent=byId.get(String(parent.parent_id));}row.style.marginLeft=(Math.min(depth,2)*12)+'px';
+    const working=snapshot.requests.some(r=>r.status==='pending'&&Number(r.path_node_id)===Number(n.id));const state=working?'Thinking…':n.locked_at?'Evidence locked':Number(n.layer)===2?'Parked idea':'Unchecked idea';const children=childCounts.get(String(n.id))||0;
+    button.append(make('small',state+(children?' · '+children+' related idea'+(children===1?'':'s'):'')));button.addEventListener('click',()=>select(String(n.id),button));row.append(button);list.append(row);
+   }
+   list.scrollTop=scroll;if(focused)list.querySelector(`[data-branch-id="${focused}"]`)?.focus({preventScroll:true});
+  }
+  for(const button of list.querySelectorAll('[data-branch-id]'))button.setAttribute('aria-current',button.dataset.branchId===selected?'true':'false');
+  count.textContent=query?`${filtered.length} / ${all.length}`:String(all.length);empty.hidden=filtered.length>0;empty.textContent=query?'No matching branches. Try another word.':'Research ideas will appear here.';
+ }
+ function renderThread(){
+  if(!snapshot)return;const notes=snapshot.nodes.filter(n=>{if(n.type!=='learn'||String(n.parent_id)!==selected)return false;try{return JSON.parse(n.data_json).kind==='concept_chat';}catch{return false;}});
+  const stamp=JSON.stringify([selected,notes.map(n=>[n.id,n.status,n.content])]);if(stamp===threadStamp)return;threadStamp=stamp;thread.replaceChildren();
+  if(!notes.length)thread.append(make('p','Start a conversation about this idea.'));
+  for(const note of notes){const saved=JSON.parse(note.data_json),turn=make('article',undefined,'map-conversation-turn');turn.append(make('strong','You'),make('p',saved.question),make('strong',note.status==='complete'?'AI response':'AI response · '+note.status));
+   const prefix='Question: '+saved.question+'\n\n';turn.append(make('p',note.content.startsWith(prefix)?note.content.slice(prefix.length):(note.content||'Waiting for a response…')));thread.append(turn);
+   if(note.status==='complete'&&pendingDraft?.id===selected&&pendingDraft.text===saved.question){if(question.value===pendingDraft.text){question.value='';drafts.delete(selected);}pendingDraft=null;}
+  }
+ }
+ function updateControls(){
+  if(!snapshot)return;const n=snapshot.nodes.find(n=>String(n.id)===selected),valid=!!n&&types.has(n.type),busy=snapshot.run.busy_since!=null||snapshot.requests.some(r=>r.status==='pending')||root.dataset.requestBusy==='1';
+  currentLabel.textContent=n?window.AIcontrolMap.sentence(n.title):'Concept details';currentLabel.title=n?.title||'';
+  const capacity=root.dataset.connected!=='0'&&snapshot.budget?.remaining!==0;
+  expand.hidden=!valid||Number(snapshot.run.flow_version)<2;expand.disabled=!valid||!verified||busy||!capacity||snapshot.run.status!=='running'||!['exploring','verification_review'].includes(snapshot.run.phase);
+  chat.disabled=!valid;form.elements.node_id.value=valid?selected:'';form.elements.run_id.value=snapshot.run.id;
+  const phaseBlocked=['pending','running'].includes(snapshot.run.status)&&!['exploring','verification_review'].includes(snapshot.run.phase);
+  send.disabled=!valid||busy||!capacity||!verified||phaseBlocked;
+  help.textContent=!valid?'Select a concept first.':!verified?'Reconnect before asking another question.':!capacity?'Check the provider connection and remaining request budget.':busy||phaseBlocked?'Wait for the current research request.':'Uses one model request within the project budget. No web search; no automatic retry.';
+ }
+ expand.addEventListener('click',()=>{const grow=map.querySelector('[data-living-controls]');if(!grow||expand.disabled)return;grow.elements.action.value='research_explore';grow.elements.explore_mode.value='explore';for(const option of grow.querySelector('[data-living-nodes]').options)option.selected=option.value===selected;grow.dispatchEvent(new Event('change',{bubbles:true}));grow.requestSubmit();});
+ search.addEventListener('input',renderList);question.addEventListener('input',()=>drafts.set(selected,question.value));form.addEventListener('submit',()=>{pendingDraft={id:selected,text:question.value};});
+ map.addEventListener('research:concept-selected',event=>{const id=String(event.detail.nodeId);if(id!==selected){if(selected)drafts.set(selected,question.value);selected=id;question.value=drafts.get(id)||'';threadStamp='';}queueMicrotask(()=>{renderList();renderThread();updateControls();});});
+ root.addEventListener('research:snapshot',event=>{snapshot=event.detail;verified=true;renderList();renderThread();updateControls();});
+ root.addEventListener('research:controls',updateControls);root.addEventListener('research:error',event=>{const message=String(event.detail||'');problem.textContent=message;problem.hidden=!message;if(message)verified=false;updateControls();});root.addEventListener('research:contact',()=>{verified=true;updateControls();});
 })();
 
 // Explicit, sequential system steps. Reloading never retries a dispatched step.
@@ -3039,6 +3123,58 @@ body.research-map-open { overflow:hidden; }
   .everyday-workspace .ee-hero-actions,.everyday-workspace .ee-toolbar,.ee-mode-switch { display:none!important; }
   .everyday-workspace .ee-route-step::before,.everyday-workspace .ee-evidence-step::after { display:none; }
 }
+
+/* Branch-first map navigation: readable ideas stay outside the 3D canvas. */
+.research-map-open .mindmap { --branch-panel-width:clamp(300px,28vw,400px); }
+.map-branch-browser { display:flex; flex-direction:column; gap:12px; min-height:0; padding:18px; background:#101b29; color:#e7f2ff; border:1px solid #43566b; border-radius:14px; }
+.research-map-open .map-branch-browser { position:absolute; z-index:3; left:12px; top:78px; bottom:16px; width:var(--branch-panel-width); }
+.map-branch-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.mindmap .map-branch-heading h2 { margin:0; font-size:1.25rem; color:#f0f6ff; }
+.map-branch-heading [role=status] { color:#bfd2e7; font-size:.85rem; }
+.map-branch-list { list-style:none; margin:0; padding:0 4px 0 0; overflow:auto; flex:1; min-height:0; scrollbar-width:thin; }
+.map-branch-list li { margin:0 0 7px; }
+.map-branch-item { display:block; text-align:left; width:100%; padding:13px 14px; border:1px solid #30465c; border-left:3px solid var(--branch-colour,#9ddcec); border-radius:9px; background:#152335; color:#eef6ff; min-height:64px; }
+.map-branch-item:hover,.map-branch-item[aria-current=true] { background:#223a51; border-color:#8bb7d1; border-left-color:var(--branch-colour,#9ddcec); }
+.map-branch-item strong { display:block; font-size:.94rem; line-height:1.45; font-weight:600; overflow-wrap:anywhere; }
+.map-branch-item small { display:block; margin-top:6px; font-size:.73rem; color:#bdd1e5; }
+.map-branch-item:focus-visible,.map-concept-actions .btn:focus-visible { outline:3px solid #b9eaff; outline-offset:2px; }
+.map-branch-empty { color:#c3d0e3; padding:16px 2px; }
+.research-map-open .map-workspace,.research-map-open .map-details-open .map-workspace { margin-left:calc(var(--branch-panel-width) + 16px); grid-template-columns:minmax(0,1fr); }
+.research-map-open .map-inspector { top:78px; right:16px; bottom:16px; width:min(620px,calc(100% - var(--branch-panel-width) - 48px)); padding:20px 24px; z-index:6; border-radius:14px; }
+.map-concept-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; position:sticky; top:-20px; z-index:2; padding:10px 0 14px; margin-bottom:12px; background:#101722; }
+.map-concept-actions .btn { margin:0; min-height:42px; }
+.map-concept-chat-toggle svg { display:block; width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+.mindmap .map-inspector h3 { font-size:1.4rem; line-height:1.35; margin:10px 0; }
+.mindmap .map-inspector-text { font-size:1rem; line-height:1.75; padding-bottom:16px; border-bottom:1px solid #435269; }
+.map-concept-advanced { margin-top:24px; border-top:1px solid #435269; padding-top:14px; }
+.map-concept-advanced > summary { color:#c3d8ed; font-size:.84rem; cursor:pointer; min-height:36px; }
+.map-concept-conversation { padding:18px 0 0; border-top:1px solid #435269; margin-top:18px; }
+.map-concept-conversation h4 { font-size:1.1rem; }
+.mindmap .map-conversation-note { font-size:.8rem; color:#c3d0e3; line-height:1.5; }
+.map-conversation-thread { max-height:360px; overflow:auto; overscroll-behavior:contain; }
+.map-conversation-turn { border-left:2px solid #92cddc; padding:8px 14px; margin:12px 0; background:#142437; }
+.map-conversation-turn p { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.65; }
+.map-concept-conversation label { display:block; margin-bottom:7px; }
+.map-concept-conversation form { border:0; padding-top:6px; }
+@media(max-width:700px) {
+ .research-map-open .map-workspace,.research-map-open .map-details-open .map-workspace { margin-left:0; margin-bottom:calc(34dvh + 12px); display:block; }
+ .research-map-open .map-branch-browser { top:auto; left:12px; right:12px; bottom:12px; width:auto; height:34dvh; padding:12px; gap:8px; }
+ .map-branch-item { min-height:54px; padding:10px 12px; }
+ .research-map-open .map-inspector { top:76px; left:12px; right:12px; bottom:12px; width:auto; padding:14px; }
+ .map-concept-actions { top:-14px; padding-top:7px; gap:6px; }
+ .map-concept-actions .btn { font-size:.75rem; padding:8px; }
+ .research-map-open [data-reader-open=true] .map-branch-browser,.research-map-open [data-reader-open=true] .map-viewport { visibility:hidden; }
+ .map-conversation-thread { max-height:240px; }
+}
+.research-map-open .map-screen-header { z-index:9; }
+.mindmap .map-concept-context > summary { color:#c5d8ed; min-height:40px; padding:8px 0; font-size:.85rem; line-height:1.5; cursor:pointer; }
+.research-map-open .map-working-now,.research-map-open .map-state-notice,.research-map-open .map-star-legend { left:calc(var(--branch-panel-width) + 28px); max-width:calc(100% - var(--branch-panel-width) - 52px); }
+.research-map-open .map-working-now { top:78px; bottom:auto; }
+@media(max-width:700px) {
+ .research-map-open .map-working-now,.research-map-open .map-state-notice,.research-map-open .map-star-legend { left:12px; max-width:calc(100% - 24px); }
+ .research-map-open .map-star-legend,.research-map-open .map-state-notice { bottom:calc(34dvh + 24px); }
+}
+.mindmap .map-concept-current { flex-basis:100%; margin:0 0 4px; padding-right:28px; font-weight:600; font-size:.9rem; line-height:1.4; color:#f0f6ff; overflow-wrap:anywhere; }
 
 AICONTROL_UI_CSS;
     }

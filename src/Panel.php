@@ -140,17 +140,20 @@ final class Panel
             $action = self::input('action');
             if ($action === 'login' && $passwordMode) {
                 $client = hash('sha256', $_SERVER['REMOTE_ADDR'] ?? 'unknown');
-                if (!$store->loginAllowed($client)) {
+                $attempt=$store->reserveLoginAttempt($client);
+                if ($attempt===null) {
                     http_response_code(429);
                     header('Retry-After: 600');
                     $error = 'Too many attempts. Try again in ten minutes.';
                 } elseif (strlen(self::input('password')) <= 256 && password_verify(self::input('password'), $config['password_hash'])) {
+                    $store->releaseSuccessfulLoginAttempt($client,$attempt);
                     session_regenerate_id(true);
                     $_SESSION = ['authenticated' => true, 'expires' => time() + 1800, 'csrf' => bin2hex(random_bytes(32))];
                     header('Location: ' . self::entry(), true, 303);
                     return;
                 } else {
-                    $store->failedLogin($client);
+                    // The reservation already counts this failure. Unknown or
+                    // interrupted verification also retains its allowance.
                     http_response_code(401);
                     $error = 'Sign-in failed.';
                 }
@@ -246,7 +249,7 @@ final class Panel
                 setcookie(session_name(), '', ['expires' => time() - 3600, 'path' => '/', 'secure' => $secure, 'httponly' => true, 'samesite' => 'Strict']);
                 header('Location: ' . self::entry(), true, 303);
                 return;
-            } elseif (in_array($action, ['research_focus_node','research_explore','research_promote_layer','research_demote_layer','research_park','research_lock_evidence','research_settings','research_rank','research_start','research_continue','research_finish','research_repair','research_step','research_stop','research_learn','research_export'], true)) {
+            } elseif (in_array($action, ['research_concept_chat','research_focus_node','research_explore','research_promote_layer','research_demote_layer','research_park','research_lock_evidence','research_settings','research_rank','research_start','research_continue','research_finish','research_repair','research_step','research_stop','research_learn','research_export'], true)) {
                 // Release this session before provider I/O so polling and Stop can proceed.
                 session_write_close();
                 ResearchApi::action($directory, $action, self::entry(), ($_GET['research_api'] ?? '') === '1');

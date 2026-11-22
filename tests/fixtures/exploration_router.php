@@ -5,7 +5,8 @@ namespace AIcontrol {
  function curl_setopt_array($h,$options){$GLOBALS['exploration_options']=$options;return true;}
  function curl_exec($h){
   $body=json_decode($GLOBALS['exploration_options'][CURLOPT_POSTFIELDS],true);$schema=$body['text']['format']['schema']['properties']??[];$extra=[];
-  if(isset($schema['core_claims']))$value=['core_claims'=>[['claim'=>'Local repair hubs could reduce material demand','uncertainty'=>'Throughput','confidence'=>'medium','verify'=>'Measure materials','priority'=>'high'],['claim'=>'Shared storage could extend battery life','uncertainty'=>'Cycling','confidence'=>'low','verify'=>'Measure lifetime','priority'=>'normal']],'competing_angles'=>['Demand reduction'],'least_confident'=>'Transferability','background_assumptions'=>['Available parts']];
+  if(str_starts_with($body['input']??'','Saved concept context:')){if(isset($body['tools']))throw new \RuntimeException('Concept chat acquired tools');$value='Synthetic concept reply: inspect the practical trade-offs and assumptions for this selected idea.';}
+  elseif(isset($schema['core_claims']))$value=['core_claims'=>[['claim'=>'Local repair hubs could reduce material demand','uncertainty'=>'Throughput','confidence'=>'medium','verify'=>'Measure materials','priority'=>'high'],['claim'=>'Shared storage could extend battery life','uncertainty'=>'Cycling','confidence'=>'low','verify'=>'Measure lifetime','priority'=>'normal']],'competing_angles'=>['Demand reduction'],'least_confident'=>'Transferability','background_assumptions'=>['Available parts']];
   elseif(isset($schema['ideas'])){
    if(isset($body['tools']))throw new \RuntimeException('Model exploration acquired tools');
    $input=json_decode($body['input'],true);

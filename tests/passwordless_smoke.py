@@ -5,13 +5,18 @@ No production route accepts identity headers or a request-controlled username.
 """
 
 import http.cookiejar
+import concurrent.futures
+import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import signal
 import socket
+import sqlite3
 import subprocess
 import tempfile
+import threading
 import time
 import unittest
 import urllib.error
@@ -28,6 +33,76 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 class PasswordlessSmokeTest(unittest.TestCase):
+    @unittest.skipUnless(os.name == "posix", "PHP multiworker regression requires a POSIX loopback fixture")
+    def test_legacy_password_admission_is_atomic_across_eight_sessions(self):
+        with tempfile.TemporaryDirectory(prefix="aicontrol-password-admission-") as directory:
+            temporary=Path(directory);private=temporary/"private"
+            password="disposable-owner-password-for-admission-test"
+            environment=dict(os.environ,AICONTROL_PRIVATE_DIR=str(private),AICONTROL_LOCAL_DEV="1",PHP_CLI_SERVER_WORKERS="8")
+            environment.pop("AICONTROL_PIN_VERIFIED",None);environment.pop("AICONTROL_PUBLIC_TESTING",None)
+            subprocess.run([PHP,"bin/setup.php","--access-mode=password",f"--private-dir={private}",f"--public-root={ROOT}"],cwd=ROOT,env=environment,input=password,text=True,check=True,capture_output=True)
+            router=temporary/"router.php"
+            router.write_text("<?php\nheader('X-Fixture-Worker: '.getmypid());\nrequire "+json.dumps(str(ROOT/"bin/dev-router.php"))+";\n")
+            with socket.socket() as listener:
+                listener.bind(("127.0.0.1",0));port=listener.getsockname()[1]
+            server=subprocess.Popen([PHP,"-S",f"127.0.0.1:{port}",str(router)],cwd=ROOT,env=environment,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True)
+            url=f"http://127.0.0.1:{port}/loader.php"
+            def client():return urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()),NoRedirect())
+            def request(browser,fields=None,query=""):
+                data=None if fields is None else urllib.parse.urlencode(fields).encode()
+                try:response=browser.open(url+query,data=data,timeout=15)
+                except urllib.error.HTTPError as error:response=error
+                with response:return response.status,response.headers,response.read().decode()
+            def token(page):return re.search(r'name="csrf" value="([a-f0-9]+)"',page).group(1)
+            def failures():
+                with sqlite3.connect(private/"panel.sqlite") as database:return database.execute("SELECT COUNT(*) FROM login_failures").fetchone()[0]
+            try:
+                for _ in range(100):
+                    try:
+                        request(client());break
+                    except urllib.error.URLError:time.sleep(.03)
+                else:self.fail("Disposable multiworker password fixture did not start")
+                browsers=[]
+                for _ in range(8):
+                    browser=client();_,_,page=request(browser);browsers.append((browser,token(page)))
+                barrier=threading.Barrier(8)
+                def concurrent_failure(item):
+                    browser,csrf=item;barrier.wait(timeout=10)
+                    status,headers,_=request(browser,{"action":"login","csrf":csrf,"password":"incorrect-synthetic-test-value"})
+                    return status,headers.get("X-Fixture-Worker")
+                with concurrent.futures.ThreadPoolExecutor(max_workers=8) as workers:results=list(workers.map(concurrent_failure,browsers))
+                codes=[result[0] for result in results]
+                self.assertGreaterEqual(len({result[1] for result in results}),2,"The concurrency regression did not reach independent PHP workers")
+                self.assertEqual(codes.count(401),5,"More or fewer than five password checks passed atomic admission")
+                self.assertEqual(codes.count(429),3,"Excess concurrent sessions did not receive the shared throttle")
+                self.assertEqual(failures(),5,"Failed or pending attempts were not retained exactly once")
+                with sqlite3.connect(private/"panel.sqlite") as database:
+                    self.assertEqual(database.execute("SELECT COUNT(DISTINCT attempt_key) FROM login_failures").fetchone()[0],5)
+                owner=client();_,_,page=request(owner);old_csrf=token(page)
+                self.assertEqual(request(owner,{"action":"login","csrf":old_csrf,"password":password})[0],429,"A correct password unexpectedly bypassed the exhausted admission window")
+                # Age only this disposable database, then exercise a normal owner
+                # success and its own reservation release/session rotation.
+                with sqlite3.connect(private/"panel.sqlite") as database:database.execute("UPDATE login_failures SET attempted_at=?",(int(time.time())-601,))
+                status,_,_=request(owner,{"action":"login","csrf":old_csrf,"password":password})
+                self.assertEqual(status,303);self.assertEqual(failures(),0,"Successful owner login left its own reservation charged")
+                _,_,page=request(owner,query="?view=projects")
+                self.assertTrue('name="action" value="project"' in page,"Successful owner login did not open the authenticated project form")
+                self.assertTrue(token(page)!=old_csrf,"Successful owner login did not rotate its session CSRF")
+                self.assertEqual(request(owner,{"action":"project","csrf":old_csrf,"name":"Rejected stale form","brief":"This must not create a project."})[0],403)
+                # A successful reservation must not erase another session's
+                # failures; legacy rows without keys must still count too.
+                with sqlite3.connect(private/"panel.sqlite") as database:
+                    database.executemany("INSERT INTO login_failures(client,attempted_at)VALUES(?,?)",[(hashlib.sha256(b'127.0.0.1').hexdigest(),int(time.time()))]*4)
+                another=client();_,_,page=request(another)
+                self.assertEqual(request(another,{"action":"login","csrf":token(page),"password":password})[0],303)
+                self.assertEqual(failures(),4,"Successful admission erased unrelated legacy failure rows")
+                wrong=client();_,_,page=request(wrong);csrf=token(page)
+                self.assertEqual(request(wrong,{"action":"login","csrf":csrf,"password":"incorrect-synthetic-test-value"})[0],401)
+                self.assertEqual(request(wrong,{"action":"login","csrf":csrf,"password":"incorrect-synthetic-test-value"})[0],429)
+                self.assertEqual(failures(),5)
+            finally:
+                os.killpg(server.pid,signal.SIGTERM);server.wait(timeout=5)
+
     def test_host_identity_required_on_every_request(self):
         with tempfile.TemporaryDirectory(prefix="aicontrol-host-auth-") as directory:
             temporary = Path(directory)

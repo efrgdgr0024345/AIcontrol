@@ -62,3 +62,28 @@ These are local disposable integration and synthetic-provider tests. No producti
 server enrollment, installed host upgrade, or real-secret recovery is established
 by them. Deploying this release fixes the application paths; it does not establish
 that a previous key was never altered, or restore a credential already deleted.
+
+## Public AI context and concurrent password admission (2026-11-22)
+
+A follow-up review reproduced two conditional issues in disposable installations:
+public-testing chat/task/research calls could include owner-opted-in Vault notes,
+and simultaneous legacy app-password attempts could exceed five verifications
+before their failures were recorded. Neither established a PIN-gate or updater
+bypass in the normal enrolled standalone installation.
+
+Vault context now validates the actual installation profile, applies the same
+PIN-over-testing precedence as Panel, and withholds notes for public/unknown
+profiles. API/managed SSH entries, unshared notes and malformed opt-in values stay
+excluded. Legacy app-password authentication reserves an attempt atomically
+before password verification, outside the expensive hash operation; success
+releases only its own reservation. Old failure rows remain valid. Existing PIN
+hashing, lock, session rotation and signed installer selections are unchanged.
+
+Regression checks cover public chat/task/phase payloads with synthetic transport
+and eight concurrent password sessions (five admitted, three throttled), owner
+success, CSRF rotation, expiry and legacy-row compatibility. Public live probes
+found the PIN gate on installer/status/Admin and spoofed-identity requests; no
+PIN guessing or live installation-bypass attempt was performed. The live folder
+allowed directory listing, while error_log downloads returned 403. Disabling
+that listing is a separate hosting configuration step, not fixed by private
+application-file activation. See the retained review for exact scope/limitations.

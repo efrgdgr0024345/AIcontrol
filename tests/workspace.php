@@ -9,10 +9,11 @@ namespace AIcontrol {
     function curl_close(object $c):void {}
 }
 namespace {
-require dirname(__DIR__).'/src/Vault.php';require dirname(__DIR__).'/src/AgentRunner.php';require dirname(__DIR__).'/src/Research.php';
+require dirname(__DIR__).'/src/PanelStore.php';require dirname(__DIR__).'/src/Vault.php';require dirname(__DIR__).'/src/AgentRunner.php';require dirname(__DIR__).'/src/Research.php';
 putenv('AICONTROL_RESEARCH_HOURLY_LIMIT=10');umask(0077);$dir=sys_get_temp_dir().'/aicontrol-workspace-'.bin2hex(random_bytes(6));mkdir($dir,0700);putenv('AICONTROL_PRIVATE_DIR='.$dir);putenv('AICONTROL_OPENAI_API_KEY=');
 function check(bool $ok,string $message):void{if(!$ok)throw new \RuntimeException($message);}
 try {
+ mkdir($dir.'/sessions',0700);new \AIcontrol\PanelStore($dir.'/panel.sqlite',true);file_put_contents($dir.'/config.json',json_encode(['version'=>2,'access_mode'=>'local','public_roots'=>[dirname(__DIR__)]]));chmod($dir.'/config.json',0600);
  $vault=new \AIcontrol\Vault($dir);$vault->change('openai_api_key','key','synthetic-only-secret',true);$vault->change('shared_note','note','Useful project context',true);$vault->change('private_note','note','Never share this text',false);
  check(!str_contains(file_get_contents($dir.'/vault.json'),'synthetic-only-secret'),'Plaintext storage');
  check(!str_contains(json_encode($vault->entries()),'synthetic-only-secret'),'Secret metadata leak');
@@ -33,5 +34,5 @@ try {
  check(!str_contains($vault->context(),'LEGACY-SSH-CONTEXT-CANARY')&&$vault->value('ssh_system_legacy')==='LEGACY-SSH-CONTEXT-CANARY','Legacy managed credential shared with model or overwritten');
  $vault->change('openai_api_key','key','',false,true);check(!\AIcontrol\AgentRunner::configured(),'Key removal failed');
  echo "PASS: encrypted vault, tamper/key-loss refusal, scoped notes, research isolation, web request, citations and uncertain outcomes (fixture transport only)\n";
-} finally { foreach(glob($dir.'/*') as $file)unlink($file);rmdir($dir); }
+} finally { foreach(glob($dir.'/*') as $file){if(is_dir($file))rmdir($file);else unlink($file);}rmdir($dir); }
 }

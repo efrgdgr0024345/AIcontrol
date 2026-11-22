@@ -2,6 +2,7 @@
 declare(strict_types=1);
 namespace AIcontrol;
 use RuntimeException;
+require_once __DIR__.'/PrivateStorage.php';
 final class Vault
 {
     private string $path;
@@ -31,9 +32,28 @@ final class Vault
         return array_map(static fn(array $v): array => array_diff_key($v, ['value' => true]), $this->read());
     }
     public function value(string $name): string { return $this->read()[$name]['value'] ?? ''; }
+    private function contextProfilePermitsSharing(): bool
+    {
+        try {
+            // Use the actual validated installation profile, including older
+            // stored public-testing configurations. Environment flags follow
+            // the same precedence as Panel; a demo CSRF session is not an owner.
+            if(!is_file($this->directory.'/config.json')||is_link($this->directory.'/config.json')||!is_dir($this->directory.'/sessions')||!is_file($this->directory.'/panel.sqlite'))return false;
+            $config=PrivateStorage::config($this->directory);
+            $mode=getenv('AICONTROL_PIN_VERIFIED')==='1'?'pin':(getenv('AICONTROL_PUBLIC_TESTING')==='1'?'testing':$config['access_mode']);
+            return in_array($mode,['pin','password','host','local'],true);
+        } catch (\Throwable) {
+            // Missing, invalid or unreadable configuration must never expand
+            // the context visible to a public or indeterminate caller.
+            return false;
+        }
+    }
     public function context(): string {
+        if(!$this->contextProfilePermitsSharing())return '';
         $text = '';
-        foreach ($this->read() as $name => $item) { if (!self::systemManaged($name) && $item['type'] === 'note' && $item['share']) { $text .= "\n" . $name . ': ' . $item['value']; } }
+        foreach ($this->read() as $name => $item) {
+            if($name!=='openai_api_key'&&!self::systemManaged($name)&&is_array($item)&&($item['type']??null)==='note'&&($item['share']??null)===true&&is_string($item['value']??null))$text.="\n".$name.': '.$item['value'];
+        }
         return mb_strcut($text, 0, 12000, 'UTF-8');
     }
     public function change(string $name, string $type, string $value, bool $share, bool $delete = false): void {

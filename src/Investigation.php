@@ -11,6 +11,7 @@ require_once __DIR__.'/ResponseStream.php';
 require_once __DIR__.'/ResearchFlow.php';
 require_once __DIR__.'/ProviderGate.php';
 require_once __DIR__.'/ExplorationFlow.php';
+require_once __DIR__.'/ConceptConversation.php';
 
 /** A persisted, bounded phase machine; no shell worker or automatic retry. */
 final class Investigation
@@ -18,6 +19,7 @@ final class Investigation
     use EvidenceLedger;
     use ResearchFlow;
     use ExplorationFlow;
+    use ConceptConversation;
     private PDO $db;
     private string $directory;
     private int $transactionDepth=0;
