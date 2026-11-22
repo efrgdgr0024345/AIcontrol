@@ -81,7 +81,7 @@ trait NasaDiscipline
             if($expectedRevision!==null&&$revision!==$expectedRevision)throw new RuntimeException('Project changed. Refresh and review the current revision before saving a baseline.');
             $review=$this->rows("SELECT id FROM nasa_reviews WHERE project_id=? AND revision=? AND created_by='local' ORDER BY id DESC LIMIT 1",[$id,$revision])[0]??null;
             if(!$review)throw new RuntimeException('Record an explicit local review of the current revision before saving a baseline. AI advice cannot authorise a baseline.');
-            $snapshot=['format'=>'AIcontrol planning baseline v2','phase'=>$project['phase'],'revision'=>$revision,'knowledge_version'=>NasaKnowledge::VERSION,'local_review_id'=>(int)$review['id'],'items'=>$this->items($id),'research'=>$this->researchState($id),'code_sha'=>self::installedCodeReference(),'provenance'=>method_exists($this,'provenance')?$this->provenance($id):[]];
+            $snapshot=['format'=>'AIcontrol planning baseline v2','phase'=>$project['phase'],'revision'=>$revision,'knowledge_version'=>NasaKnowledge::VERSION,'local_review_id'=>(int)$review['id'],'engineering_context'=>$this->engineeringContext($id),'items'=>$this->items($id),'research'=>$this->researchState($id),'code_sha'=>self::installedCodeReference(),'code_reference_scope'=>'control_panel_release','provenance'=>method_exists($this,'provenance')?$this->provenance($id):[]];
             $json=json_encode($snapshot,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
             $this->execute('INSERT INTO nasa_baselines(project_id,title,snapshot_json,sha256,created_at)VALUES(?,?,?,?,?)',[$id,$title,$json,hash('sha256',$json),time()]);
             return (int)$this->db->lastInsertId();
@@ -137,7 +137,8 @@ trait NasaDiscipline
             'planning'=>['added_since_baseline'=>$added,'missing_since_baseline'=>$removed,'changed_since_baseline'=>$changed],
             'research'=>['baseline_project_id'=>is_array($saved)?($saved['project_id']??null):null,'current_project_id'=>$research['project_id'],'baseline_sha256'=>$savedHash,'current_sha256'=>$research['sha256'],'baseline_recorded'=>$saved!==null,'changed'=>$saved===null?null:($savedHash!==$research['sha256']||($saved['project_id']??null)!==$research['project_id']),'restored'=>false],
             'provenance'=>['baseline_recorded'=>$provenanceKnown,'baseline_count'=>count($state['provenance']??[]),'current_count'=>count($links),'changed'=>$provenanceKnown?json_encode($state['provenance'],JSON_THROW_ON_ERROR)!==json_encode($links,JSON_THROW_ON_ERROR):null,'restored'=>false],
-            'code'=>['baseline_sha'=>$state['code_sha']??null,'current_sha'=>self::installedCodeReference(),'restored'=>false],
+            'engineering'=>['baseline_recorded'=>isset($state['engineering_context']),'baseline_sha256'=>isset($state['engineering_context'])?hash('sha256',json_encode($state['engineering_context'],JSON_THROW_ON_ERROR)):null,'current_sha256'=>hash('sha256',json_encode($this->engineeringContext($id),JSON_THROW_ON_ERROR)),'changed'=>isset($state['engineering_context'])&&$state['engineering_context']!==$this->engineeringContext($id),'restored'=>false],
+            'code'=>['scope'=>'control_panel_release','baseline_sha'=>$state['code_sha']??null,'current_sha'=>self::installedCodeReference(),'restored'=>false],
         ];
     }
 

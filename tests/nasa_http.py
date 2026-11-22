@@ -11,7 +11,7 @@ class NasaHttp(unittest.TestCase):
    seed=subprocess.run([PHP,'-r',"require 'src/PanelStore.php';require 'src/Vault.php';require 'src/AgentRunner.php';require 'src/Research.php';$p=new AIcontrol\\PanelStore(getenv('AICONTROL_PRIVATE_DIR').'/panel.sqlite');$p->createProject('First-day project','A clear operating scenario.');$p->createProject('Second project','PRIVATE-OTHER-CONTEXT');$r=new AIcontrol\\Research(getenv('AICONTROL_PRIVATE_DIR'));$r->create('Research source','Keep model ideas provisional.');(new AIcontrol\\Vault(getenv('AICONTROL_PRIVATE_DIR')))->saveSystemKey(7,'PRIVATE-SSH-CANARY');"],cwd=ROOT,env=env,capture_output=True,text=True);self.assertEqual(seed.returncode,0,seed.stderr)
    with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
    server=subprocess.Popen([PHP,'-S',f'127.0.0.1:{port}','bin/dev-router.php'],cwd=ROOT,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);url=f'http://127.0.0.1:{port}/loader.php';client=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
-   def request(fields=None,query='?view=nasa&source=project:1'):
+   def request(fields=None,query='?view=nasa&source=project:1&nasa_mode=rigorous'):
     try:
      with client.open(url+query,data=urllib.parse.urlencode(fields,doseq=True).encode() if fields is not None else None,timeout=10) as r:return r.status,r.headers,r.read().decode()
     except urllib.error.HTTPError as e:return e.code,e.headers,e.read().decode()
@@ -125,5 +125,5 @@ class NasaHttp(unittest.TestCase):
  def test_empty_workspace_has_a_useful_first_step(self):
   with self.workspace() as (home,csrf,request):
    code,_,_=request(dict(csrf=csrf,action='admin_data',operation='reset_workspace',record_id='0',confirmation='RESET ALL PROJECT DATA'),query='?view=admin');self.assertEqual(code,200)
-   code,_,page=request();self.assertEqual(code,200);self.assertIn('Create task project',page);self.assertIn('Create research project',page);self.assertIn('A handbook you can use without reading the book',page);self.assertNotIn('Start managing this project',page)
+   code,_,page=request(query='?view=nasa&nasa_mode=rigorous');self.assertEqual(code,200);self.assertIn('Create task project',page);self.assertIn('Create research project',page);self.assertIn('A handbook you can use without reading the book',page);self.assertNotIn('Start managing this project',page)
 if __name__=='__main__':unittest.main()

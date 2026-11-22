@@ -11,6 +11,7 @@ require_once __DIR__.'/SystemEnrollment.php';
 require_once __DIR__.'/SystemTerminal.php';
 require_once __DIR__.'/NasaActions.php';
 require_once __DIR__.'/NasaView.php';
+require_once __DIR__.'/AdminTestActions.php';
 
 final class Panel
 {
@@ -156,6 +157,8 @@ final class Panel
             } elseif (!($_SESSION['authenticated'] ?? false)) {
                 http_response_code(401);
                 $error = 'Sign in to record a proposal.';
+            } elseif (str_starts_with($action,'admin_test_')) {
+                session_write_close();AdminTestActions::serve($directory,$action,self::entry());return;
             } elseif (str_starts_with($action,'nasa_')) {
                 session_write_close();NasaActions::serve($directory,$action,self::entry());return;
             } elseif (str_starts_with($action,'system_')) {
@@ -319,6 +322,11 @@ final class Panel
                 if(isset($_GET['nasa_project']))$data['nasa']['workspace']=$nasa->workspace(NasaStore::id($_GET['nasa_project']));
                 else{$choice=is_string($_GET['source']??null)?$_GET['source']:'';$sources=$data['nasa']['sources'];$source=$choice!==''?array_values(array_filter($sources,static fn($s)=>$s['kind'].':'.$s['id']===$choice))[0]??null:($sources[0]??null);$data['nasa']['source']=$source;if($source&&$source['managed_id'])$data['nasa']['workspace']=$nasa->workspace((int)$source['managed_id']);}
             }catch(Throwable $failure){$error='The selected managed project is unavailable. Choose a saved project.';}
+            if($data['nasa']['workspace']&&is_string($_GET['engineering_cycle']??null)){
+                $workspace=&$data['nasa']['workspace'];
+                foreach($workspace['everyday']['groups']['cycle']??[] as $cycle){$cycleKey=$cycle['object_key']??$cycle['key']??'';if($cycleKey===$_GET['engineering_cycle']){$workspace['everyday']['cycle_obligations_by_cycle'][$cycleKey]=$nasa->engineeringCycleObligations((int)$workspace['project']['id'],$cycleKey);break;}}
+                unset($workspace);
+            }
             if($data['nasa']['workspace']&&isset($_GET['promote_run'],$_GET['promote_node'])){
                 try{$selected=$nasa->researchSource((int)$data['nasa']['workspace']['project']['id'],'research_node',NasaStore::id($_GET['promote_node']),NasaStore::id($_GET['promote_run']));$data['nasa']['workspace']['research_choices'][]=['source_kind'=>'research_node','source_id'=>$selected['source_id'],'run_id'=>$selected['run_id'],'title'=>$selected['title'],'content'=>$selected['content'],'eligible_evidence'=>false];}catch(Throwable){$error='The selected research idea is unavailable in this planning project.';}
             }

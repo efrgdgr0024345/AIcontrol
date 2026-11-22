@@ -19,7 +19,7 @@ final class Diagnostics
     }
     public static function clean(string $text): string
     {
-        foreach (['AICONTROL_OPENAI_API_KEY','openai_api_key'] as $name) {
+        foreach (['AICONTROL_OPENAI_API_KEY','openai_api_key','AICONTROL_SITE_PIN','GH_TOKEN','GITHUB_TOKEN'] as $name) {
             $value=getenv($name); if (is_string($value) && $value!=='') $text=str_replace([$value,substr(json_encode($value,JSON_INVALID_UTF8_SUBSTITUTE),1,-1)],'[redacted]',$text);
         }
         $directory=getenv('AICONTROL_PRIVATE_DIR');

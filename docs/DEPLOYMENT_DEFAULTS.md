@@ -150,3 +150,16 @@ identity stay intact; no records are cleared during install. Baseline creation
 now requires a current local review. Requirement verification requires reviewed
 linked evidence plus persisted owner confirmation. NASA drafting retains the
 existing 8/hour workspace and $1/source-project rolling-day allowance.
+
+Everyday/delivery defaults (2026-11-22): new Engineering workspaces default to
+Everyday work; existing NASA projects remain rigorous until an explicit owner mode
+decision. Existing budgets/authentication remain. New dedicated AI proposals have
+a 10,000-byte editable envelope limit and never mutate operative planning before
+owner adoption. Scope/configuration constraints are required for new Everyday
+promise verification; unknown risk is stored as unknown. See EVERYDAY_ENGINEERING.md.
+
+Website automation reuses the normal owner PIN and checked installer. The site
+PIN is supplied through protected AICONTROL_SITE_PIN on the coding machine,
+never a new site authentication/deployment channel. Admin retains separate
+private release/test records with source-labelled observations and bounded output;
+client results do not become server attestation. See DELIVERY_AND_TEST_REPORTS.md.

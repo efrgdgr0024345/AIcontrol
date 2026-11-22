@@ -62,9 +62,9 @@ final class PanelView
 
     public static function render(array $data, string $view, string $csrf, string $error, bool $passwordMode, array $config, bool $authenticated): void
     {
-        $views = ['overview' => ['Overview', 'grid'], 'research' => ['Research projects', 'search'],'nasa'=>['NASA Managed','grid'], 'admin' => ['Admin', 'lock'], 'projects' => ['Projects & tasks', 'folder'], 'runs' => ['Agent runs', 'robot'], 'systems' => ['Systems', 'plug'], 'history' => ['Activity', 'clock']];
+        $views = ['overview' => ['Overview', 'grid'], 'research' => ['Research projects', 'search'],'nasa'=>['Engineering','grid'], 'admin' => ['Admin', 'lock'], 'projects' => ['Projects & tasks', 'folder'], 'runs' => ['Agent runs', 'robot'], 'systems' => ['Systems', 'plug'], 'history' => ['Activity', 'clock']];
         $subtitle = [
-            'nasa'=>'See the next step. Build a clear, testable project.',
+            'nasa'=>'Follow a pathway, inspect results, and keep decisions traceable.',
             'admin' => 'Connections, diagnostics and application updates.',
             'research' => 'Explore ideas, check sources, and keep the conversation with the project.',
             'overview' => 'A clear view of your projects, tasks, and next steps.',

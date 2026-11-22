@@ -35,7 +35,8 @@ final class AdminDataView
         self::control($csrf,'clear_activity',0,'Clear task activity log','Remove saved task activity events. Projects, tasks and AI outputs remain.');
         self::control($csrf,'clear_diagnostics',0,'Clear diagnostic log','Clear diagnostic events. A new event records this cleanup. Projects, vault and usage remain.');
         self::control($csrf,'clear_suggestions',0,'Clear writing-help history','Remove the private suggestion usage journal and reset its local hourly allowance. Already incurred provider charges are unchanged.');
-        self::control($csrf,'reset_workspace',0,'Reset all project data','Delete every task project and research project, all tasks, conversations, investigations, evidence, activity and related usage. Keep PIN, encrypted vault, signing identity, security throttling, configuration, installed code, diagnostics and the separate writing-help journal.');
+        self::control($csrf,'clear_test_reports',0,'Clear release and test reports','Delete all retained release/test records and their outputs. Export the package first if needed. Projects, diagnostics, credentials and installed code remain.');
+        self::control($csrf,'reset_workspace',0,'Reset all project data','Delete every task project and research project, all tasks, conversations, investigations, evidence, activity and related usage. Keep PIN, encrypted vault, signing identity, security throttling, configuration, installed code, diagnostics, release/test reports and the separate writing-help journal.');
         echo '</details></div></section>';
         ProjectInspector::render($directory,$csrf,$data['research']);
         self::technical($report);

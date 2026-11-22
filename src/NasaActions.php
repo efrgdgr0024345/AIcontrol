@@ -2,6 +2,7 @@
 declare(strict_types=1);
 namespace AIcontrol;
 require_once __DIR__.'/NasaProvider.php';
+require_once __DIR__.'/EverydayActions.php';
 
 /** Called only behind Panel's authenticated, CSRF-protected owner action boundary. */
 final class NasaActions
@@ -15,6 +16,7 @@ final class NasaActions
     }
     public static function serve(string $directory,string $action,string $entry): void
     {
+        if(str_starts_with($action,'nasa_everyday_')){EverydayActions::serve($directory,$action,$entry);return;}
         $json=($_GET['nasa_api']??'')==='1';$id=0;$researchDestination=null;$researchRunDestination=null;$promotionRun=$promotionNode=null;
         try{
             $s=new NasaStore($directory);
@@ -30,12 +32,13 @@ final class NasaActions
                     case 'nasa_save_record':
                         $kind=self::input('kind');$data=[];
                         foreach(['source','method','evidence','owner','mitigation','requirement','artifact','units','direction','alternatives','revisit','phase','residual_risk','verification_confirmed','side_a','side_b','payload','errors','auth','change_rule'] as $key)$data[$key]=self::input($key);
+                        foreach(['required_scope','configuration_required','required_configuration_ref','rating_status'] as $key)if(array_key_exists($key,$_POST))$data[$key]=self::input($key);
                         if($kind==='tailoring'){$criteria=$_POST['criteria']??[];if(!is_array($criteria)||!array_is_list($criteria)||count($criteria)>8||array_filter($criteria,static fn($v)=>!is_string($v)))throw new \RuntimeException('Choose valid tailoring criteria.');$data['criteria']=$criteria;}
                         foreach(['likelihood','consequence','residual_likelihood','residual_consequence'] as $key)if(isset($_POST[$key]))$data[$key]=NasaStore::id(self::input($key));
                         foreach(['target','observed'] as $key)if(isset($_POST[$key])){$v=filter_var(self::input($key),FILTER_VALIDATE_FLOAT);if($v===false)throw new \RuntimeException('Use a finite numeric measurement.');$data[$key]=$v;}
                         $s->saveRecord($id,$kind,self::input('item_key'),self::input('title'),self::input('content'),self::input('status'),$data,$version);break;
                     case 'nasa_attach_provenance':
-                        [$sourceKind,$sourceId,$runId]=self::selectedSource();$manual=[];foreach(['title','content','reference','method'] as $field)$manual[$field]=self::input('manual_'.$field);
+                        [$sourceKind,$sourceId,$runId]=self::selectedSource();$manual=[];foreach(['title','content','reference','method','scope','configuration_ref','limitations'] as $field)$manual[$field]=self::input('manual_'.$field);
                         $s->attachProvenance($id,self::input('kind'),self::input('item_key'),$version,$sourceKind,$sourceId,$runId,self::input('note'),$manual);break;
                     case 'nasa_review_provenance':$s->reviewProvenance($id,NasaStore::id(self::input('link_id')),NasaStore::id(self::input('link_version')),$version,self::input('review_note'));break;
                     case 'nasa_promote_research':
@@ -54,7 +57,7 @@ final class NasaActions
                     case 'nasa_ai_review':(new NasaProvider($s))->run($id,'review');break;
                     case 'nasa_generate':
                         $type=self::input('artifact');$types=$type==='missing'?array_values(array_diff(array_keys(NasaKnowledge::ARTIFACTS),array_column(array_filter($s->items($id),static fn($i)=>$i['kind']==='artifact'),'item_key'))):[$type];
-                        if(!$types)throw new \RuntimeException('All artifact types already have a document. Open one to create a new AI draft.');(new NasaProvider($s))->run($id,$type==='missing'?'collaborate':'generate',$type==='missing'?array_slice($types,0,3):$types);break;
+                        if(!$types)throw new \RuntimeException('All artifact types already have a document. Open one to create a new AI draft.');(new NasaProvider($s))->run($id,'collaborate',array_slice($types,0,3));break;
                     case 'nasa_advance':$s->advance($id,NasaStore::id(self::input('revision'),true));break;
                     case 'nasa_link':$s->linkResearch($id,NasaStore::id(self::input('research_id','0'),true),NasaStore::id(self::input('revision'),true));break;
                     case 'nasa_task':$s->createTask($id,NasaStore::id(self::input('review_id')),NasaStore::id(self::input('finding_index'),true));break;
@@ -77,6 +80,7 @@ final class NasaActions
             Diagnostics::record('nasa.action.complete',['action'=>$action,'project_id'=>$id]);
             $location=$researchDestination!==null?$entry.'?view=research&project='.$researchDestination.($researchRunDestination?'&run='.(int)$researchRunDestination:''):$entry.'?view=nasa&nasa_project='.$id;
             if($action==='nasa_start'&&$promotionRun!==null)$location.='&promote_run='.$promotionRun.'&promote_node='.$promotionNode;
+            if($researchDestination===null&&in_array($action,['nasa_save_record','nasa_attach_provenance','nasa_review_provenance','nasa_promote_research'],true)&&$s->engineeringProfile($id)['mode']==='everyday')$location.='#everyday-results';
             if(in_array($action,['nasa_template','nasa_save_artifact','nasa_generate'],true)){$artifact=self::input('artifact');if(isset(NasaKnowledge::ARTIFACTS[$artifact]))$location.='&edit_artifact='.rawurlencode($artifact);}
             if($json){header('Content-Type: application/json');echo json_encode(['location'=>$location,'message'=>'Planning records updated.'],JSON_THROW_ON_ERROR);return;}header('Location: '.$location,true,303);
         }catch(\Throwable $e){Diagnostics::record('nasa.action.failed',['action'=>$action,'project_id'=>$id],$e);http_response_code(422);header('Content-Type: application/json; charset=utf-8');echo json_encode(['error'=>Diagnostics::clean($e instanceof \RuntimeException?$e->getMessage():'Planning could not be saved. Refresh the project and inspect Admin diagnostics.')],JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);}

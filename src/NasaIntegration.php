@@ -35,7 +35,15 @@ trait NasaIntegration
 
     public static function subjectHash(string $kind,string $title,string $content,array $data): string
     {
-        if($kind==='requirement')$data=['source'=>$data['source']??'','method'=>$data['method']??''];
+        if($kind==='requirement'){
+            $subject=['source'=>$data['source']??'','method'=>$data['method']??''];
+            // Keep pre-scope requirement hashes byte-for-byte compatible. New
+            // non-default constraints participate in review/confirmation identity.
+            if(($data['required_scope']??'unknown')!=='unknown')$subject['required_scope']=$data['required_scope'];
+            if(in_array($data['configuration_required']??false,[true,1,'1'],true))$subject['configuration_required']=true;
+            if(trim((string)($data['required_configuration_ref']??''))!=='')$subject['required_configuration_ref']=trim($data['required_configuration_ref']);
+            $data=$subject;
+        }
         else {foreach(['evidence','verification_confirmed','owner_confirmed','knowledge_version'] as $field)unset($data[$field]);ksort($data);}
         return hash('sha256',self::integrationJson(['kind'=>$kind,'title'=>trim($title),'content'=>trim($content),'data'=>$data]));
     }
@@ -70,7 +78,7 @@ trait NasaIntegration
         ];
         $q=$db->prepare($queries[$sourceKind]);$q->execute([$sourceId,$runId,$run['project_id']]);$row=$q->fetch();
         if(!$row)throw new RuntimeException('The selected research source is unavailable or belongs to another investigation.');
-        $snapshot=['source_kind'=>$sourceKind,'source_id'=>$sourceId,'run_id'=>$runId,'run_identity'=>$run['run_identity'],'research_project_id'=>(int)$run['project_id'],'research_identity'=>$run['identity_token'],'run_started_at'=>(int)$run['started_at'],'project_title'=>$run['name'],'title'=>'','content'=>'','reference'=>'','method'=>null,'eligible_evidence'=>false,'scope'=>'Saved research context, not independently verified.'];
+        $snapshot=['source_kind'=>$sourceKind,'source_id'=>$sourceId,'run_id'=>$runId,'run_identity'=>$run['run_identity'],'research_project_id'=>(int)$run['project_id'],'research_identity'=>$run['identity_token'],'run_started_at'=>(int)$run['started_at'],'project_title'=>$run['name'],'title'=>'','content'=>'','reference'=>'','method'=>null,'eligible_evidence'=>false,'scope'=>'Saved research context, not independently verified.','evidence_scope'=>'unknown','configuration_ref'=>'','limitations'=>'No product runtime or tested configuration is established by this saved research record.'];
         if($sourceKind==='research_node'){
             if(!in_array($row['type'],['dream_claim','question','model_idea','association','counter','edge_case','reframing','synthesis','search'],true))throw new RuntimeException('Choose a saved research idea or finding.');
             $snapshot+=['node_type'=>$row['type'],'origin'=>$row['origin'],'provenance_tag'=>$row['provenance_tag'],'locked_at'=>$row['locked_at']];
@@ -82,12 +90,14 @@ trait NasaIntegration
         }elseif($sourceKind==='research_passage'){
             $snapshot['title']=$row['source_title'];$snapshot['content']=$row['exact_text'];$snapshot['reference']=$row['url'];$snapshot['eligible_evidence']=true;
             $snapshot['scope']='Captured '.$row['fetch_scope'].'; owner review must assess relevance and limitations.';
+            $snapshot['evidence_scope']='web_source';$snapshot['origin']='captured_web_source';$snapshot['limitations']='Captured web text can support a reviewed analysis or inspection. It does not establish that the product, provider or hosted website was tested.';
             $snapshot+=['source_record_id'=>(int)$row['source_id'],'locator'=>$row['locator'],'fetch_scope'=>$row['fetch_scope'],'content_hash'=>$row['content_hash'],'domain'=>$row['domain']];
         }elseif($sourceKind==='research_edge'){
             if($row['type']!=='dream_claim')throw new RuntimeException('Choose a captured evidence relation for a research claim.');
             $snapshot['title']=$row['claim_title'].' · '.$row['relation'];$snapshot['content']=($row['exact_text']??'')."\nRelation rationale: ".$row['rationale'];$snapshot['reference']=$row['url'];
             $snapshot['eligible_evidence']=$row['passage_id']!==null&&$row['exact_text']!==null&&$row['relation']==='supports'&&(int)$row['selected']===1;
             $snapshot['scope']='Recorded model evidence relation; only a captured supporting passage can be reviewed as evidence.';
+            $snapshot['evidence_scope']=$row['passage_id']!==null&&$row['exact_text']!==null?'web_source':'unknown';$snapshot['origin']='research_model_relation';$snapshot['limitations']='The relation is a model assessment of captured text. Owner review does not turn it into an executed product test or independent verification.';
             $snapshot+=['claim_id'=>(int)$row['claim_id'],'source_record_id'=>(int)$row['source_id'],'passage_id'=>$row['passage_id']===null?null:(int)$row['passage_id'],'relation'=>$row['relation'],'strength'=>$row['strength'],'locator'=>$row['locator'],'fetch_scope'=>$row['fetch_scope'],'content_hash'=>$row['content_hash']];
         }else{
             if($row['type']!=='dream_claim')throw new RuntimeException('Choose a saved claim assessment.');
@@ -116,7 +126,21 @@ trait NasaIntegration
     private function manualEvidence(array $manual): array
     {
         $method=$manual['method']??'';if(!in_array($method,['test','analysis','inspection','demonstration'],true))throw new RuntimeException('Choose the method used by this evidence.');
-        return ['source_kind'=>'manual_evidence','source_id'=>0,'run_id'=>0,'research_project_id'=>null,'title'=>self::text($manual['title']??'',160),'content'=>self::text($manual['content']??'',6000),'reference'=>self::text($manual['reference']??'',2000),'method'=>$method,'eligible_evidence'=>true,'scope'=>'Owner-recorded evidence and result reference; not independently observed by AIcontrol.'];
+        $scope=$manual['scope']??'unknown';if($scope==='')$scope='unknown';if(!in_array($scope,['unknown','fixture','local','live_provider','hosted','manual'],true))throw new RuntimeException('Choose the actual evidence scope, or leave it unknown.');
+        return ['source_kind'=>'manual_evidence','source_id'=>0,'run_id'=>0,'research_project_id'=>null,'title'=>self::text($manual['title']??'',160),'content'=>self::text($manual['content']??'',6000),'reference'=>self::text($manual['reference']??'',2000),'method'=>$method,'eligible_evidence'=>true,'scope'=>'Owner-recorded evidence and result reference; not independently observed by AIcontrol.','origin'=>'owner_reported','evidence_scope'=>$scope,'configuration_ref'=>self::text($manual['configuration_ref']??'',1000,true),'limitations'=>self::text($manual['limitations']??'',2000,true)];
+    }
+
+    /** Compare old research snapshots without rewriting their historical bytes. */
+    private static function comparableResearchSnapshot(array $live,array $recorded): array
+    {
+        foreach(['evidence_scope','configuration_ref','limitations','origin'] as $key)if(!array_key_exists($key,$recorded))unset($live[$key]);
+        return $live;
+    }
+
+    public static function evidenceMetadata(array $snapshot): array
+    {
+        $scope=$snapshot['evidence_scope']??'unknown';if(!in_array($scope,['unknown','fixture','local','live_provider','hosted','manual','web_source'],true))$scope='unknown';
+        return ['evidence_scope'=>$scope,'configuration_ref'=>is_string($snapshot['configuration_ref']??null)?$snapshot['configuration_ref']:'','limitations'=>is_string($snapshot['limitations']??null)?$snapshot['limitations']:'Scope, tested configuration and limitations were not recorded in this older snapshot.','origin'=>($snapshot['source_kind']??'')==='manual_evidence'?'owner_reported':($snapshot['origin']??'legacy_unknown')];
     }
 
     private function appendProvenance(array $item,array $snapshot,string $note,?array $previous=null,string $status='linked',string $reviewNote=''): int
@@ -152,8 +176,9 @@ trait NasaIntegration
         $links=$this->rows($sql.' ORDER BY l.id',$args);
         foreach($links as &$link){$link['kind']=$link['item_kind'];$link['snapshot']=$link['source_snapshot']=json_decode($link['snapshot_json'],true,64,JSON_THROW_ON_ERROR);$link['reviewed']=$link['status']==='reviewed';$link['eligible_evidence']=(bool)$link['snapshot']['eligible_evidence'];$link['source_current']=true;
             if(!hash_equals($link['source_sha256'],hash('sha256',self::integrationJson($link['snapshot']))))$link['source_current']=false;
-            if($link['source_kind']!=='manual_evidence')try{$live=$this->researchSource($project,$link['source_kind'],(int)$link['source_id'],(int)$link['run_id']);$link['source_current']=$link['source_current']&&hash_equals($link['source_sha256'],hash('sha256',self::integrationJson($live)));}catch(RuntimeException){$link['source_current']=false;}
+            if($link['source_kind']!=='manual_evidence')try{$live=self::comparableResearchSnapshot($this->researchSource($project,$link['source_kind'],(int)$link['source_id'],(int)$link['run_id']),$link['snapshot']);$link['source_current']=$link['source_current']&&hash_equals($link['source_sha256'],hash('sha256',self::integrationJson($live)));}catch(RuntimeException){$link['source_current']=false;}
             $current=$this->current($project,$link['item_kind'],$link['item_key']);$link['subject_current']=$current&&$current['status']!=='removed'&&hash_equals($link['subject_hash'],self::subjectHash($current['kind'],$current['title'],$current['content'],json_decode($current['data_json'],true,64,JSON_THROW_ON_ERROR)));
+            $link['evidence_metadata']=self::evidenceMetadata($link['snapshot']);
         }unset($link);return $links;
     }
 
@@ -168,7 +193,7 @@ trait NasaIntegration
             if(!hash_equals($old['subject_hash'],self::subjectHash($item['kind'],$item['title'],$item['content'],$data)))throw new RuntimeException('The planning subject changed. Attach evidence to its current version before reviewing it.');
             $snapshot=json_decode($old['snapshot_json'],true,64,JSON_THROW_ON_ERROR);
             if(!hash_equals($old['source_sha256'],hash('sha256',self::integrationJson($snapshot))))throw new RuntimeException('Evidence snapshot integrity check failed.');
-            if($reviewed&&$old['source_kind']!=='manual_evidence'){$live=$this->researchSource($project,$old['source_kind'],(int)$old['source_id'],(int)$old['run_id']);if(!hash_equals($old['source_sha256'],hash('sha256',self::integrationJson($live))))throw new RuntimeException('The research source changed. Attach its current version before reviewing it.');}
+            if($reviewed&&$old['source_kind']!=='manual_evidence'){$live=self::comparableResearchSnapshot($this->researchSource($project,$old['source_kind'],(int)$old['source_id'],(int)$old['run_id']),$snapshot);if(!hash_equals($old['source_sha256'],hash('sha256',self::integrationJson($live))))throw new RuntimeException('The research source changed. Attach its current version before reviewing it.');}
             $id=$this->appendProvenance($item,$snapshot,$old['note'],$old,$reviewed?'reviewed':'revoked',$reviewNote);$this->bump($project);return $id;
         });
     }
@@ -180,9 +205,41 @@ trait NasaIntegration
         return false;
     }
 
+    private static function knownEvidenceConfiguration(string $reference): bool
+    {
+        $value=mb_strtolower(trim($reference),'UTF-8');
+        return $value!==''&&!in_array($value,['unknown','not known','not recorded','not specified','not provided','none','n/a','na','tbd','tbc','unavailable','unspecified','unrecorded','[unknown]','?'],true);
+    }
+
+    /** Additional Everyday constraints; the heritage evidence gate stays separate. */
+    public function hasScopedReviewedEvidence(int $project,string $key,string $title,string $content,array $data): bool
+    {
+        $requiredScope=$data['required_scope']??'unknown';
+        if(!in_array($requiredScope,['unknown','fixture','local','live_provider','hosted','manual','web_source'],true))return false;
+        $requiredReference=trim((string)($data['required_configuration_ref']??''));
+        $needsConfiguration=in_array($data['configuration_required']??false,[true,1,'1'],true)||$requiredReference!=='';
+        if($needsConfiguration&&($requiredScope==='unknown'||!self::knownEvidenceConfiguration($requiredReference)))return false;
+        $subject=self::subjectHash('requirement',$title,$content,$data);
+        foreach($this->provenance($project,'requirement',$key) as $link){
+            if(!$link['reviewed']||!$link['eligible_evidence']||!$link['source_current']||!$link['subject_current']||!hash_equals($subject,$link['subject_hash']))continue;
+            if($link['source_kind']==='manual_evidence'&&$link['snapshot']['method']!==($data['method']??null))continue;
+            $metadata=$link['evidence_metadata'];
+            if($requiredScope!=='unknown'&&$metadata['evidence_scope']!==$requiredScope)continue;
+            if($metadata['evidence_scope']==='web_source'&&in_array($data['method']??null,['test','demonstration'],true))continue;
+            if($needsConfiguration&&!self::knownEvidenceConfiguration($metadata['configuration_ref']))continue;
+            if($requiredReference!==''&&!hash_equals($requiredReference,trim($metadata['configuration_ref'])))continue;
+            return true;
+        }
+        return false;
+    }
+
     public function assertVerifiedEvidence(int $project,string $key,string $title,string $content,array $data,string $by='owner'): void
     {
         if($by!=='owner'||!in_array($data['verification_confirmed']??null,[true,'1'],true))throw new RuntimeException('Explicitly confirm that you reviewed the linked evidence before marking this requirement verified.');
+        $requiredReference=trim((string)($data['required_configuration_ref']??''));
+        $needsConfiguration=in_array($data['configuration_required']??false,[true,1,'1'],true)||$requiredReference!=='';
+        if($needsConfiguration&&($data['required_scope']??'unknown')==='unknown')throw new RuntimeException('Choose the evidence scope required by this promise before confirming verification.');
+        if($needsConfiguration&&!self::knownEvidenceConfiguration($requiredReference))throw new RuntimeException('Record the expected project configuration reference before confirming this promise. A reported tested build alone does not establish which configuration the promise applies to.');
         if($this->hasReviewedEvidence($project,$key,$title,$content,$data))return;
         throw new RuntimeException('Attach and explicitly review relevant evidence for this exact requirement and verification method before marking it verified.');
     }
@@ -197,6 +254,20 @@ trait NasaIntegration
                 if(!isset(NasaKnowledge::ARTIFACTS[$targetKey]))throw new RuntimeException('Choose a known artifact for this research draft.');
                 $draftTitle=NasaKnowledge::ARTIFACTS[$targetKey][0];$draftData=['reference'=>NasaKnowledge::ARTIFACTS[$targetKey][2]];$status='draft';
             }else{
+                $everyday=$this->engineeringProfile($project)['mode']==='everyday';
+                if($targetKind==='requirement'){
+                    $previous=$targetKey!==''?$this->current($project,'requirement',$targetKey):null;
+                    if($previous){
+                        // Research can seed a new text version, not silently
+                        // replace the owner's existing verification policy.
+                        $previousData=json_decode($previous['data_json'],true,64,JSON_THROW_ON_ERROR);
+                        foreach(['configuration_required','required_scope','required_configuration_ref'] as $constraint)if(array_key_exists($constraint,$previousData))$data[$constraint]=$previousData[$constraint];
+                    }elseif($everyday&&$targetKey===''){
+                        $data['configuration_required']=true;$data['required_scope']='unknown';unset($data['required_configuration_ref']);
+                    }
+                }elseif($targetKind==='risk'&&$everyday&&$targetKey===''){
+                    $data['rating_status']='not_assessed';foreach(['likelihood','consequence','residual_likelihood','residual_consequence'] as $rating)$data[$rating]=null;
+                }
                 $status=['requirement'=>'unverified','risk'=>'open','decision'=>'proposed'][$targetKind];$draftData=$this->validateRecord($project,$targetKind,$draftTitle,$draftContent,$data,$status);
                 $prefix=['requirement'=>'REQ','risk'=>'RISK','decision'=>'DEC'][$targetKind];
                 if($targetKey===''){$number=(int)$this->rows('SELECT COUNT(DISTINCT item_key) AS n FROM nasa_items WHERE project_id=? AND kind=?',[$project,$targetKind])[0]['n']+1;$targetKey=$prefix.'-'.str_pad((string)$number,3,'0',STR_PAD_LEFT);if($expectedVersion!==0)throw new RuntimeException('Use version zero for a new planning draft.');}
@@ -220,9 +291,9 @@ trait NasaIntegration
             if(!$check)throw new RuntimeException('Choose an unresolved readiness gap from this project.');
             return ['kind'=>'gap','key'=>$key,'phase'=>$p['phase'],'title'=>$check['title'],'content'=>$check['detail']];
         }
-        if($kind!=='risk')throw new RuntimeException('Choose an unresolved readiness gap or open high residual risk.');
+        if($kind!=='risk')throw new RuntimeException('Choose an unresolved readiness gap or open high or unassessed residual risk.');
         $item=$this->integrationItem($project,'risk',$key,$expectedItemVersion);$data=json_decode($item['data_json'],true,64,JSON_THROW_ON_ERROR);
-        if($item['status']!=='open'||$data['residual_likelihood']*$data['residual_consequence']<15)throw new RuntimeException('Choose an open high residual risk for focused research.');
+        $score=self::riskScore($data);if($item['status']!=='open'||$score!==null&&$score<15)throw new RuntimeException('Choose an open high or unassessed residual risk for focused research.');
         return ['kind'=>'risk','key'=>$key,'version'=>(int)$item['version'],'title'=>$item['title'],'content'=>$item['content'],'data'=>$data];
     }
 

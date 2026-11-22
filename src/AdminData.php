@@ -14,13 +14,13 @@ final class AdminData
         'delete_project'=>'DELETE TASK PROJECT','reset_project'=>'CLEAR TASKS AND RUNS',
         'delete_task'=>'DELETE TASK','reset_task'=>'CLEAR TASK HISTORY',
         'clear_activity'=>'CLEAR TASK ACTIVITY','clear_diagnostics'=>'CLEAR DIAGNOSTICS',
-        'clear_suggestions'=>'CLEAR SUGGESTION HISTORY','reset_workspace'=>'RESET ALL PROJECT DATA'
+        'clear_suggestions'=>'CLEAR SUGGESTION HISTORY','clear_test_reports'=>'CLEAR RELEASE TEST REPORTS','reset_workspace'=>'RESET ALL PROJECT DATA'
     ];
     public function __construct(private string $directory) {if(is_link($directory.'/research.sqlite'))throw new RuntimeException('A managed database is unavailable.');new Research($directory);}
     public static function token(string $operation,int $id=0): string
     {
         if(!isset(self::CONFIRM[$operation]))throw new RuntimeException('Unknown data operation.');
-        return self::CONFIRM[$operation].(in_array($operation,['clear_activity','clear_diagnostics','clear_suggestions','reset_workspace'],true)?'':' '.$id);
+        return self::CONFIRM[$operation].(in_array($operation,['clear_activity','clear_diagnostics','clear_suggestions','clear_test_reports','reset_workspace'],true)?'':' '.$id);
     }
     private function connect(string $file): PDO
     {
@@ -58,7 +58,7 @@ final class AdminData
     {
         $expected=self::token($operation,$id);
         if(!hash_equals($expected,trim($confirmation)))throw new RuntimeException('Confirmation did not match. No data was changed.');
-        if(!in_array($operation,['clear_activity','clear_diagnostics','clear_suggestions','reset_workspace'],true)&&$id<1)throw new RuntimeException('Choose a valid record.');
+        if(!in_array($operation,['clear_activity','clear_diagnostics','clear_suggestions','clear_test_reports','reset_workspace'],true)&&$id<1)throw new RuntimeException('Choose a valid record.');
         ProviderGate::run($this->directory,function()use($operation,$id):void {
             if($operation==='clear_diagnostics'){$this->clearLog();}
             elseif($operation==='clear_suggestions'){$this->clearSuggestions();}
@@ -83,6 +83,9 @@ final class AdminData
                         if($operation==='delete_task')self::exec($db,'DELETE FROM main.tasks WHERE id=?',[$id]);
                         else self::exec($db,"UPDATE main.tasks SET status='draft',evidence='' WHERE id=?",[$id]);
                     } elseif($operation==='clear_activity'){$db->exec('DELETE FROM main.events');}
+                    elseif($operation==='clear_test_reports'){
+                        if(self::rows($db,"SELECT name FROM main.sqlite_master WHERE type='table' AND name='admin_test_reports'"))$db->exec('DELETE FROM main.admin_test_reports');
+                    }
                     elseif($operation==='reset_workspace'){
                         self::deleteEngineering($db);
                         if($hasSystems)$db->exec('UPDATE systems.system_runs SET project_id=NULL');
@@ -123,7 +126,7 @@ final class AdminData
             'database_setup'=>'Embedded SQLite through PDO; no MySQL server is used by this application.',
             'php'=>['version'=>PHP_VERSION,'sapi'=>PHP_SAPI,'os_family'=>PHP_OS_FAMILY,'ini_file'=>php_ini_loaded_file()?:null,'additional_ini_files'=>php_ini_scanned_files()?:null,'error_reporting_mask'=>error_reporting(),'timezone'=>date_default_timezone_get(),'pdo_drivers'=>PDO::getAvailableDrivers(),'memory_used_bytes'=>memory_get_usage(true),'settings'=>$settings,'extensions'=>$extensions],
             'databases'=>[],'private_files'=>[]];
-        $databases=['panel.sqlite'=>'Task projects, tasks, agent outputs, activity, login throttling and NASA Managed engineering records','research.sqlite'=>'Research projects, conversations, investigations, evidence ledger and usage'];
+        $databases=['panel.sqlite'=>'Task projects, tasks, agent outputs, activity, login throttling, NASA Managed engineering records and release/test reports','research.sqlite'=>'Research projects, conversations, investigations, evidence ledger and usage'];
         if(file_exists($this->directory.'/systems.sqlite'))$databases['systems.sqlite']='Linux systems, pinned SSH identities, agent tasks and command results; credentials are encrypted in the vault';
         foreach($databases as $file=>$purpose){
             $db=$this->connect($file);$db->exec('PRAGMA query_only=ON');$list=self::rows($db,'PRAGMA database_list');$path=$list[0]['file'];$tables=[];

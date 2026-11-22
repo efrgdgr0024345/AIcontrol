@@ -551,7 +551,7 @@ final class AIcontrolUi
   });
   document.querySelectorAll('[data-copy-report]').forEach(button => button.addEventListener('click', async () => {
     const report=document.getElementById(button.dataset.copyReport), status=button.parentElement.querySelector('[data-copy-report-status]');
-    try { if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(report.value);else {report.focus();report.select();if(!document.execCommand('copy'))throw new Error('copy');}status.textContent=button.dataset.copyReport==='admin-technical-report'?'Technical report copied.':button.dataset.copyReport==='system-script'?'Setup script copied.':button.dataset.copyReport.endsWith('-command')?'Command copied.':'JSON copied.'; }
+    try { if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(report.value);else {report.focus();report.select();if(!document.execCommand('copy'))throw new Error('copy');}status.textContent=button.dataset.copyReport==='admin-technical-report'?'Technical report copied.':button.dataset.copyReport==='system-script'?'Setup script copied.':button.dataset.copyReport.endsWith('-command')?'Command copied.':button.dataset.copyReport.startsWith('admin-test-output-')?'Contents copied.':'JSON copied.'; }
     catch {report.focus();report.select();status.textContent='Report selected. Use your device’s Copy command.';}
   }));
   let installing = false;
@@ -1875,11 +1875,40 @@ document.addEventListener('submit', event => {
       if(!(response.headers.get('content-type')||'').includes('application/json'))throw Error('Session or outcome could not be verified. Refresh NASA Managed before trying again.');
       const result=await response.json();if(!response.ok)throw Error(result.error||'Planning action failed. Saved records were retained.');
       const next=new URL(result.location,location.href);if(next.origin!==location.origin)throw Error('Unexpected redirect. Refresh the workspace.');
-      const panel=form.closest('[data-nasa-panel]')?.dataset.nasaPanel,action=form.elements.action.value;let destination=action.includes('review')?'reviews':['nasa_generate','nasa_template','nasa_promote_research'].includes(action)?'artifacts':panel||'overview';if(action==='nasa_collaborate'||action.startsWith('nasa_proposal_')||action==='nasa_generate'&&form.elements.artifact?.value==='missing')destination='overview';if(next.searchParams.get('view')==='nasa')next.hash='nasa-'+destination;
+      const panel=form.closest('[data-nasa-panel]')?.dataset.nasaPanel,action=form.elements.action.value;let destination=action.includes('review')?'reviews':['nasa_generate','nasa_template','nasa_promote_research'].includes(action)?'artifacts':panel||'overview';if(action==='nasa_collaborate'||action.startsWith('nasa_proposal_')||action==='nasa_generate')destination='overview';if(next.searchParams.get('view')==='nasa')next.hash='nasa-'+destination;
       if(next.pathname===location.pathname&&next.search===location.search){history.replaceState(null,'',next);location.reload();}else location.assign(next);
     }catch(error){uncertain=form.hasAttribute('data-nasa-ai');if(status){status.textContent=error.message+(uncertain?' Inspect AI request history before sending another request.':'');status.setAttribute('role','alert');}if(uncertain)for(const button of root.querySelectorAll('[data-nasa-ai] button'))button.disabled=true;}
     finally{busy=false;form.removeAttribute('aria-busy');if(!uncertain)for(const b of disabled)b.disabled=false;}
   });
+})();
+
+// Progressive reading only: every owner action remains a native authenticated POST.
+(() => {
+ 'use strict';
+ const root=document.querySelector('[data-everyday-workspace]');if(!root)return;
+ const tabs=[...root.querySelectorAll('[data-everyday-tab]')],panels=[...root.querySelectorAll('[data-everyday-panel]')];
+ function open(key,focus=false){
+  if(!panels.some(p=>p.dataset.everydayPanel===key))return;
+  for(const panel of panels)panel.hidden=panel.dataset.everydayPanel!==key;
+  for(const tab of tabs){const selected=tab.dataset.everydayTab===key;tab.setAttribute('aria-selected',String(selected));tab.tabIndex=selected?0:-1;}
+  if(focus)tabs.find(t=>t.dataset.everydayTab===key)?.focus({preventScroll:true});
+ }
+ root.querySelector('[data-everyday-tabs]')?.setAttribute('role','tablist');
+ for(const panel of panels){panel.setAttribute('role','tabpanel');panel.setAttribute('aria-labelledby','everyday-tab-'+panel.dataset.everydayPanel);}
+ for(const [index,tab] of tabs.entries()){
+  tab.setAttribute('role','tab');tab.setAttribute('aria-controls','everyday-'+tab.dataset.everydayTab);
+  tab.addEventListener('click',event=>{event.preventDefault();open(tab.dataset.everydayTab);history.replaceState(null,'','#everyday-'+tab.dataset.everydayTab);});
+  tab.addEventListener('keydown',event=>{const next=event.key==='ArrowRight'?(index+1)%tabs.length:event.key==='ArrowLeft'?(index+tabs.length-1)%tabs.length:event.key==='Home'?0:event.key==='End'?tabs.length-1:null;if(next!==null){event.preventDefault();open(tabs[next].dataset.everydayTab,true);history.replaceState(null,'','#everyday-'+tabs[next].dataset.everydayTab);}});
+ }
+ for(const link of root.querySelectorAll('[data-everyday-open]'))link.addEventListener('click',event=>{event.preventDefault();open(link.dataset.everydayOpen,true);history.replaceState(null,'','#everyday-'+link.dataset.everydayOpen);});
+ const initial=location.hash.startsWith('#everyday-')?location.hash.slice(10):'pathway';open(panels.some(p=>p.dataset.everydayPanel===initial)?initial:'pathway');
+ let submitting=false;
+ root.addEventListener('submit',event=>{
+  const form=event.target;if(!form.matches('[data-everyday-form]')||form.elements.action.value==='nasa_export')return;
+  if(submitting){event.preventDefault();return;}submitting=true;
+  const status=root.querySelector('[data-everyday-operation]');if(status)status.textContent=form.hasAttribute('data-everyday-ai')?'Preparing one bounded proposal. Nothing is adopted or retried automatically.':'Saving the owner decision…';
+  form.setAttribute('aria-busy','true');
+ });
 })();
 
 AICONTROL_UI_JS;
@@ -2835,6 +2864,10 @@ body.research-map-open { overflow:hidden; }
 @media print { .nasa-density-form { display:none!important; } .nasa-workspace .nasa-practitioner { display:block!important; } }
 
 .nasa-dashboard { flex-wrap:wrap; } .nasa-posture-details { width:100%; grid-column:1 / -1; border-top:1px solid #6b85a0; padding-top:12px; } .nasa-posture-details h3 { font-size:1rem; } .nasa-posture-details a { color:#d8ebff!important; }
+
+.everyday-proposal > details > summary { padding:16px; }
+[data-everyday-workspace] pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:24rem; overflow:auto; }
+[data-everyday-workspace] .table th,[data-everyday-workspace] .table td { color:var(--nasa-ink); }
 
 AICONTROL_UI_CSS;
     }

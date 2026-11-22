@@ -914,3 +914,7 @@ body.research-map-open { overflow:hidden; }
 @media print { .nasa-density-form { display:none!important; } .nasa-workspace .nasa-practitioner { display:block!important; } }
 
 .nasa-dashboard { flex-wrap:wrap; } .nasa-posture-details { width:100%; grid-column:1 / -1; border-top:1px solid #6b85a0; padding-top:12px; } .nasa-posture-details h3 { font-size:1rem; } .nasa-posture-details a { color:#d8ebff!important; }
+
+.everyday-proposal > details > summary { padding:16px; }
+[data-everyday-workspace] pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:24rem; overflow:auto; }
+[data-everyday-workspace] .table th,[data-everyday-workspace] .table td { color:var(--nasa-ink); }

@@ -35,6 +35,12 @@ jobs:
           php tests/nasa_discipline.php
           php tests/nasa_context_pack.php
           php tests/nasa_atomicity.php
+          php tests/everyday_engineering.php
+          php tests/everyday_provider.php
+          php tests/everyday_evidence.php
+          php tests/everyday_context_pack.php
+          php tests/admin_test_reports.php
+          python3 -B -m unittest -v tests/everyday_http.py tests/admin_test_http.py tests/site_delivery.py
           python3 -B -m unittest -v tests/nasa_http.py
           php tests/systems.php
           php tests/system_setup.php

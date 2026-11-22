@@ -891,3 +891,36 @@ The environment plugin confirms the runtime is connected/running. AI responses i
 regression tests are synthetic; the unchanged live key previously returned
 expired_secret_key, so no successful new live-model run or cPanel activation is
 claimed. PIN, Vault keys, signing identity, provider limits and update checks remain.
+
+## Everyday engineering and owner-authenticated delivery loop (2026-11-22)
+
+The owner approved both the Everyday NASA redesign and publish/install/test/Admin
+reporting implementation. See EVERYDAY_ENGINEERING.md and DELIVERY_AND_TEST_REPORTS.md.
+New Engineering workspaces start from a pathway/cycle model; existing NASA Managed
+workspaces remain rigorous. AI proposes with bounded dedicated prompts; owner
+adoption, cycle control, evidence review and verification are distinct. Every
+significant recommendation retains project and handbook references. Observations,
+versions, omissions and unknown exposure remain visible. Unadopted legacy AI
+records are read-only context, never silently upgraded to commitments.
+
+New constrained promises require scope and tested-configuration compatible owner
+reviewed evidence. Unknown risks remain unassessed/null. Full context/manifest
+compilation and adoption share the protected panel/research transaction. Replans
+cannot drop obligations via a mere rationale citation; dependency ordering and
+active-cycle selection are tested. New baseline comparisons retain operating
+context and label control-panel SHA separately from managed project configuration.
+
+The external coding helper uses ordinary owner PIN/CSRF/check/review/install,
+exact-SHA checks and read-only smoke routes. It creates no deployment token,
+alternate login, command API or secret export. Admin retains bounded append-only
+release/test records, actual serving-release observations and separately labelled
+client/browser results with copy/download/readback. Project reset retains these
+records; typed report cleanup is explicit. The in-app planning model remains
+tool-free and cannot deploy or approve itself.
+
+Required checks include Everyday storage/provider/evidence/export/HTTP/Chromium,
+Admin report storage/HTTP/UI and site-delivery HTTP fixtures alongside all heritage
+suites. Local fixture/browser results and real hosted/provider outcomes must be
+reported separately. The live target currently presents its existing PIN gate;
+AICONTROL_SITE_PIN was not configured during implementation, so no authenticated
+cPanel install or hosted feature test is claimed without subsequent evidence.

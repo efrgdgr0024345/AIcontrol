@@ -25,6 +25,8 @@ try{
     $baseline=$n->disciplinedBaseline($id,'Reviewed fixture snapshot',$revision);
     $row=$n->rows('SELECT * FROM nasa_baselines WHERE id=?',[$baseline])[0];$snapshot=json_decode($row['snapshot_json'],true,64,JSON_THROW_ON_ERROR);
     verify($snapshot['local_review_id']===$review&&$snapshot['revision']===$revision&&$snapshot['code_sha']===str_repeat('b',40),'Baseline omitted review/revision/installed code provenance');
+    verify(isset($snapshot['engineering_context'])&&$snapshot['engineering_context']['profile']['mode']==='rigorous','New baseline omitted the operative engineering context');
+    verify($snapshot['code_reference_scope']==='control_panel_release','Control panel SHA was mislabeled as managed project code');
     verify($snapshot['research']['available']&&strlen($snapshot['research']['sha256'])===64&&$snapshot['research']['project_id']===1,'Baseline omitted linked research hash');
     verify(!str_contains($row['snapshot_json'],'PRIVATE-OTHER')&&!str_contains($row['snapshot_json'],'NEVER-SEND-THIS')&&!str_contains($row['snapshot_json'],'OPTED-IN-CONTEXT'),'Baseline captured unselected context or Vault notes');
     verify(hash_equals($row['sha256'],hash('sha256',$row['snapshot_json'])),'Baseline content checksum incorrect');
