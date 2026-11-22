@@ -92,6 +92,26 @@ before adoption too. Legacy provider compatibility remains internal; formal AI
 reviews remain explicitly advisory, never owner approval or operative authority.
 Existing owner, PIN, CSRF, Stop, signing, SSH, budget and update controls remain.
 
+## Visual pathway and proof trail
+
+The intent and current cycle now anchor a contrasting mission panel, with one
+next owner action and a compact secondary toolbar. A connected route follows the
+adopted pathway's saved cycle order and shows explicit dependencies. Other retained
+cycles stay separately inspectable. Paused, review and incomplete states keep
+their actual labels; forecast is not a claim that work has started.
+
+Results show Promise → Planned check → Observation → Owner review → Verification.
+Planned checks match the exact promise version. Recorded observations/reviews stay
+separate from compatible evidence and effective owner verification; no percentage
+substitutes for proof. History sorts retained records by their saved timestamps,
+preserving source order for ties and noting that cross-type same-second ordering
+is not established. Light/dark, mobile, print and reduced-motion styles retain
+native owner forms and keyboard paths.
+
+Existing NASA Managed workspaces show a clear Everyday entry. Its GET link opens
+and preselects the existing mode-decision form; only the owner POST with a reason,
+remaining exposure and revisit condition changes operating mode.
+
 ## Validation
 
 `everyday_engineering.php`, `everyday_provider.php`, `everyday_evidence.php`,

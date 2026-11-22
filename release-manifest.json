@@ -2,7 +2,7 @@
     "version": 2,
     "files": {
         "app.php": "031b76861c650413202b1c66a125b488e2986709cd99cce26f2f32762b850284",
-        "assets/panel.css": "0946c56a6810dce494dece6a95204bbdb62ff101ae17dd1fabc41d9df170311f",
+        "assets/panel.css": "efc38ee394c59c191872e1e58321f4bd3d1e7cff74d656b91fe970bef88b6335",
         "assets/panel.js": "0a73f4495491d4cd1b010c141e3b14193fad58eeb008c555640ea00d70ff99b3",
         "src/AccessPolicy.php": "44469fc613bb1704d857e06e6d70d484d44083b33753e99feaec93baed561cd8",
         "src/AdminData.php": "983e9c48c45e227235142211f2ed263908e4415adeb091e20478803f3ae3545e",
@@ -16,7 +16,7 @@
         "src/Diagnostics.php": "2eaf7ed1dfece09cdc3ed522ab924d42ac7aa816bc730f77ccea7b0381b6d10f",
         "src/EverydayActions.php": "afd3221ca2ea06e391f17f431bc3a7f0776e41afa1b0e81f6209cb2a7138f4b9",
         "src/EverydayEngineering.php": "039ec4777f04321e6429842627b4aaf6a523c6d1442e1ca63005412222a7edf8",
-        "src/EverydayEngineeringView.php": "2d0e1b3a65aadb9503b86b4996ea78d4c57e61d8862b1a3e8387acd08e0363f1",
+        "src/EverydayEngineeringView.php": "f4f3ba16b12aa4b4fa2e8880968c535321608d42a011b5731d6e201f908eb861",
         "src/EverydayPrompt.php": "36c622eaf07080722fc7d94541260485d90a2c49fb513785e5524e1367d25f5b",
         "src/EvidenceLedger.php": "ff0e21311e5869648a35c3f99b5227c6f11db9f16e26b308d9323fbdbd8ebce0",
         "src/ExplorationFlow.php": "5950820e0bf21feb0316e1202894de2fd3f7d646a3358afc02a7a0efc815c0d0",
@@ -33,7 +33,7 @@
         "src/NasaKnowledge.php": "f73281bf8f361b6d79a31a0bd63f3ded4c194c31542e7e9e0b0fe8310086297c",
         "src/NasaProvider.php": "095008b03ce5b5e6e3fde8cd8ce30b2954cbd920f2ce26af1475801c215874b4",
         "src/NasaStore.php": "98bdb0b987c8e386c1e210560f04de71c2eed2b4468fa4286cfaf9debafbff8a",
-        "src/NasaView.php": "5b577eb02cc3aa399bcc23974c3386bbcc203ed57f8bfc5a5574b7b17c5d71f5",
+        "src/NasaView.php": "eb6c7dc19974330e68c71a80c8dcf154511cc36d4e5745895cee9819dd43b62b",
         "src/Panel.php": "dcd5749b75c1f176d1729f8423c765780a0848b6fcd2cd2dd1069885d577b7ac",
         "src/PanelStore.php": "65548cfa672db568b48e7ba98931ff776ffa3c8174de8bdf394958c97824a536",
         "src/PanelView.php": "de4172da19dcfd4195ae354090cbe7ae89aaf9093691100b11f4e163ca67411f",
@@ -55,13 +55,13 @@
         "src/Systems.php": "f4a17949d5b0ac7409025c8b448e0c905dacf4bbf878b4aa47f6090c73731461",
         "src/SystemsAgent.php": "255350d6724d82035a41b91949c22a9a0943ff45e784afb32c75e64740c6eb3e",
         "src/SystemsView.php": "7e7934f49fe2862efc01f96962de9cd8b4375497e30d305ba5d75419933667c5",
-        "src/Ui.php": "e107f786dbb61e1ff8414d18ea1c76ab0ccc6357fff627dc877237d465f4b0c6",
+        "src/Ui.php": "7171f49a2632b3cbca285f2cd44b1e60bba5e0cf7d440f63278948550610fe55",
         "src/UsageMeter.php": "71b6b2af9377430023dd20b42ac48cce17c98ae0cae987c6ca557a90c8b7e48a",
         "src/Vault.php": "c3d4d21e9241e8804e12321da6e9b585af30808d6b85fbc2944ed2b0df1c5419",
         "src/WorkspaceView.php": "4eff257da749e63bfd1549c8c697c95cea1955ad25aa1ea87ff6525fda74aecc"
     },
     "bootstrap": {
         "path": "loader.php",
-        "sha256": "d402edafbd3aeb45bfd39545de723bd295861eaf32161dcfd4c62250c4237742"
+        "sha256": "392dbdb28b21a8e01964ba8ed6df823b44f8e1ac9a1496363669396b4ff8088c"
     }
 }

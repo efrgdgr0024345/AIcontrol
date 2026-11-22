@@ -42,6 +42,14 @@ class EverydayHttp(unittest.TestCase):
   with self.fixture() as (home,csrf,request):
    self.assertEqual(request(dict(csrf=csrf,action='nasa_start',source_kind='project',source_id='1'),query='?view=nasa')[0],200)
    code,_,page=request(query='?view=nasa&nasa_project=1');self.assertEqual(code,200);self.assertTrue(bool(re.search(r'<(?:div|section)\b[^>]*\bdata-nasa-workspace(?:\s|=|>)',page)),'Managed view did not render');self.assertFalse(bool(re.search(r'<(?:div|section)\b[^>]*\bdata-everyday-workspace(?:\s|=|>)',page)),'Legacy workspace changed operating mode')
+ def test_everyday_mode_entry_is_discoverable_and_get_never_changes_authority(self):
+  with self.fixture() as (home,csrf,request):
+   self.assertEqual(request(dict(csrf=csrf,action='nasa_start',source_kind='project',source_id='1'),query='?view=nasa')[0],200)
+   code,_,page=request(query='?view=nasa&nasa_project=1&engineering_mode_choice=everyday');self.assertEqual(code,200)
+   self.assertTrue('Choose Everyday work' in page,'Existing workspaces hide the Everyday entry')
+   self.assertTrue('<option value="everyday" selected>' in page,'Mode choice did not preselect the requested owner form')
+   self.assertTrue(bool(re.search(r'<details\b[^>]*id="engineering-mode-settings"[^>]*\bopen',page)),'Requested mode form stayed closed')
+   bundle=json.loads(request(dict(csrf=csrf,action='nasa_export',nasa_project='1',format='json'),query='?view=nasa')[2]);self.assertEqual(bundle['workspace']['operating_mode'],'rigorous')
  def test_everyday_owner_boundary_and_csrf(self):
   with self.fixture('testing') as (home,csrf,request):
    for name in ['nasa_everyday_start','nasa_everyday_ai','nasa_everyday_proposal_accept','nasa_everyday_cycle','nasa_everyday_observation']:

@@ -918,3 +918,174 @@ body.research-map-open { overflow:hidden; }
 .everyday-proposal > details > summary { padding:16px; }
 [data-everyday-workspace] pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:24rem; overflow:auto; }
 [data-everyday-workspace] .table th,[data-everyday-workspace] .table td { color:var(--nasa-ink); }
+
+/* Everyday Engineering: intent, the next decision, and the evidence behind it. */
+.everyday-workspace {
+  --nasa-ink:#1b3443; --nasa-muted:#4f6573; --nasa-line:#d2e0e5; --nasa-link:#155d67;
+  --ee-panel:#fff; --ee-soft:#f1f7f7; --ee-accent:#165c65; --ee-accent-ink:#fff;
+  --ee-tab-bg:#164d58; --ee-tab-ink:#fff; --ee-missing:#fff8e9; --ee-missing-line:#c9ac68; --ee-missing-ink:#624716;
+  color:var(--nasa-ink); background:transparent; padding:0; border-radius:0;
+}
+.everyday-workspace .nasa-intro { margin-bottom:16px; align-items:flex-start; }
+.everyday-workspace .nasa-intro h2 { font-size:clamp(1.4rem,2.6vw,1.9rem); line-height:1.2; letter-spacing:-.035em; }
+.everyday-workspace .nasa-intro p { font-size:.88rem; line-height:1.65; max-width:76ch; }
+.everyday-workspace .card { background:var(--ee-panel); box-shadow:0 2px 9px #17334205; }
+.everyday-workspace .card-body { padding:24px; }
+.everyday-workspace h3,.everyday-workspace h4,.everyday-workspace h5 { color:var(--nasa-ink); letter-spacing:-.02em; }
+.everyday-workspace p,.everyday-workspace li { line-height:1.65; }
+.everyday-workspace .btn { min-height:40px; border-radius:8px; font-weight:650; transition:background-color .15s,border-color .15s; }
+.everyday-workspace .btn-primary { background:var(--ee-accent); border-color:var(--ee-accent); color:var(--ee-accent-ink); }
+.everyday-workspace .btn-primary:hover { background:var(--ee-tab-bg); border-color:var(--ee-tab-bg); color:var(--ee-tab-ink); }
+.everyday-workspace .btn-outline-primary,.everyday-workspace .btn-outline-secondary { background:var(--ee-panel); border-color:#88a8b1; color:var(--nasa-ink); }
+.everyday-workspace .btn-outline-primary:hover,.everyday-workspace .btn-outline-secondary:hover { background:var(--ee-soft); border-color:var(--ee-accent); color:var(--nasa-ink); }
+.everyday-workspace :is(a,button,input,textarea,select,summary):focus-visible { outline:3px solid #1c8994; outline-offset:4px; }
+.everyday-workspace .nasa-project-picker { padding:12px 0; margin-bottom:16px; border-bottom:1px solid var(--nasa-line); }
+.everyday-workspace .nasa-project-picker .btn { margin-top:0; }
+.everyday-workspace .nasa-tabs { gap:4px; padding:6px; border:1px solid var(--nasa-line); border-radius:12px; background:var(--ee-soft); margin:24px 0; }
+.everyday-workspace [data-everyday-tab] { --nasa-link:var(--nasa-ink); min-height:42px; display:flex; align-items:center; justify-content:center; padding:10px 18px; border-radius:8px; border-bottom:0; font-weight:650; text-decoration:none!important; }
+.everyday-workspace [data-everyday-tab]:hover { background:var(--ee-panel); }
+.everyday-workspace [data-everyday-tab][aria-selected=true] { --nasa-link:var(--ee-tab-ink); color:var(--ee-tab-ink); background:var(--ee-tab-bg); box-shadow:0 2px 5px #17334212; }
+.everyday-workspace .ee-section-heading { margin:28px 0 18px; max-width:82ch; }
+.everyday-workspace .ee-section-heading h3 { font-size:1.35rem; margin:0 0 7px; }
+.everyday-workspace .ee-section-heading p { color:var(--nasa-muted); font-size:.88rem; margin-bottom:0; }
+
+.everyday-workspace .ee-hero {
+  display:grid; grid-template-columns:minmax(0,1fr) minmax(15rem,19rem);
+  grid-template-areas:"main actions" "toolbar actions" "note note" "status status";
+  gap:18px 30px; padding:clamp(24px,3.5vw,38px); margin-bottom:24px;
+  background:linear-gradient(115deg,#112d3d,#123e46); color:#f0fafb; border:1px solid #315864; border-radius:20px;
+  box-shadow:0 12px 28px #122c3c14;
+}
+.everyday-workspace .ee-hero-main { grid-area:main; min-width:0; }
+.everyday-workspace .ee-hero .ee-eyebrow,.everyday-workspace .ee-hero .nasa-eyebrow { color:#b9ece2; font-size:.68rem; font-weight:750; letter-spacing:.13em; }
+.everyday-workspace .ee-hero .ee-mission-title { color:#f5fcfd; font-size:clamp(1.7rem,3.1vw,2.55rem); line-height:1.15; font-weight:700; letter-spacing:-.045em; margin:11px 0 18px; max-width:28ch; text-wrap:balance; }
+.everyday-workspace .ee-hero p { color:#d5e7ec; }
+.everyday-workspace .ee-hero .ee-intent { color:#edf8fa; font-size:1rem; line-height:1.7; max-width:73ch; margin-bottom:18px; }
+.everyday-workspace .ee-hero .ee-active { padding-top:13px; border-top:1px solid #456873; font-size:.83rem; color:#c9e4e8; margin-bottom:0; }
+.everyday-workspace .ee-hero-actions { grid-area:actions; display:flex; flex-direction:column; justify-content:center; align-items:stretch; gap:12px; min-width:0; border-left:1px solid #456873; padding-left:26px; }
+.everyday-workspace .ee-hero-actions form { display:block; }
+.everyday-workspace .ee-hero-actions .btn { width:100%; min-height:48px; margin:0; justify-content:center; background:#bcefe1; border-color:#bcefe1; color:#123841; font-size:.9rem; }
+.everyday-workspace .ee-hero-actions .btn:hover { background:#daf8ee; border-color:#daf8ee; color:#123841; }
+.everyday-workspace .ee-hero-actions p { margin:0; font-size:.78rem; line-height:1.6; }
+.everyday-workspace .ee-toolbar { grid-area:toolbar; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.everyday-workspace .ee-toolbar form { display:block; }
+.everyday-workspace .ee-toolbar .btn { margin:0; min-height:38px; font-size:.78rem; padding:8px 12px; }
+.everyday-workspace .ee-hero .ee-toolbar .btn { background:#173b48; border-color:#73939d; color:#e1f2f4; }
+.everyday-workspace .ee-hero .ee-toolbar .btn:hover { background:#285360; border-color:#a6c8ce; color:#fff; }
+.everyday-workspace .ee-hero .nasa-chip { background:#284d58; color:#d8f0ee; border:1px solid #527b84; }
+.everyday-workspace .ee-hero .nasa-hint { color:#c3dce2; }
+.everyday-workspace .ee-hero-note { grid-area:note; border-top:1px solid #456873; padding-top:13px; margin:0; font-size:.75rem; line-height:1.6; }
+.everyday-workspace .ee-hero a:not(.btn) { --nasa-link:#c8f5e8; color:#c8f5e8; }
+.everyday-workspace .ee-hero :is(a,button,input,textarea,select,summary):focus-visible { outline-color:#edfff9; }
+.everyday-workspace .ee-hero [data-everyday-operation] { grid-area:status; margin:0; color:#e5f6f8; }
+.everyday-workspace .ee-hero [data-everyday-operation]:empty { display:none; }
+.everyday-workspace .ee-hero [data-everyday-operation][role=alert] { background:#452633; border:1px solid #d6a2ad; padding:12px; border-radius:8px; color:#ffdee5; }
+.everyday-workspace .ee-intent-editor { border-left:3px solid #6c9aa3; }
+
+.everyday-workspace .ee-route { list-style:none; padding:0; margin:20px 0 26px; }
+.everyday-workspace .ee-route-step { position:relative; display:grid; grid-template-columns:44px minmax(0,1fr); gap:18px; padding-bottom:18px; }
+.everyday-workspace .ee-route-step::before { content:""; position:absolute; top:42px; bottom:0; left:21px; width:2px; background:var(--nasa-line); }
+.everyday-workspace .ee-route-step:last-child::before { display:none; }
+.everyday-workspace .ee-step-number { display:grid; place-items:center; width:44px; height:44px; border:2px solid #91acb4; border-radius:50%; background:var(--ee-panel); color:var(--nasa-ink); font-size:.85rem; font-weight:750; font-variant-numeric:tabular-nums; z-index:1; }
+.everyday-workspace .ee-route-card { min-width:0; padding:20px 22px; border:1px solid var(--nasa-line); border-radius:12px; background:var(--ee-panel); }
+.everyday-workspace .ee-route-step.is-active .ee-step-number { background:var(--ee-accent); border-color:var(--ee-accent); color:var(--ee-accent-ink); }
+.everyday-workspace .ee-route-step.is-active .ee-route-card { border:2px solid #377f87; box-shadow:0 4px 14px #155e6610; padding:19px 21px; }
+.everyday-workspace .ee-route-step.is-forecast .ee-step-number,.everyday-workspace .ee-route-step.is-forecast .ee-route-card { border-style:dashed; }
+.everyday-workspace .ee-route-step.is-forecast .ee-route-card { background:var(--ee-soft); }
+.everyday-workspace .ee-route-step.is-closed .ee-step-number { background:var(--ee-soft); border-color:#91a4ae; color:var(--nasa-muted); }
+.everyday-workspace .ee-route-heading { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; margin-bottom:12px; }
+.everyday-workspace .ee-route-heading h4 { margin:0; font-size:1.08rem; line-height:1.4; }
+.everyday-workspace .ee-route-heading .nasa-chip { margin:0; }
+.everyday-workspace .ee-route-outcome { margin:0 0 13px; font-size:.92rem; color:var(--nasa-ink); max-width:90ch; }
+.everyday-workspace .ee-route-dependencies,.everyday-workspace .ee-route-rationale { color:var(--nasa-muted); font-size:.8rem; line-height:1.6; }
+.everyday-workspace .ee-route-dependencies { padding-top:11px; margin-bottom:8px; border-top:1px solid var(--nasa-line); }
+.everyday-workspace .ee-inspect { display:inline-flex; align-items:center; min-height:40px; font-size:.82rem; font-weight:700; }
+.everyday-workspace .ee-route-detail { border-top:1px solid var(--nasa-line); padding-top:8px; margin:8px 0 0; }
+.everyday-workspace .ee-route-detail > summary { color:var(--nasa-muted); font-size:.78rem; }
+.everyday-workspace .ee-route-detail .card { box-shadow:none; margin-top:12px; }
+
+.everyday-workspace .ee-proof { border-top:3px solid #5b929c; }
+.everyday-workspace .ee-evidence-trail { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px; list-style:none; padding:0; margin:22px 0; }
+.everyday-workspace .ee-evidence-step { position:relative; display:flex; flex-direction:column; gap:9px; min-width:0; padding:14px; border:1px solid #aac6cc; border-radius:10px; background:var(--ee-soft); }
+.everyday-workspace .ee-evidence-step::after { content:""; position:absolute; top:28px; right:-13px; width:12px; border-top:2px solid var(--nasa-line); }
+.everyday-workspace .ee-evidence-step:last-child::after { display:none; }
+.everyday-workspace .ee-evidence-number { display:grid; place-items:center; width:28px; height:28px; border-radius:50%; background:#d4e8e9; color:#204d57; font-size:.75rem; font-weight:750; }
+.everyday-workspace .ee-evidence-step > strong { font-size:.8rem; line-height:1.4; }
+.everyday-workspace .ee-evidence-step > span:last-child { color:var(--nasa-muted); font-size:.78rem; line-height:1.6; overflow-wrap:anywhere; }
+.everyday-workspace .ee-evidence-step.is-missing { background:var(--ee-missing); border-color:var(--ee-missing-line); border-style:dashed; }
+.everyday-workspace .ee-evidence-step.is-missing > strong,.everyday-workspace .ee-evidence-step.is-missing > span:last-child { color:var(--ee-missing-ink); }
+.everyday-workspace .ee-evidence-step.is-missing .ee-evidence-number { background:#eddbb2; color:#5a4218; }
+.everyday-workspace .ee-evidence-step.is-verified { border:2px solid #417b60; background:#edf7f0; color:#17482f; }
+.everyday-workspace .ee-evidence-step.is-verified > span:last-child { color:#315a43; }
+.everyday-workspace .ee-evidence-step.is-verified .ee-evidence-number { background:#cce9d8; color:#17482f; }
+.everyday-workspace .nasa-finding { background:var(--ee-soft); border-left-color:#5d929b; }
+.everyday-workspace .everyday-proposal > details > summary { min-height:48px; font-size:.82rem; }
+.everyday-workspace .everyday-proposal:has(> details[open]) { border-color:#a99762; }
+.everyday-workspace .ee-history > details,.everyday-workspace .ee-history-entry { margin:8px 0; background:var(--ee-panel); box-shadow:none; border:1px solid var(--nasa-line); border-radius:10px; }
+.everyday-workspace .ee-history > details > summary,.everyday-workspace .ee-history-entry > summary { padding:15px 18px; min-height:48px; font-size:.82rem; line-height:1.55; }
+.everyday-workspace .ee-history > details[open] > summary { border-bottom:1px solid var(--nasa-line); background:var(--ee-soft); border-radius:10px 10px 0 0; margin-bottom:0; }
+.everyday-workspace .ee-history .card-body { padding:18px; }
+.everyday-workspace .ee-history .card .card { box-shadow:none; }
+.everyday-workspace .ee-history-list { list-style:none; padding:0; margin:20px 0; }
+.everyday-workspace .ee-history-list > .ee-history-entry { position:relative; display:grid; grid-template-columns:8.5rem minmax(0,1fr); gap:20px; padding:0 0 14px; margin:0; border:0; border-radius:0; background:transparent; }
+.everyday-workspace .ee-history-list > .ee-history-entry::before { content:""; position:absolute; left:calc(8.5rem + 9px); top:0; bottom:0; border-left:1px solid var(--nasa-line); }
+.everyday-workspace .ee-history-list > .ee-history-entry::after { content:""; position:absolute; left:calc(8.5rem + 5px); top:20px; width:9px; height:9px; border:2px solid #6d929e; border-radius:50%; background:var(--ee-panel); }
+.everyday-workspace .ee-history-entry > time { color:var(--nasa-muted); font-size:.74rem; font-variant-numeric:tabular-nums; line-height:1.55; padding-top:15px; text-align:right; overflow-wrap:anywhere; }
+.everyday-workspace .ee-history-entry > details.card { min-width:0; padding:0; margin:0; border-radius:10px; }
+.everyday-workspace .ee-history-entry > details > summary { padding:14px 18px; min-height:48px; font-size:.82rem; line-height:1.55; }
+.everyday-workspace .ee-history-entry > details[open] > summary { border-bottom:1px solid var(--nasa-line); margin-bottom:0; background:var(--ee-soft); border-radius:10px 10px 0 0; }
+.everyday-workspace .nasa-package { margin-top:30px!important; background:var(--ee-soft); }
+.ee-mode-switch { --ee-mode-ink:#203f50; display:flex; align-items:center; justify-content:space-between; gap:18px; padding:18px 22px; margin-bottom:20px; background:#eaf3f5; border:1px solid #b9d1da; border-left:4px solid #2e7180; border-radius:12px; color:var(--ee-mode-ink); }
+.ee-mode-switch .card-body,.ee-mode-switch :is(h2,h3,h4,p) { color:var(--ee-mode-ink); }
+.ee-mode-switch p { margin:0; max-width:80ch; line-height:1.6; }
+.ee-mode-switch .btn { flex-shrink:0; min-height:44px; border-color:#2b6775; background:#fff; color:#244e5d; }
+
+@media(max-width:1050px) {
+  .everyday-workspace .ee-evidence-trail { grid-template-columns:1fr; gap:10px; }
+  .everyday-workspace .ee-evidence-step { display:grid; grid-template-columns:28px minmax(0,1fr); gap:5px 12px; }
+  .everyday-workspace .ee-evidence-number { grid-column:1; grid-row:1 / span 2; }
+  .everyday-workspace .ee-evidence-step > strong,.everyday-workspace .ee-evidence-step > span:last-child { grid-column:2; }
+  .everyday-workspace .ee-evidence-step::after { top:auto; bottom:-11px; left:27px; right:auto; width:0; height:10px; border-top:0; border-left:2px solid var(--nasa-line); }
+}
+@media(max-width:760px) {
+  .everyday-workspace .ee-hero { grid-template-columns:minmax(0,1fr); grid-template-areas:"main" "actions" "toolbar" "note" "status"; padding:24px; gap:18px; border-radius:15px; }
+  .everyday-workspace .ee-hero-actions { border-left:0; border-top:1px solid #456873; padding:18px 0 0; }
+  .everyday-workspace .ee-hero .ee-mission-title { max-width:none; font-size:1.85rem; }
+  .everyday-workspace .ee-toolbar { gap:8px; }
+  .everyday-workspace .ee-toolbar .btn { min-height:42px; }
+  .everyday-workspace [data-everyday-tab] { flex:1 1 auto; font-size:.8rem; padding:10px 12px; }
+  .everyday-workspace .ee-history-list > .ee-history-entry { grid-template-columns:minmax(0,1fr); gap:6px; padding:0 0 16px 22px; }
+  .everyday-workspace .ee-history-list > .ee-history-entry::before { left:4px; }
+  .everyday-workspace .ee-history-list > .ee-history-entry::after { left:0; top:5px; }
+  .everyday-workspace .ee-history-entry > time { text-align:left; padding-top:0; }
+  .ee-mode-switch { flex-direction:column; align-items:flex-start; padding:17px; }
+}
+@media(max-width:500px) {
+  .everyday-workspace .card-body { padding:18px; }
+  .everyday-workspace .ee-hero { padding:20px; }
+  .everyday-workspace .ee-hero .ee-mission-title { font-size:1.65rem; }
+  .everyday-workspace .ee-hero .ee-intent { font-size:.9rem; }
+  .everyday-workspace .ee-route-step { grid-template-columns:34px minmax(0,1fr); gap:10px; padding-bottom:14px; }
+  .everyday-workspace .ee-step-number { width:34px; height:34px; font-size:.75rem; }
+  .everyday-workspace .ee-route-step::before { left:16px; top:33px; }
+  .everyday-workspace .ee-route-card { padding:16px; }
+  .everyday-workspace .ee-route-step.is-active .ee-route-card { padding:15px; }
+  .everyday-workspace .ee-route-heading h4 { font-size:.98rem; }
+  .everyday-workspace .ee-section-heading h3 { font-size:1.15rem; }
+}
+@media(prefers-color-scheme:dark) {
+  .everyday-workspace { --nasa-ink:#e6f1f4; --nasa-muted:#bad0d7; --nasa-line:#405f6e; --nasa-link:#bcece3; --ee-panel:#142b39; --ee-soft:#1b3643; --ee-accent:#bbeadf; --ee-accent-ink:#123841; --ee-tab-bg:#bbeadf; --ee-tab-ink:#123841; --ee-missing:#3a301e; --ee-missing-line:#b69a5d; --ee-missing-ink:#f1dba6; background:#0f2330; padding:20px; border-radius:16px; }
+  .everyday-workspace .ee-evidence-step.is-verified { background:#173b2b; color:#d7f1e2; border-color:#70a78a; }
+  .everyday-workspace .ee-evidence-step.is-verified > span:last-child { color:#c4e5d2; }
+  .ee-mode-switch { --ee-mode-ink:#d9edf3; background:#173442; border-color:#4f7889; color:var(--ee-mode-ink); }
+  .ee-mode-switch .btn { background:#204653; border-color:#8cb4c0; color:#e4f5f7; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .everyday-workspace *,.ee-mode-switch * { scroll-behavior:auto!important; animation:none!important; transition:none!important; }
+}
+@media print {
+  .everyday-workspace .ee-hero { display:block; background:#fff!important; color:#111; border-color:#aaa; box-shadow:none; }
+  .everyday-workspace .ee-hero :is(h3,p,.ee-eyebrow) { color:#111!important; }
+  .everyday-workspace .ee-hero-actions,.everyday-workspace .ee-toolbar,.ee-mode-switch { display:none!important; }
+  .everyday-workspace .ee-route-step::before,.everyday-workspace .ee-evidence-step::after { display:none; }
+}

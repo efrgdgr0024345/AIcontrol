@@ -924,3 +924,22 @@ suites. Local fixture/browser results and real hosted/provider outcomes must be
 reported separately. The live target currently presents its existing PIN gate;
 AICONTROL_SITE_PIN was not configured during implementation, so no authenticated
 cPanel install or hosted feature test is claimed without subsequent evidence.
+
+
+## Engineering visual refinement (2026-11-22)
+
+The live target was reconfirmed as easyai.com.au/aiadmin/loader.php. The separately
+mentioned /bus URL serves Nextstop and is not an AIcontrol deployment destination.
+Engineering now uses a contrasting outcome/current-action panel, connected adopted
+cycle route, explicit proof trail and timestamped retained history. Other cycles,
+real lifecycle states, exact promise versions and unconfirmed evidence remain
+visible rather than implying completed progress. Existing Managed projects have
+a clear native entry into the owner mode decision; GET never changes authority.
+See EVERYDAY_ENGINEERING.md for presentation semantics.
+
+Validation covers the owner cycle/evidence/no-JS flow, saved route order and
+retained cycles, paused/in-review/incomplete labels, source-order timestamp ties,
+mobile/dark-mode contrast and the native mode-entry GET boundary. Tests remain
+local and synthetic where declared. Installation/login on the live host requires
+the protected AICONTROL_SITE_PIN credential; the runtime and saved environment
+configuration did not expose that binding during this refinement.
