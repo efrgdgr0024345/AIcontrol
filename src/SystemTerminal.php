@@ -45,11 +45,12 @@ final class SystemTerminal
     public function command(string $id,string $owner,string $command): array
     {
         $command=trim($command);if($command===''||strlen($command)>4000||str_contains($command,"\0")||!mb_check_encoding($command,'UTF-8'))throw new RuntimeException('Enter a command using 1–4,000 UTF-8 bytes.');
-        $t=$this->get($id,$owner);$s=$this->systems->system((int)$t['system_id']);
+        $this->systems->requireNoPlaybook();$t=$this->get($id,$owner);$s=$this->systems->system((int)$t['system_id']);
         $path=$this->systems->directory.'/systems-run.lock';if(is_link($path))throw new RuntimeException('Systems execution lock unavailable.');$lock=fopen($path,'c');
         if(!$lock||!flock($lock,LOCK_EX|LOCK_NB)){if($lock)fclose($lock);throw new RuntimeException('Another SSH step is running. Wait before sending another command.');}
         $commandId=null;
         try {
+            $this->systems->requireNoPlaybook();
             if($this->systems->query("SELECT id FROM system_runs WHERE status IN ('ready','working')"))throw new RuntimeException('Stop the active agent task before using the manual console.');
             $recent=$this->systems->query('SELECT COUNT(*) AS n FROM system_commands c JOIN system_runs r ON r.id=c.run_id WHERE r.system_id=? AND r.task=? AND c.created_at>?',[$s['id'],'Manual SSH command console',time()-3600])[0]['n'];
             if($recent>=60)throw new RuntimeException('Console limit reached: 60 commands per system per hour.');
@@ -63,7 +64,7 @@ final class SystemTerminal
             $marker='AICTRL_CWD_'.bin2hex(random_bytes(16)).':';
             if(!$readonly){$cd=$t['cwd']===null?'"$HOME"':SystemRisk::quote($t['cwd']);$actual='cd -- '.$cd.' || exit 125; { '.$command."\n".'}; __aicontrol_status=$?; __aicontrol_cwd=$(printf %s "$PWD" | base64 -w 0); printf '.SystemRisk::quote("\n".$marker."%s\n").' "$__aicontrol_cwd"; exit "$__aicontrol_status"';}
             $this->systems->write("INSERT INTO system_commands(run_id,command,status,created_at)VALUES(?,?,'running',?)",[$t['run_id'],Diagnostics::clean($command),time()]);$commandId=(int)$this->systems->db->lastInsertId();
-            $cancel=function()use($id,$owner):bool{try{$this->get($id,$owner);return false;}catch(\Throwable){return true;}};
+            $cancel=function()use($id,$owner):bool{if(!$this->systems->controlStillAllowed())return true;try{$this->get($id,$owner);return false;}catch(\Throwable){return true;}};
             if($cancel())throw new RuntimeException('Console disconnected before dispatch.');
             $r=$this->ssh->execute($s,$this->systems->privateKey((int)$s['id']),$actual,$this->systems->directory,$cancel);
             $cwd=$t['cwd'];$cwdVerified=$readonly;
@@ -76,6 +77,7 @@ final class SystemTerminal
             $this->systems->write('UPDATE system_commands SET status=?,stdout=?,stderr=?,exit_code=?,timed_out=?,truncated=?,elapsed_ms=?,finished_at=? WHERE id=?',[$uncertain?'outcome_uncertain':'complete',Diagnostics::clean($r['stdout']),Diagnostics::clean($r['stderr']),$r['exit_code'],(int)$r['timed_out'],(int)$r['truncated'],$r['elapsed_ms'],time(),$commandId]);
             if($uncertain){$this->systems->write('UPDATE system_terminals SET enabled=0 WHERE id=?',[$id]);$this->systems->write("UPDATE system_runs SET status='outcome_uncertain',error=?,finished_at=? WHERE id=?",['SSH command outcome uncertain. No command was retried; inspect the server before reconnecting.',time(),$t['run_id']]);}
             else $this->systems->write('UPDATE system_terminals SET cwd=?,expires_at=? WHERE id=? AND enabled=1',[$cwd,time()+1800,$id]);
+            $this->systems->observe((int)$s['id'],'Manual SSH command',$uncertain?'outcome uncertain':'command exit '.$r['exit_code'],['command'=>$command,'result'=>$r]);
             return ['command'=>$this->systems->query('SELECT * FROM system_commands WHERE id=?',[$commandId])[0],'cwd'=>$cwd,'cwd_verified'=>$cwdVerified,'connected'=>!$uncertain];
         }catch(\Throwable $e){
             if($commandId){$this->systems->write("UPDATE system_commands SET status='outcome_uncertain',stderr=?,finished_at=? WHERE id=? AND status='running'",[Diagnostics::clean($e->getMessage()),time(),$commandId]);$this->systems->write('UPDATE system_terminals SET enabled=0 WHERE id=?',[$id]);$this->systems->write("UPDATE system_runs SET status='outcome_uncertain',error=?,finished_at=? WHERE id=?",[Diagnostics::clean($e->getMessage()),time(),$t['run_id']]);}

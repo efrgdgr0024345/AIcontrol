@@ -1,5 +1,10 @@
 # Two-command Linux enrollment and SSH command console
 
+**23 November 2026:** [SYSTEM_ACTIONS.md](SYSTEM_ACTIONS.md) adds a separate
+Systems password, protected key custody, notes and explicitly approved per-action
+workers. Its protection and guided-job rules supersede the original console-only
+scope below. Existing enrollment risk limits remain enforced.
+
 2026-11-15 AWST. The primary Systems setup now uses two single-line commands and
 two formatted replies. Legacy manual enrollment and its existing keys still work.
 No previous PIN, provider key, signing identity or project is reset.

@@ -40,7 +40,8 @@
   const tray=el('div',undefined,'map-controls-tray');tray.id='map-controls-tray';tray.hidden=true;tray.setAttribute('role','group');tray.setAttribute('aria-label','Map controls and usage');
   const actions=el('div',undefined,'map-screen-actions');
   const screenButton=(label,action,style='btn-outline-secondary')=>{const button=el('button',label,'btn '+style);button.type='button';button.dataset.mapScreenAction=action;return button;};
-  actions.append(screenButton('Continue planned search','step'),screenButton('Finish and freeze','finish','btn-primary'),screenButton('Review gaps once','repair'),screenButton('Project menu','menu'),screenButton('Details','details'),screenButton('List','list'));
+  actions.append(screenButton('Continue planned search','step'),screenButton('Finish and freeze','finish','btn-primary'),screenButton('Review gaps once','repair'),screenButton('Project menu','menu'),screenButton('Details','details'),screenButton('Export for chatbot review','handover'),screenButton('List','list'));
+  actions.querySelector('[data-map-screen-action=handover]').hidden=!document.querySelector('[data-research-handover]');
   const quickControls=el('div',undefined,'map-quick-controls');quickControls.setAttribute('role','group');quickControls.setAttribute('aria-label','Research and automatic growth');
   const runToggle=screenButton('▶','start','map-compact-button');runToggle.dataset.mapRunToggle='1';runToggle.setAttribute('aria-label','Start research');runToggle.title='Start research';runToggle.disabled=true;
   const autoGrow=el('button','✦','btn map-compact-button');autoGrow.type='button';autoGrow.dataset.mapAutoGrow='1';autoGrow.setAttribute('aria-label','Start automatic growth');autoGrow.setAttribute('aria-pressed','false');autoGrow.disabled=true;
@@ -139,6 +140,7 @@
   function details(open){map.dataset.readerOpen=String(open);if(open)controls(false);side.hidden=!open;if(open&&!side.contains(document.activeElement))closeSide.focus({preventScroll:true});map.classList.toggle('map-details-open',open);actions.querySelector('[data-map-screen-action=details]').setAttribute('aria-expanded',String(open));if(snapshot&&!map.hidden)renderCamera(camera.getState());}
   header.addEventListener('click',event=>{
     const action=event.target.closest('[data-map-screen-action]')?.dataset.mapScreenAction;if(!action)return;
+    if(action==='handover'){document.querySelector('[data-research-handover]')?.requestSubmit();return;}
     if(action==='list'){showView('list');return;}
     if(action==='menu'){showView('list');const menu=document.querySelector('[data-project-menu]');menu.open=true;menu.querySelector('summary').focus();menu.scrollIntoView({block:'start'});return;}
     if(action==='details'){details(side.hidden);if(!side.hidden)closeSide.focus();return;}

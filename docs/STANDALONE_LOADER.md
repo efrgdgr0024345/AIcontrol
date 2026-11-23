@@ -94,3 +94,10 @@ python3 -B -m unittest -v tests/http_smoke.py tests/standalone_smoke.py tests/pa
 Tests include the public installer without REMOTE_USER, retained host/legacy
 compatibility, CSRF, signed selections, key loss, agent state/rate limits and
 private-release recovery. Agent lifecycle tests make no paid provider requests.
+
+Systems protection adds a separate passphrase after the normal website PIN login.
+Once configured, activation of a checked release lacking SystemGuard is refused,
+including an older selection that has not yet expired. This does not change PIN
+login, signing identity or the normal exact-SHA check requirement. The owner must
+set the Systems passphrase themselves before using remote controls; updates never
+set it or run a VPS recipe. See SYSTEM_ACTIONS.md.

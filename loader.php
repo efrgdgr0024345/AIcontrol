@@ -1293,7 +1293,8 @@ document.addEventListener('submit', event => {
   const tray=el('div',undefined,'map-controls-tray');tray.id='map-controls-tray';tray.hidden=true;tray.setAttribute('role','group');tray.setAttribute('aria-label','Map controls and usage');
   const actions=el('div',undefined,'map-screen-actions');
   const screenButton=(label,action,style='btn-outline-secondary')=>{const button=el('button',label,'btn '+style);button.type='button';button.dataset.mapScreenAction=action;return button;};
-  actions.append(screenButton('Continue planned search','step'),screenButton('Finish and freeze','finish','btn-primary'),screenButton('Review gaps once','repair'),screenButton('Project menu','menu'),screenButton('Details','details'),screenButton('List','list'));
+  actions.append(screenButton('Continue planned search','step'),screenButton('Finish and freeze','finish','btn-primary'),screenButton('Review gaps once','repair'),screenButton('Project menu','menu'),screenButton('Details','details'),screenButton('Export for chatbot review','handover'),screenButton('List','list'));
+  actions.querySelector('[data-map-screen-action=handover]').hidden=!document.querySelector('[data-research-handover]');
   const quickControls=el('div',undefined,'map-quick-controls');quickControls.setAttribute('role','group');quickControls.setAttribute('aria-label','Research and automatic growth');
   const runToggle=screenButton('▶','start','map-compact-button');runToggle.dataset.mapRunToggle='1';runToggle.setAttribute('aria-label','Start research');runToggle.title='Start research';runToggle.disabled=true;
   const autoGrow=el('button','✦','btn map-compact-button');autoGrow.type='button';autoGrow.dataset.mapAutoGrow='1';autoGrow.setAttribute('aria-label','Start automatic growth');autoGrow.setAttribute('aria-pressed','false');autoGrow.disabled=true;
@@ -1392,6 +1393,7 @@ document.addEventListener('submit', event => {
   function details(open){map.dataset.readerOpen=String(open);if(open)controls(false);side.hidden=!open;if(open&&!side.contains(document.activeElement))closeSide.focus({preventScroll:true});map.classList.toggle('map-details-open',open);actions.querySelector('[data-map-screen-action=details]').setAttribute('aria-expanded',String(open));if(snapshot&&!map.hidden)renderCamera(camera.getState());}
   header.addEventListener('click',event=>{
     const action=event.target.closest('[data-map-screen-action]')?.dataset.mapScreenAction;if(!action)return;
+    if(action==='handover'){document.querySelector('[data-research-handover]')?.requestSubmit();return;}
     if(action==='list'){showView('list');return;}
     if(action==='menu'){showView('list');const menu=document.querySelector('[data-project-menu]');menu.open=true;menu.querySelector('summary').focus();menu.scrollIntoView({block:'start'});return;}
     if(action==='details'){details(side.hidden);if(!side.hidden)closeSide.focus();return;}
@@ -1921,6 +1923,18 @@ document.addEventListener('submit', event => {
     else if(event.key==='ArrowDown'){event.preventDefault();if(index<history.length){index++;input.value=index===history.length?draft:history[index];}}
   });
   if(location.hash==='#ssh-console')input.focus({preventScroll:true});
+})();
+
+// Secrets are fetched only by an explicit reveal and never placed in browser storage.
+(() => {
+ const privacy=document.querySelector('[data-system-privacy]');if(!privacy)return;
+ const lockedURL=()=>{const u=new URL(location.href);for(const k of ['terminal','enrollment','system_run','operation'])u.searchParams.delete(k);return u;};
+ const until=Number(privacy.dataset.unlockUntil||0);if(until){const expire=()=>location.replace(lockedURL());setTimeout(expire,Math.max(0,until*1000-Date.now()));window.addEventListener('storage',e=>{if(e.key!=='aicontrol-systems-locked')return;document.querySelectorAll('[data-protected-output]').forEach(n=>{n.textContent='';n.hidden=true;});const f=privacy.querySelector('form');if(!f){expire();return;}const u=new URL(f.getAttribute('action'),location.href);u.searchParams.set('systems_api','1');fetch(u,{method:'POST',credentials:'same-origin',body:new FormData(f)}).finally(expire);});privacy.querySelector('[data-systems-lock]')?.addEventListener('click',()=>localStorage.setItem('aicontrol-systems-locked',String(Date.now())));}
+ const request=async form=>{const u=new URL(form.getAttribute('action')||location.pathname,location.href);u.searchParams.set('systems_api','1');const r=await fetch(u,{method:'POST',credentials:'same-origin',body:new FormData(form)});if(!(r.headers.get('content-type')||'').includes('application/json'))throw Error('Session verification expired. Unlock Systems again.');const v=await r.json();if(!r.ok)throw Error(v.error||'Server action could not be verified.');return v;};
+ document.querySelectorAll('[data-protected-reveal]').forEach(button=>{const form=button.closest('form'),output=form.querySelector('[data-protected-output]'),status=form.querySelector('[data-protected-status]');let timer;const hide=()=>{output.textContent='';output.hidden=true;button.textContent='Reveal protected values and full observations';status.textContent='Protected values hidden.';};form.addEventListener('submit',async e=>{e.preventDefault();if(!output.hidden){hide();return;}button.disabled=true;try{const v=await request(form);output.textContent=JSON.stringify(v.protected_record,null,2);output.hidden=false;button.textContent='Hide protected values';status.textContent='Shown for one minute. These values are not copied or saved in browser storage.';clearTimeout(timer);timer=setTimeout(hide,60000);}catch(error){status.textContent=error.message;}finally{button.disabled=false;}});document.addEventListener('visibilitychange',()=>{if(document.hidden)hide();});});
+ const op=document.querySelector('[data-playbook]');if(!op||op.dataset.playbookActive!=='1')return;const poll=op.querySelector('[data-playbook-poll]')?.closest('form'),status=op.querySelector('[data-playbook-status]');let busy=false;
+ async function check(){if(busy||document.hidden||!poll)return;busy=true;try{const v=await request(poll);if(!v.playbook)throw Error('The operation result is missing. No launch was repeated.');if(!v.playbook.blocking||v.playbook.status==='uncertain'){location.reload();return;}status.textContent=v.playbook.status+' · same operation, no installation retry';setTimeout(check,5000);}catch(error){status.textContent=error.message+' Use Check progress to reconcile; no installation is repeated.';}finally{busy=false;}}
+ poll?.addEventListener('submit',e=>{e.preventDefault();check();});setTimeout(check,2500);
 })();
 
 // Progressive enhancement only; all planning actions also work as ordinary POST forms.
@@ -3189,6 +3203,39 @@ body.research-map-open { overflow:hidden; }
 }
 .mindmap .map-concept-current { flex-basis:100%; margin:0 0 4px; padding-right:28px; font-weight:600; font-size:.9rem; line-height:1.4; color:#f0f6ff; overflow-wrap:anywhere; }
 
+/* Guided VPS operations keep plans and protected values distinct. */
+.systems-privacy { border-top:3px solid #35768b; }
+.systems-privacy h2 svg { width:22px; height:22px; margin-right:8px; }
+.system-action-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr)); gap:14px; }
+.system-action-card { padding:18px; border:1px solid #becfdb; border-radius:12px; background:#f5f9fc; min-width:0; }
+.system-action-card h3 { font-size:1.05rem; margin-bottom:10px; }
+.system-action-card p { font-size:.88rem; line-height:1.65; color:#3b5366; }
+.system-action-card form { margin:0; padding:0; border:0; }
+.system-action-card small { display:block; margin-top:8px; color:#435c70; }
+.system-action-card .btn { white-space:normal; }
+.system-public-notes { white-space:pre-wrap; overflow-wrap:anywhere; padding:14px; background:#edf4f8; color:#183e55; border-radius:10px; }
+.system-note-events { padding-left:22px; }
+.system-note-events li { padding:8px 0; }
+.system-note-events small { display:block; color:#506377; }
+.system-inventory { display:grid; grid-template-columns:minmax(110px,1fr) minmax(0,2fr); gap:6px 14px; }
+.system-inventory dd { overflow-wrap:anywhere; margin:0; }
+[data-protected-output] { white-space:pre-wrap; max-height:480px; overflow:auto; overflow-wrap:anywhere; margin-top:14px; }
+@media(prefers-color-scheme:dark) {
+ .system-action-card { background:#172b3b; border-color:#567083; color:#e5f1fa; }
+ .system-action-card p,.system-action-card small,.system-note-events small { color:#c2d5e3; }
+ .system-public-notes { background:#173147; color:#deeff9; }
+}
+.research-handover { max-width:1000px; padding:28px; margin:auto; }
+.research-method { max-width:76ch; line-height:1.6; margin:20px 0; }
+.research-handover-actions { display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin:16px 0; }
+[data-research-handover] { margin:12px 0; }
+.systems-enrollment > summary { color:#1e4f67; background:#edf4f8; border:1px solid #9dbaca; border-radius:10px; padding:12px 16px; font-weight:600; min-height:44px; cursor:pointer; }
+.systems-privacy summary { color:#234f66; min-height:40px; padding:8px 0; cursor:pointer; }
+@media(prefers-color-scheme:dark) {
+ .systems-enrollment > summary { color:#dfeef7; background:#173147; border-color:#567083; }
+ .systems-privacy summary { color:#dfeef7; }
+}
+
 AICONTROL_UI_CSS;
     }
 
@@ -4251,8 +4298,18 @@ final class AIcontrolInstaller
         }
     }
 
+    public static function systemsProtectionFloor(string $home,string $sha): void
+    {
+        $path=$home.'/runtime/systems.sqlite';if(is_link($path))throw new RuntimeException('Systems protection policy is unavailable.');if(!is_file($path))return;
+        try{$db=new PDO('sqlite:'.$path,null,null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);$db->exec('PRAGMA query_only=ON; PRAGMA busy_timeout=5000');if(!$db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='system_guard'")->fetchColumn()||!$db->query('SELECT id FROM system_guard WHERE id=1')->fetchColumn())return;}
+        catch(Throwable){throw new RuntimeException('Systems protection policy could not be verified. No code was activated.');}
+        $manifest=self::readJson($home.'/releases/'.self::sha($sha).'/release-manifest.json');
+        if(!isset($manifest['files']['src/SystemGuard.php']))throw new RuntimeException('This release would remove configured Systems protection. Choose a compatible current update.');
+    }
+
     public static function activate(string $home, array $target, callable $health, ?array $bootstrap = null): void
     {
+        self::systemsProtectionFloor($home,$target['sha']);
         $previous = is_file($home . '/current.json') ? self::readJson($home . '/current.json') : null;
         $journal = ['phase' => 'activating', 'previous' => $previous, 'target' => $target];
         if ($bootstrap !== null) { $journal['bootstrap'] = $bootstrap['state']; }

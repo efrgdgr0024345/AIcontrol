@@ -9,6 +9,9 @@ require_once __DIR__.'/SystemsAgent.php';
 require_once __DIR__.'/SystemsView.php';
 require_once __DIR__.'/SystemEnrollment.php';
 require_once __DIR__.'/SystemTerminal.php';
+require_once __DIR__.'/SystemGuard.php';
+require_once __DIR__.'/SystemPlaybooks.php';
+require_once __DIR__.'/ResearchHandover.php';
 require_once __DIR__.'/NasaActions.php';
 require_once __DIR__.'/NasaView.php';
 require_once __DIR__.'/AdminTestActions.php';
@@ -169,8 +172,27 @@ final class Panel
                 try {
                     if($config['access_mode']==='testing')throw new RuntimeException('Systems control requires PIN, password or host-authenticated access.');
                     $systems=new Systems($directory);$id=(int)self::input('system_id');$runId=(int)self::input('run_id');$systemOwner=hash('sha256',session_id());$enrollmentId=self::input('enrollment_id');$terminalId=self::input('terminal_id');$terminalResult=null;
+                    $guard=new SystemGuard($systems);
+                    if($action==='system_guard_setup')$guard->setup(self::input('systems_password'),self::input('systems_password_confirm'));
+                    elseif($action==='system_guard_unlock')$guard->unlock(self::input('systems_password'));
+                    elseif($action==='system_guard_lock')$guard->lock();
+                    elseif($action==='system_guard_change')$guard->change(self::input('systems_current_password'),self::input('systems_new_password'),self::input('systems_new_confirm'));
+                    else $guard->requireUnlocked();
                     session_write_close();
-                    if($action==='system_prepare'){$enrollment=(new SystemEnrollment($systems))->prepare(self::input('risk_level'));$enrollmentId=$enrollment['id'];}
+                    if(in_array($action,['system_guard_setup','system_guard_unlock','system_guard_lock','system_guard_change'],true)){}
+                    elseif($action==='system_notes_save')(new SystemNotebook($systems))->edit($id,self::input('notes'),self::input('secret_label'),self::input('secret_value'));
+                    elseif($action==='system_notes_reveal') {header('Content-Type: application/json; charset=utf-8');header('Cache-Control: no-store');echo json_encode(['protected_record'=>(new SystemNotebook($systems))->view($id,true)['revealed']],JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);return;}
+                    elseif(str_starts_with($action,'system_playbook_')){
+                        $playbooks=new SystemPlaybooks($systems);$operationId=self::input('operation_id');
+                        if($action==='system_playbook_prepare')$operationId=$playbooks->prepare($id,self::input('recipe'));
+                        elseif($action==='system_playbook_apply')$playbooks->start($operationId,$id,self::input('confirmation'),$_POST);
+                        elseif($action==='system_playbook_status'||$action==='system_playbook_stop')$playbooks->reconcile($operationId,$id,$action==='system_playbook_stop');
+                        elseif($action==='system_playbook_release')$playbooks->release($operationId,$id,self::input('confirmation'));
+                        else throw new RuntimeException('Unknown guided server action.');
+                        if($json){$op=$playbooks->get($operationId,$id);header('Content-Type: application/json');echo json_encode(['playbook'=>array_intersect_key($op,array_flip(['id','system_id','status','blocking']))],JSON_THROW_ON_ERROR);return;}
+                        header('Location: '.self::entry().'?view=systems&system='.$id.'&operation='.$operationId.'#server-operation',true,303);return;
+                    }
+                    elseif($action==='system_prepare'){$enrollment=(new SystemEnrollment($systems))->prepare(self::input('risk_level'));$enrollmentId=$enrollment['id'];}
                     elseif($action==='system_import_discovery'){$enrollment=(new SystemEnrollment($systems))->importDiscovery($enrollmentId,self::input('discovery_reply'));$id=(int)$enrollment['system_id'];}
                     elseif($action==='system_connect'){
                         $enrollments=new SystemEnrollment($systems);$s=$enrollments->receipt($enrollmentId,self::input('setup_reply'));$id=(int)$s['id'];
@@ -195,7 +217,7 @@ final class Panel
                         if((int)$systems->run($runId)['system_id']!==$id)throw new RuntimeException('Task does not belong to this system.');
                         if($action==='system_stop')$systems->stop($runId);else (new SystemsAgent($systems))->step($runId);
                     }else throw new RuntimeException('System operation unavailable.');
-                    if($json){header('Content-Type: application/json');echo json_encode(['run'=>$runId?$systems->run($runId):null,'terminal_result'=>$terminalResult],JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);return;}
+                    if($json){header('Content-Type: application/json');echo json_encode(['run'=>$runId&&!str_starts_with($action,'system_guard_')?$systems->run($runId):null,'terminal_result'=>$terminalResult],JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);return;}
                     header('Location: '.self::entry().'?view=systems&system='.$id.($runId?'&system_run='.$runId:'').($enrollmentId?'&enrollment='.$enrollmentId:'').($terminalId?'&terminal='.$terminalId.'#ssh-console':''),true,303);return;
                 }catch(Throwable $failure){
                     Diagnostics::record('systems.action.failed',['action'=>$action],$failure);http_response_code(422);$error=Diagnostics::clean($failure->getMessage());
@@ -248,6 +270,12 @@ final class Panel
                 session_destroy();
                 setcookie(session_name(), '', ['expires' => time() - 3600, 'path' => '/', 'secure' => $secure, 'httponly' => true, 'samesite' => 'Strict']);
                 header('Location: ' . self::entry(), true, 303);
+                return;
+            } elseif ($action==='research_handover') {
+                if($config['access_mode']==='testing'){http_response_code(403);header('Content-Type: application/json');echo '{"error":"Owner access is required for a complete project export."}';return;}
+                session_write_close();
+                try{ResearchHandover::serve($directory,(int)self::input('project_id'),self::input('format')?:'view','<input type="hidden" name="csrf" value="'.self::escape($_SESSION['csrf']).'">',self::entry());}
+                catch(Throwable $failure){http_response_code(422);header('Content-Type: application/json');echo '{"error":"Research handover could not be created. Choose a saved project and try again."}';Diagnostics::record('research.handover.failed',['project_id'=>(int)self::input('project_id')],$failure);}
                 return;
             } elseif (in_array($action, ['research_concept_chat','research_focus_node','research_explore','research_promote_layer','research_demote_layer','research_park','research_lock_evidence','research_settings','research_rank','research_start','research_continue','research_finish','research_repair','research_step','research_stop','research_learn','research_export'], true)) {
                 // Release this session before provider I/O so polling and Stop can proceed.
@@ -341,10 +369,13 @@ final class Panel
             catch(Throwable $failure){$error='The selected system or task is unavailable.';$data['systems']=(new Systems($directory))->snapshot();}
             if(($data['systems']['allowed']??true)!==false){
                 $systemStore=new Systems($directory);
-                try{$data['systems']['setup']=(new SystemEnrollment($systemStore))->view((string)($_GET['enrollment']??($enrollmentId??'')));}catch(Throwable $failure){$error=Diagnostics::clean($failure->getMessage());}
+                $data['systems']['guard']=(new SystemGuard($systemStore))->state();
+                $selectedSystem=(int)($data['systems']['selected']['id']??0);
+                if($selectedSystem){$data['systems']['notebook']=(new SystemNotebook($systemStore))->view($selectedSystem);if($data['systems']['guard']['unlocked']){$books=new SystemPlaybooks($systemStore);$data['systems']['playbooks']=$books->history($selectedSystem);$requestedOperation=(string)($_GET['operation']??($operationId??''));if($requestedOperation)try{$data['systems']['playbook']=$books->get($requestedOperation,$selectedSystem);}catch(Throwable $failure){$error='The selected server action is unavailable.';}}}
+                try{if($data['systems']['guard']['unlocked'])$data['systems']['setup']=(new SystemEnrollment($systemStore))->view((string)($_GET['enrollment']??($enrollmentId??'')));}catch(Throwable $failure){$error=Diagnostics::clean($failure->getMessage());}
                 try{
                     $requestedTerminal=(string)($_GET['terminal']??($terminalId??''));
-                    if($requestedTerminal){$data['systems']['terminal']=(new SystemTerminal($systemStore))->view($requestedTerminal,hash('sha256',session_id()));if((int)$data['systems']['terminal']['system_id']!==(int)($data['systems']['selected']['id']??0))throw new RuntimeException('Console does not belong to the selected system.');}
+                    if($requestedTerminal&&$data['systems']['guard']['unlocked']){$data['systems']['terminal']=(new SystemTerminal($systemStore))->view($requestedTerminal,hash('sha256',session_id()));if((int)$data['systems']['terminal']['system_id']!==(int)($data['systems']['selected']['id']??0))throw new RuntimeException('Console does not belong to the selected system.');}
                 }catch(Throwable $failure){unset($data['systems']['terminal']);$error=Diagnostics::clean($failure->getMessage());}
                 if($method==='POST')foreach(['discovery_reply','setup_reply','connection_host','connection_port'] as $field)$data['systems']['setup_values'][$field]=self::input($field);
             }

@@ -127,7 +127,7 @@ final class AdminData
             'php'=>['version'=>PHP_VERSION,'sapi'=>PHP_SAPI,'os_family'=>PHP_OS_FAMILY,'ini_file'=>php_ini_loaded_file()?:null,'additional_ini_files'=>php_ini_scanned_files()?:null,'error_reporting_mask'=>error_reporting(),'timezone'=>date_default_timezone_get(),'pdo_drivers'=>PDO::getAvailableDrivers(),'memory_used_bytes'=>memory_get_usage(true),'settings'=>$settings,'extensions'=>$extensions],
             'databases'=>[],'private_files'=>[]];
         $databases=['panel.sqlite'=>'Task projects, tasks, agent outputs, activity, login throttling, NASA Managed engineering records and release/test reports','research.sqlite'=>'Research projects, conversations, investigations, evidence ledger and usage'];
-        if(file_exists($this->directory.'/systems.sqlite'))$databases['systems.sqlite']='Linux systems, pinned SSH identities, agent tasks and command results; credentials are encrypted in the vault';
+        if(file_exists($this->directory.'/systems.sqlite'))$databases['systems.sqlite']='Linux systems, pinned SSH identities, protected notes and guided actions; configured Systems protection encrypts SSH credentials under the separate passphrase-wrapped key';
         foreach($databases as $file=>$purpose){
             $db=$this->connect($file);$db->exec('PRAGMA query_only=ON');$list=self::rows($db,'PRAGMA database_list');$path=$list[0]['file'];$tables=[];
             foreach(self::rows($db,"SELECT name,sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name") as $table){

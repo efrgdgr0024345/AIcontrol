@@ -44,6 +44,9 @@ jobs:
           python3 -B -m unittest -v tests/nasa_http.py
           php tests/systems.php
           php tests/system_setup.php
+          php tests/system_playbooks.php
+          php tests/research_handover.php
+          python3 -B -m unittest -v tests/system_jobs.py
           python3 -B -m unittest -v tests/system_bootstrap.py
           python3 -B -m unittest -v tests/systems_http.py
           php tests/project_inspector.php

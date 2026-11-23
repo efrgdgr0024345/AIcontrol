@@ -1,5 +1,10 @@
 # Linux systems and bounded SSH agents
 
+**23 November 2026:** [SYSTEM_ACTIONS.md](SYSTEM_ACTIONS.md) adds a separate
+Systems password, protected key custody, notes and explicitly approved per-action
+workers. Its protection and guided-job rules supersede the original console-only
+scope below. Existing enrollment risk limits remain enforced.
+
 The [two-command setup and risk update](SYSTEM_SETUP.md) is the primary flow.
 The setup instructions below describe legacy manual registration. Administrator
 now explicitly grants sudo; Read-only and Account maintenance do not. A browser

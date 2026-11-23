@@ -975,3 +975,35 @@ Clicking exposed map background dismisses the reading window and controls while
 node selection and 3D navigation keep their existing behavior. Chromium regression
 coverage grows two separate families, checks grandchild search/ancestry and verifies
 that an orbit drag keeps details open while a background click closes them.
+
+## Guided Systems operations and research handover (2026-11-23)
+
+Systems adds eight reviewed actions for inspection, SSH-preserving firewall,
+package updates, private WireGuard, pinned official Codex, automatic security
+updates, health and backup readiness. Deterministic recipes use bounded remote
+jobs and reconciliation rather than running package installs inside the short
+console timeout. Unsupported permissions/platforms/custom firewalls fail closed.
+See SYSTEM_ACTIONS.md for precise change/rollback/partial-result boundaries.
+
+Readable server notes mask protected values. A separate Systems passphrase gates
+remote control and explicit reveal, and wraps the key that encrypts SSH credentials
+and private records. Existing SSH identities transfer without regeneration;
+legacy usable key copies are removed only after protected copies are committed.
+Configured protection blocks release activation that removes SystemGuard. Owner
+must choose this separate password in Systems; code installation does not choose
+one or execute a VPS change. Project resets retain independent Systems protection.
+
+Research Export for chatbot review opens a compact workflow explanation, topic,
+run/node/source outline and complete project-scoped saved data, ending in questions
+for another chatbot to assess method and usefulness. All runs/chat are included;
+no provider call or hidden chain-of-thought is claimed. See RESEARCH_HANDOVER.md.
+Exact validation results and live activation remain recorded separately in Admin.
+
+Local validation: 48 separate-factor/playbook assertions, 11 complete-handover
+assertions, 34 installer and 53 core checks; ten Python recipe simulations and
+four Systems HTTP cases pass. Native SSH transport also passes using disposable
+fixtures. Existing backend regressions and Chromium desktop/mobile accessibility
+checks passed, including explicit reveal/hide/lock, eight actions, map export,
+no-JS Markdown download and existing research/3D navigation. No owner VPS was
+changed and no model request was made for this addition. Required exact-SHA CI
+and authenticated hosted activation must still be confirmed for each release.

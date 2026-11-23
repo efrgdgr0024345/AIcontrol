@@ -163,3 +163,14 @@ PIN is supplied through protected AICONTROL_SITE_PIN on the coding machine,
 never a new site authentication/deployment channel. Admin retains separate
 private release/test records with source-labelled observations and bounded output;
 client results do not become server attestation. See DELIVERY_AND_TEST_REPORTS.md.
+
+Guided Systems defaults (2026-11-23): separate owner-chosen Systems passphrase,
+15-minute grants, five unlock admissions/ten minutes, Argon2id-wrapped master key
+and encrypted per-server SSH custody/records; public notes remain masked/readable.
+The passphrase is not set by installation or recoverable using the website PIN.
+Reviewed long jobs have a 30-minute bound and no automatic launch retry; firewall
+has a two-minute rollback pending fresh pinned SSH verification. See
+SYSTEM_ACTIONS.md for supported OS/permissions and key-transfer semantics. The
+installer rejects releases removing configured SystemGuard protection. Research
+handover exports all saved selected-project research read-only; see
+RESEARCH_HANDOVER.md for method-length, scope and review questions.

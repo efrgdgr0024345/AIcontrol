@@ -184,6 +184,7 @@ final class ResearchView
         if(!preg_match('~^/[A-Za-z0-9_./-]+\.php$~D',$entry))$entry='/loader.php';
         if(!$project)self::createCard($csrf,$data['create_values']??[]);
         else {self::dashboard($project,$snapshot);echo '<p class="research-new-link"><a class="btn btn-outline-primary" href="/loader.php?view=research&amp;new=1">New research</a></p>';}
+        if($project&&self::$ownerControls)echo '<form method="post" target="_blank" action="/loader.php?view=research" data-research-handover>'.$csrf.'<input type="hidden" name="action" value="research_handover"><input type="hidden" name="project_id" value="'.(int)$project['id'].'"><input type="hidden" name="format" value="view"><button class="btn btn-outline-primary">Export for chatbot review</button></form>';
         if($project)echo '<details class="research-project-menu" data-project-menu'.(!$run?' open':'').'><summary>Project menu · projects, settings and history</summary>';
         echo '<p data-request-error class="research-error" role="alert"></p><div class="research-budget-notice" data-request-budget role="status">'.Ui::e(self::budgetLabel($workspace['budget'])).'</div>';
         if($data['projects']) {

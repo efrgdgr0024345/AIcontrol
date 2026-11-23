@@ -91,6 +91,9 @@ try {
     AIcontrolInstaller::recover($temporary);
     expect(!file_exists($temporary . '/current.json'), 'interrupted first activation clears code pointer');
     expect(file_get_contents($temporary . '/project-data') === 'retain', 'first activation recovery preserves data');
+    mkdir($temporary.'/runtime',0700);$policy=new PDO('sqlite:'.$temporary.'/runtime/systems.sqlite');$policy->exec('CREATE TABLE system_guard(id INTEGER PRIMARY KEY);INSERT INTO system_guard VALUES(1)');
+    refuses(static fn()=>AIcontrolInstaller::activate($temporary,$selection,static function():void{}),'Configured Systems protection rejects an older checked release');
+    expect(!file_exists($temporary.'/current.json'),'Protection floor rejects before changing the code pointer');$policy->exec('DELETE FROM system_guard');AIcontrolInstaller::systemsProtectionFloor($temporary,$sha);expect(true,'Unconfigured legacy Systems remains compatible');
     echo "PASS: $count installer checks\n";
 } finally {
     $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($temporary, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);

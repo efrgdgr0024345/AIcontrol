@@ -22,6 +22,29 @@ class SystemsAccess(unittest.TestCase):
     self.assertEqual(code,200);csrf=re.search(r'name="csrf" value="([a-f0-9]+)"',page).group(1)
     yield private,csrf,request
    finally:server.terminate();server.wait(timeout=5)
+ def test_separate_systems_password_masks_notes_and_blocks_pin_only_control(self):
+  import sqlite3,json
+  with self.credential_server(owner=True) as (private,csrf,request):
+   code,page=request(query='?view=systems');self.assertEqual(code,200);self.assertIn('Set Systems password',page)
+   fields=dict(csrf=csrf,action='system_add',name='Fixture VPS',host='192.0.2.22',port='22',username='fixture_login',access='inspect')
+   code,body=request(fields,query='?view=systems&systems_api=1');self.assertEqual(code,422);self.assertIn('Unlock Systems',body)
+   with sqlite3.connect(private/'systems.sqlite') as db:self.assertEqual(db.execute('SELECT COUNT(*) FROM systems').fetchone()[0],0)
+   password='synthetic separate systems password'
+   code,page=request(dict(csrf=csrf,action='system_guard_setup',systems_password=password,systems_password_confirm=password),query='?view=systems');self.assertEqual(code,200);self.assertIn('Remote control unlocked',page)
+   code,page=request(fields,query='?view=systems');self.assertEqual(code,200);self.assertIn('fixture_login',page)
+   code,page=request(dict(csrf=csrf,action='system_notes_save',system_id='1',notes='Web service notes. username=fixture_login password=fixture-secret-value',secret_label='database_password',secret_value='fixture-secret-value'),query='?view=systems');self.assertEqual(code,200);self.assertIn('Web service notes.',page);self.assertNotIn('fixture-secret-value',page)
+   with sqlite3.connect(private/'systems.sqlite') as db:
+    saved_hash=db.execute('SELECT password_hash FROM system_guard').fetchone()[0];self.assertNotIn(password,saved_hash)
+    self.assertNotIn('fixture-secret-value',str(db.execute('SELECT * FROM system_notebooks').fetchall()))
+    db.execute("INSERT INTO system_runs(system_id,task,status,result,created_at)VALUES(1,'Private fixture task','complete','fixture-private-raw-output',0)")
+   code,page=request(dict(csrf=csrf,action='system_notes_reveal',system_id='1'),query='?view=systems');self.assertEqual(code,200);self.assertIn('fixture-secret-value',page)
+   code,body=request(dict(csrf=csrf,action='system_guard_lock',system_id='1',run_id='1'),query='?view=systems&systems_api=1');self.assertEqual(code,200);self.assertIsNone(json.loads(body)['run']);self.assertNotIn('fixture-private-raw-output',body)
+   code,page=request(query='?view=systems&system=1&system_run=1');self.assertEqual(code,200);self.assertIn('Web service notes.',page);self.assertNotIn('fixture_login',page);self.assertNotIn('192.0.2.22',page);self.assertNotIn('fixture-private-raw-output',page);self.assertNotIn('fixture-secret-value',page)
+   for action in ('system_notes_reveal','system_console_connect','system_start','system_playbook_prepare'):
+    code,body=request(dict(csrf=csrf,action=action,system_id='1',task='Inspect',recipe='inspect'),query='?view=systems&systems_api=1');self.assertEqual(code,422);self.assertIn('Unlock Systems',body)
+   code,body=request(dict(csrf=csrf,action='system_guard_setup',systems_password='replacement password',systems_password_confirm='replacement password'),query='?view=systems&systems_api=1');self.assertEqual(code,422)
+   with sqlite3.connect(private/'systems.sqlite') as db:self.assertEqual(db.execute('SELECT password_hash FROM system_guard').fetchone()[0],saved_hash)
+   code,page=request(dict(csrf=csrf,action='system_guard_unlock',systems_password=password),query='?view=systems');self.assertEqual(code,200);self.assertIn('Remote control unlocked',page)
  def test_public_testing_cannot_mutate_vault_or_use_admin(self):
   with self.credential_server() as (private,csrf,request):
    before=(private/'vault.json').read_bytes();key=(private/'vault.key').read_bytes()
