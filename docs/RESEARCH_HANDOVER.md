@@ -34,3 +34,13 @@ review their saved text before sharing it with an external chatbot.
 Validation covers all-run/project-chat retention, full bodies, project isolation,
 lease exclusion, read-only file bytes, compact method size, useful ending,
 copy/download, CSRF, missing projects, map entry, no-JS and mobile accessibility.
+
+The preview offers Copy complete handover, Copy explanation only (method plus
+review questions), and Copy research data only (complete JSON without those
+explanatory fields). Each shows an approximate token count for the exact copied
+text, using UTF-8 bytes divided by four, rounded up. This local heuristic is not
+model-specific tokenization or a billing/usage measure; accuracy varies with
+language and formatting. No tokenizer API request is made. Each copy option has
+a collapsible labelled text preview for manual copying without JavaScript. If
+clipboard access is refused, the preview opens and selects its full text. Existing
+Markdown and complete JSON downloads retain their normal scope.

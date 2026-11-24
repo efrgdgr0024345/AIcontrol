@@ -543,8 +543,9 @@ final class AIcontrolWorkspaceUi
   });
   document.querySelectorAll('[data-copy-report]').forEach(button => button.addEventListener('click', async () => {
     const report=document.getElementById(button.dataset.copyReport), status=button.parentElement.querySelector('[data-copy-report-status]');
-    try { if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(report.value);else {report.focus();report.select();if(!document.execCommand('copy'))throw new Error('copy');}status.textContent=button.dataset.copyReport==='admin-technical-report'?'Technical report copied.':button.dataset.copyReport==='system-script'?'Setup script copied.':button.dataset.copyReport.endsWith('-command')?'Command copied.':button.dataset.copyReport.startsWith('admin-test-output-')?'Contents copied.':'JSON copied.'; }
-    catch {report.focus();report.select();status.textContent='Report selected. Use your device’s Copy command.';}
+    const selectReport=()=>{const preview=report.closest('details');if(preview)preview.open=true;report.focus();report.select();};
+    try { if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(report.value);else {selectReport();if(!document.execCommand('copy'))throw new Error('copy');}status.textContent=button.dataset.copySuccess||(button.dataset.copyReport==='admin-technical-report'?'Technical report copied.':button.dataset.copyReport==='system-script'?'Setup script copied.':button.dataset.copyReport.endsWith('-command')?'Command copied.':button.dataset.copyReport.startsWith('admin-test-output-')?'Contents copied.':'JSON copied.'); }
+    catch {selectReport();status.textContent='Text selected. Use your device’s Copy command.';}
   }));
   let installing = false;
   const statusRoot = document.querySelector('[data-update-status-url]');
@@ -3220,6 +3221,12 @@ body.research-map-open { overflow:hidden; }
 .research-handover { max-width:1000px; padding:28px; margin:auto; }
 .research-method { max-width:76ch; line-height:1.6; margin:20px 0; }
 .research-handover-actions { display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin:16px 0; }
+.research-copy-options { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr)); gap:16px; margin:24px 0; }
+.research-copy-option { min-width:0; padding:18px; border:1px solid var(--tblr-border-color); border-radius:12px; }
+.research-copy-option h3 { margin-top:0; }
+.research-copy-option details > summary { cursor:pointer; margin-bottom:12px; padding:8px 0; min-height:40px; color:var(--ac-ink); }
+.research-copy-option textarea { width:100%; max-width:100%; }
+.research-token-count { font-weight:600; }
 [data-research-handover] { margin:12px 0; }
 .systems-enrollment > summary { color:#1e4f67; background:#edf4f8; border:1px solid #9dbaca; border-radius:10px; padding:12px 16px; font-weight:600; min-height:44px; cursor:pointer; }
 .systems-privacy summary { color:#234f66; min-height:40px; padding:8px 0; cursor:pointer; }

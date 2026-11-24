@@ -11,8 +11,9 @@
   });
   document.querySelectorAll('[data-copy-report]').forEach(button => button.addEventListener('click', async () => {
     const report=document.getElementById(button.dataset.copyReport), status=button.parentElement.querySelector('[data-copy-report-status]');
-    try { if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(report.value);else {report.focus();report.select();if(!document.execCommand('copy'))throw new Error('copy');}status.textContent=button.dataset.copyReport==='admin-technical-report'?'Technical report copied.':button.dataset.copyReport==='system-script'?'Setup script copied.':button.dataset.copyReport.endsWith('-command')?'Command copied.':button.dataset.copyReport.startsWith('admin-test-output-')?'Contents copied.':'JSON copied.'; }
-    catch {report.focus();report.select();status.textContent='Report selected. Use your device’s Copy command.';}
+    const selectReport=()=>{const preview=report.closest('details');if(preview)preview.open=true;report.focus();report.select();};
+    try { if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(report.value);else {selectReport();if(!document.execCommand('copy'))throw new Error('copy');}status.textContent=button.dataset.copySuccess||(button.dataset.copyReport==='admin-technical-report'?'Technical report copied.':button.dataset.copyReport==='system-script'?'Setup script copied.':button.dataset.copyReport.endsWith('-command')?'Command copied.':button.dataset.copyReport.startsWith('admin-test-output-')?'Contents copied.':'JSON copied.'); }
+    catch {selectReport();status.textContent='Text selected. Use your device’s Copy command.';}
   }));
   let installing = false;
   const statusRoot = document.querySelector('[data-update-status-url]');

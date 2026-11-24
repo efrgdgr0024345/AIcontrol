@@ -1007,3 +1007,19 @@ checks passed, including explicit reveal/hide/lock, eight actions, map export,
 no-JS Markdown download and existing research/3D navigation. No owner VPS was
 changed and no model request was made for this addition. Required exact-SHA CI
 and authenticated hosted activation must still be confirmed for each release.
+
+## Research export copy choices and token estimates (2026-11-25)
+
+Handover previews add independent complete, explanation-only and data-only copy
+choices, each with a token estimate for its actual clipboard payload. Data-only
+JSON retains all selected-project records and excludes derived method text/count;
+explanation includes the compact method and reviewer questions. Counts use the
+explicit UTF-8-byte/4 heuristic, not model tokenization, API usage or billing.
+Collapsible previews support no-JS manual copying; refused clipboard access opens
+and selects the requested text. No saved research or provider workflow changes.
+See RESEARCH_HANDOVER.md for scope and estimation limits.
+
+Targeted validation: 19 PHP handover assertions and Chromium checks for all three
+exact clipboard payloads/counts, data retention, refused-clipboard selection,
+map entry, no-JS JSON preview/Markdown and mobile accessibility pass. Core and
+installer checks pass. Exact-SHA CI and hosted verification are recorded in Admin.
