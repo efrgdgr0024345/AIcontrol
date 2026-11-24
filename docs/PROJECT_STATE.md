@@ -1023,3 +1023,12 @@ Targeted validation: 19 PHP handover assertions and Chromium checks for all thre
 exact clipboard payloads/counts, data retention, refused-clipboard selection,
 map entry, no-JS JSON preview/Markdown and mobile accessibility pass. Core and
 installer checks pass. Exact-SHA CI and hosted verification are recorded in Admin.
+
+## Visible DigitalOcean VPS connection (2026-11-25)
+
+Systems keeps a visible Connect a DigitalOcean VPS section while locked, with
+clear instructions and a link to set/unlock the separate Systems password. When
+unlocked, the original two-command risk/account/key setup is always shown, even
+when another server is selected. Existing Linux Droplets and other Linux VPS
+providers use the same SSH enrollment; no provider API integration or extra
+credential is introduced. Commands and connection secrets remain locked.

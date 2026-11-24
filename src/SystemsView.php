@@ -15,9 +15,9 @@ final class SystemsView
     public static function render(array $data,string $csrf,array $projects): void
     {
         if(($data['allowed']??true)===false){echo '<p class="alert alert-warning">Systems control requires PIN, password or host-authenticated access.</p>';return;}
-        $guard=$data['guard']??['configured'=>false,'unlocked'=>false,'until'=>0];SystemOperationsView::guard($guard,$csrf,(int)($data['selected']['id']??0));
+        $guard=$data['guard']??['configured'=>false,'unlocked'=>false,'until'=>0];if(!$guard['unlocked'])SystemSetupView::locked($guard);SystemOperationsView::guard($guard,$csrf,(int)($data['selected']['id']??0));
         if(!$guard['unlocked']){SystemOperationsView::locked($data,$csrf);return;}
-        $foldSetup=!empty($data['selected'])&&empty($data['setup']);if($foldSetup)echo '<details class="systems-enrollment mb-3"><summary>Add another Linux server</summary>';SystemSetupView::render($data['setup']??null,$csrf,$data['setup_values']??[]);if($foldSetup)echo '</details>';
+        SystemSetupView::render($data['setup']??null,$csrf,$data['setup_values']??[]);
         echo '<section class="card mb-3 systems-section"><div class="card-body"><h2>Linux servers</h2><p>Add a server, install its public key, verify its identity, then assign work. Each server has its own encrypted SSH credential.</p>';
         if(!$data['runner_available'])echo '<p class="alert alert-warning">SSH execution is unavailable on this PHP host. Enable proc_open and install /usr/bin/ssh and /usr/bin/ssh-keyscan on the web host, or run this workspace on a Linux host with those capabilities. Saved systems and scripts remain available.</p>';
         echo '<details><summary>Manual server registration (advanced)</summary><details id="add-system"><summary>Add a Linux server</summary><form method="post" action="/loader.php?view=systems" class="systems-form">'.$csrf.'<input type="hidden" name="action" value="system_add">';

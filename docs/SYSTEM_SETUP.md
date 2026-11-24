@@ -121,3 +121,9 @@ Release validation: the local checks above passed on PHP 8.4.24, alongside all
 twenty PHP suites, eight HTTP suites and the complete Chromium regression suite.
 The required planning-panel check must pass on the exact published commit before
 installation readiness is reported.
+
+The Systems page always shows a DigitalOcean VPS connection entry. While locked
+it points to separate-password setup/unlock without exposing generated commands.
+After unlock, the full two-command form is visible even with an existing server
+selected. Open the existing Droplet console or SSH terminal to run the commands;
+this flow does not provision a Droplet through the DigitalOcean API.
