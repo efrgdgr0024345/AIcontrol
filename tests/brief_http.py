@@ -54,6 +54,8 @@ namespace {$_SERVER['SCRIPT_NAME']='/aiadmin/loader.php';require getenv('BRIEF_R
                 self.assertEqual(status,200);csrf=re.search(r'name="csrf" value="([a-f0-9]+)"',page).group(1)
                 fields=dict(csrf=csrf,action='research_brief_suggest',name='Solar',draft='Does solar change the bill for Perth households?')
                 self.assertEqual(request(dict(fields,csrf='wrong'))[0],403)
+                code,_,usage=request(dict(csrf=csrf,action='research_brief_usage'));self.assertEqual(code,200);self.assertEqual(json.loads(usage)['allowance']['requests'],0)
+
                 self.assertEqual(request(dict(fields,draft='tiny'))[0],422)
                 self.assertEqual(request(dict(fields,**{'draft[]':'array'},draft=''))[0],422)
                 # Create remains a normal POST and never starts research.
@@ -77,6 +79,12 @@ namespace {$_SERVER['SCRIPT_NAME']='/aiadmin/loader.php';require getenv('BRIEF_R
                 self.assertEqual(request(dict(fields,draft='A second distinct question about local evidence?'))[0],409)
                 code,_,_=request(dict(csrf=csrf,action='research_stop',run_id=run),query='?view=research&research_api=1');self.assertEqual(code,200)
                 journal=json.loads((home/'brief-suggestions.json').read_text());self.assertEqual(len(journal),1);self.assertEqual(journal[0]['status'],'complete')
+                code,_,usage=request(dict(csrf=csrf,action='research_brief_usage'));self.assertEqual(code,200);allowance=json.loads(usage)['allowance'];self.assertEqual(allowance['requests'],1);self.assertEqual(allowance['reserved_usd'],0);self.assertNotIn('draft_hash',usage)
+                # New UI creation explicitly saves and starts, then redirects to the map.
+                code,_,body=request(dict(csrf=csrf,action='research_project',name='Auto-start fixture',brief='Which local evidence should guide this new project?',start_research='1'));self.assertEqual(code,200);self.assertIn('data-status="running"',body);self.assertIn('data-investigation',body)
+                code,_,body=request(dict(csrf=csrf,action='research_project',name='Saved when busy',brief='Keep this brief even when a different research run is active.',start_research='1'));self.assertEqual(code,200);self.assertIn('Project saved. Research did not start:',body)
+                import sqlite3
+                with sqlite3.connect(home/'research.sqlite') as db:self.assertEqual(db.execute('SELECT COUNT(*) FROM research_projects').fetchone()[0],3);self.assertEqual(db.execute('SELECT COUNT(*) FROM research_runs').fetchone()[0],2)
                 fresh=urllib.request.build_opener();payload=urllib.parse.urlencode(fields).encode()
                 try:fresh.open(urllib.request.Request(base+'?view=research',data=payload));self.fail('Missing session accepted')
                 except urllib.error.HTTPError as error:self.assertEqual(error.code,403)

@@ -12,7 +12,7 @@
         "src/AdminTestReports.php": "88e796f5774146ef467f722fa83696c603510cbb238b4af10650da5942ef1e77",
         "src/AgentRunner.php": "b7bfc30ab3db991b77c1a2a8a5475c0813c6bac19f0a8cf2be3e1f748dbd051b",
         "src/Bootstrap.php": "68184329531c1526cb67b6e8068d98e238b3571feaccd4ff6c81d1f012245409",
-        "src/BriefSuggestions.php": "6c56af22ddbc51295968db00a63babb45f53a2cbf822bdd67f94518e32f0dc11",
+        "src/BriefSuggestions.php": "b47f71b0752069b57c1e8296e8cd3e3ca3f41d12fd4e07af6b0c758882fde493",
         "src/ConceptConversation.php": "e351f07f75793d2bee0c53a3dd6f5f573b76f3dfcf9a3758cd6937104299b9b2",
         "src/Diagnostics.php": "2eaf7ed1dfece09cdc3ed522ab924d42ac7aa816bc730f77ccea7b0381b6d10f",
         "src/EverydayActions.php": "afd3221ca2ea06e391f17f431bc3a7f0776e41afa1b0e81f6209cb2a7138f4b9",
@@ -35,7 +35,7 @@
         "src/NasaProvider.php": "095008b03ce5b5e6e3fde8cd8ce30b2954cbd920f2ce26af1475801c215874b4",
         "src/NasaStore.php": "98bdb0b987c8e386c1e210560f04de71c2eed2b4468fa4286cfaf9debafbff8a",
         "src/NasaView.php": "eb6c7dc19974330e68c71a80c8dcf154511cc36d4e5745895cee9819dd43b62b",
-        "src/Panel.php": "4637fa8402d730df0105c92616ee3b78f2311359d5ac0a9760cb0ed7597d43e1",
+        "src/Panel.php": "c5ed9e2c7b58cfcaf2bd3ddbbedfc0dc464087b59c3d20580704dbbe83eb4562",
         "src/PanelStore.php": "c434fb7928fcb73356b9c31c00cb358cad1f283811b0469bcad5388bbb2423f0",
         "src/PanelView.php": "de4172da19dcfd4195ae354090cbe7ae89aaf9093691100b11f4e163ca67411f",
         "src/PrivateStorage.php": "2b8dc6200eb49b248dfe2908de331a583d9ef0b3c324c8cfd2fc8159734c7836",
@@ -45,7 +45,7 @@
         "src/ResearchApi.php": "efa250e69d412fd379b9ba18bb8337ca48d94385886b7bd796b21417eeae94d9",
         "src/ResearchFlow.php": "2c2df045f99039eba1f8dc3a96b0b2d9bfc9f52a5765afade0b121318e1e18c2",
         "src/ResearchHandover.php": "3d34120367cd5dff256e2a5c0b0d32d8a92bb2fb47b6ba760569314bec376c8e",
-        "src/ResearchView.php": "3dc267ac7d94e53248262bfb540c5dd2ad31b8451a776c91ea96d33229eb1a3f",
+        "src/ResearchView.php": "ea3b25910cf0152003cc0120f13c10d097b1becfa765a2606e6baa2d23145286",
         "src/ResponseStream.php": "f1434215df77eecc5b8501f5e95ddf5cd581f92096eeb4d3a71ae120b125ea34",
         "src/SshTransport.php": "b3e57261010b7ab1f32fb29cc529483db9fff9897b8578dd7ca32a7751a963de",
         "src/SystemBootstrap.php": "24751f382220b597e5e53f0221312f20f7ed011e154990bbb3776b1b20f76c0f",
@@ -62,13 +62,13 @@
         "src/Systems.php": "48eece9350c86b1e5f084836e430ae560a94feeadcdf2606f9d9c26f2a5d55bd",
         "src/SystemsAgent.php": "9b230e0e7fd72c75fc6c3b4100abba6831baf03cab4a2b75a180a91e2e9cbb74",
         "src/SystemsView.php": "4b2aca9984a5501a0ad9fd467675f084f78eab962a77f568ca0c94dc46cabf37",
-        "src/Ui.php": "cde1f48055b04698bd2321f3c32463f4894f27ca88da40a62e8a14c725b7e847",
+        "src/Ui.php": "fa13de26a4f052c2a653eb8a22a1c5f75796dc7aa438ac2c670d302f7282244c",
         "src/UsageMeter.php": "71b6b2af9377430023dd20b42ac48cce17c98ae0cae987c6ca557a90c8b7e48a",
         "src/Vault.php": "5a6972747fd364624b837e32780a2117e0b72ef42a641823eb75e7164de6e438",
         "src/WorkspaceView.php": "4eff257da749e63bfd1549c8c697c95cea1955ad25aa1ea87ff6525fda74aecc"
     },
     "bootstrap": {
         "path": "loader.php",
-        "sha256": "cd83ca3e1fe2789eb5f45197ccfb1670125871e459b6d88855e2b509bbd1832f"
+        "sha256": "3792f0fa658cd4da34ce024bc70c33867ac6a05f0b10f946bb918042ce7a10bc"
     }
 }

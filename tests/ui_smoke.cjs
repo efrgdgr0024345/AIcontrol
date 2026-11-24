@@ -64,7 +64,7 @@ const {spawn,spawnSync}=require('child_process');
   await audit('Research first project');
   await page.getByLabel('Working title',{exact:true}).fill('Research fixture project');
   await page.getByLabel('Research brief',{exact:true}).fill('Explore a test idea without a provider call.');
-  await page.getByRole('button',{name:'Create research project',exact:true}).click();
+  await page.getByRole('button',{name:'Create and start research',exact:true}).click();
   await page.getByRole('heading',{name:'Research fixture project',exact:true}).waitFor();
   await page.getByRole('button',{name:'Start research',exact:true}).waitFor();
   if(!await page.getByRole('button',{name:'Start research',exact:true}).isDisabled())throw new Error('Disconnected research enabled');

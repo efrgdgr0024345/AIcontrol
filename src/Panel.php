@@ -256,10 +256,14 @@ final class Panel
                 foreach(['http_status','content_type','redirected','response_path','error_kind'] as $field)$responseDetails[$field]=substr(self::input($field),0,160);
                 Diagnostics::record('browser.research.failed',array_merge($responseDetails,['stage'=>substr(self::input('stage'),0,80),'message'=>substr(self::input('message'),0,1000),'run_id'=>(int)self::input('run_id')]));
                 http_response_code(204);return;
+            } elseif ($action === 'research_brief_usage') {
+                if($config['access_mode']==='testing'){http_response_code(403);header('Content-Type: application/json');echo '{"error":"Owner access is required for writing-help usage."}';return;}
+                session_write_close();require_once __DIR__.'/BriefSuggestions.php';header('Content-Type: application/json; charset=utf-8');header('Cache-Control: no-store');
+                try{echo json_encode(['allowance'=>(new BriefSuggestions($directory))->usage()],JSON_THROW_ON_ERROR);}catch(Throwable){http_response_code(503);echo '{"error":"Writing-help usage could not be read. No allowance was reset."}';}return;
             } elseif ($action === 'research_brief_suggest') {
                 session_write_close();
                 require_once __DIR__.'/BriefSuggestions.php';
-                BriefSuggestions::serve($directory,$_POST['draft']??'',$_POST['name']??'');
+                BriefSuggestions::serve($directory,$_POST['draft']??'',$_POST['name']??'',$_POST['count']??'3',$_POST['avoid']??[]);
                 return;
             } elseif ($action === 'research_status') {
                 session_write_close();
@@ -289,7 +293,12 @@ final class Panel
                         $_SESSION['flash'] = 'Private vault updated.';
                     } elseif ($action === 'research_project') {
                         $projectId=(new Research($directory))->create(self::input('name'), self::input('brief'));
-                        header('Location: '.self::entry().'?view=research&project='.$projectId,true,303);return;
+                        $next=self::entry().'?view=research&project='.$projectId;
+                        if(self::input('start_research')==='1'){
+                            try{$newRun=(new Investigation($directory))->createRun($projectId);$next.='&run='.$newRun.'&map=1';}
+                            catch(Throwable $failure){Diagnostics::record('research.create_start.blocked',['project_id'=>$projectId],$failure);$_SESSION['flash']='Project saved. Research did not start: '.Diagnostics::clean($failure->getMessage()).' Open this project to start when ready.';}
+                        }
+                        header('Location: '.$next,true,303);return;
                     } elseif ($action === 'research_chat') {
                         (new Research($directory))->chat((int)self::input('project_id'), self::input('message'), self::input('web') === '1');
                     } elseif ($action === 'research_resolve') {

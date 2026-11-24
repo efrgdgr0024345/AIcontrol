@@ -174,3 +174,13 @@ SYSTEM_ACTIONS.md for supported OS/permissions and key-transfer semantics. The
 installer rejects releases removing configured SystemGuard protection. Research
 handover exports all saved selected-project research read-only; see
 RESEARCH_HANDOVER.md for method-length, scope and review questions.
+
+Writing-help activity defaults (2026-11-25): automatic two-second typing idle and
+one-second trusted pointer/scroll intent, coalesced with an eight-second automatic
+request gap; explicit Refresh requests a full set, selection one replacement.
+Full set/replacement output bounds are 240/100 tokens. Existing rolling 20/$0.01
+workspace limits remain; displayed measured estimates and unknown reservations
+are separate. Supported orphan-usage recovery uses matching private completion
+metadata, never a blind allowance reset. Create and start research opens the map
+and starts bounded model exploration, retaining the project if start is blocked.
+See BRIEF_WRITING_HELP.md for admission, no-JS and legacy save-only contracts.

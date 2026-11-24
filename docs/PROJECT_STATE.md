@@ -1032,3 +1032,28 @@ unlocked, the original two-command risk/account/key setup is always shown, even
 when another server is selected. Existing Linux Droplets and other Linux VPS
 providers use the same SSH enrollment; no provider API integration or extra
 credential is introduced. Commands and connection secrets remain locked.
+
+## Activity-driven brief help and save-to-map (2026-11-25)
+
+The owner selected automatic updates: two-second typing idle, one-second mouse or
+scroll intent, combined with an eight-second automatic dispatch gap. Selection
+keeps other alternatives and buys one replacement; Refresh buys a fresh full set.
+Dispatched calls finish instead of being cancelled on every edit. Stale output
+cannot overwrite the latest brief; failures pause automatic dispatch. The UI shows
+returned-usage estimates separately from unverified reservations and the rolling
+workspace allowance. Matching logged completed provider usage can reconcile an
+orphaned reservation; truly unknown calls remain reserved. No provider call or
+allowance reset is needed for this recovery. See BRIEF_WRITING_HELP.md.
+
+Create and start research now saves the project and opens a newly started map;
+its existing polling advances initial model exploration. Failed start admission
+retains the saved project with an explanation. Explicit Evidence selection and
+Stop/budget protections remain. Legacy save-only POSTs are compatible. The CI job
+allows 15 minutes for the expanded gesture, clipboard, map and accessibility suite.
+
+Local validation: 38 writing-help assertions, authenticated concurrent HTTP/SSE
+with read-only usage and create/start/busy retention, 19 export assertions and the
+workspace smoke suite pass. Chromium checks two-second typing, one-second mouse
+and scroll bursts, retained peer cards/one replacement, refresh, stale responses,
+map start/Stop, no-JS creation and mobile accessibility. Provider responses remain
+synthetic in these tests; live diagnostics were read without buying another call.
