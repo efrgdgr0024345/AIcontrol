@@ -37,6 +37,12 @@ final class SystemTerminal
         $t['commands']=array_reverse($this->systems->query('SELECT * FROM system_commands WHERE run_id=? ORDER BY id DESC LIMIT 20',[$t['run_id']]));
         return $t;
     }
+    public function current(int $system,string $owner): ?array
+    {
+        $terminal=$this->systems->query('SELECT id,enabled,expires_at FROM system_terminals WHERE system_id=? AND owner_hash=? ORDER BY rowid DESC LIMIT 1',[$system,$owner])[0]??null;
+        if(!$terminal||!$terminal['enabled']||$terminal['expires_at']<time())return null;
+        return $this->view($terminal['id'],$owner);
+    }
     public function disconnect(string $id,string $owner): void
     {
         $t=$this->get($id,$owner);$this->systems->write('UPDATE system_terminals SET enabled=0 WHERE id=?',[$id]);

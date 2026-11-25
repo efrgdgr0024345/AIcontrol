@@ -48,7 +48,7 @@ final class SystemsView
             if($s['verified_at'])echo '<p>Last successful check: '.Ui::e(Ui::time(gmdate('c',(int)$s['verified_at']))).'. Each SSH connection checks the pinned server key.</p>';
             if($s['error'])echo '<p class="alert alert-warning">'.Ui::e($s['error']).' <a href="/loader.php?view=admin#diagnostics-report">Open Admin diagnostics</a>.</p>';
             if($s['facts'])echo '<details><summary>Last observed system information</summary><pre class="systems-code">'.Ui::e($s['facts']).'</pre></details>';
-            SystemTerminalView::render($s,$data['terminal']??null,$csrf);
+            SystemTerminalView::render($s,$data['terminal']??null,$csrf,$data['ssh_blocked']??false);
             if($s['verified_at']){
                 echo '<form method="post" action="/loader.php?view=systems" class="systems-form">'.$csrf.'<input type="hidden" name="action" value="system_start"><input type="hidden" name="system_id" value="'.$id.'"><label class="form-label" for="system-project">Related task project (optional)</label><select class="form-select" id="system-project" name="project_id"><option value="">System task only</option>';foreach($projects as $p)echo '<option value="'.(int)$p['id'].'">'.Ui::e($p['name']).'</option>';echo '</select><label class="form-label" for="system-task">Task for the Linux agent</label><textarea class="form-control" id="system-task" name="task" rows="3" maxlength="4000" placeholder="Inspect disk usage and explain what needs attention." required></textarea><p>Up to eight model decisions; one remote command per decision. Start, then advance steps or enable automatic steps while this page stays open.</p><button class="btn btn-primary">Start system task</button></form>';
             }

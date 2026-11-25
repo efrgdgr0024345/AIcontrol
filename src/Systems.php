@@ -33,7 +33,8 @@ final class Systems
     }
     public function query(string $sql,array $params=[]): array {$q=$this->db->prepare($sql);$q->execute($params);return $q->fetchAll();}
     public function write(string $sql,array $params=[]): void {$q=$this->db->prepare($sql);$q->execute($params);}
-    public function requireNoPlaybook(): void {if($this->query('SELECT id FROM system_playbooks WHERE blocking=1'))throw new RuntimeException('A guided server operation is active or uncertain. Reconcile it before another SSH task.');}
+    public function playbookBlocksSsh(): bool {return (bool)$this->query('SELECT id FROM system_playbooks WHERE blocking=1 LIMIT 1');}
+    public function requireNoPlaybook(): void {if($this->playbookBlocksSsh())throw new RuntimeException('A guided server operation is active or uncertain. Reconcile it before another SSH task.');}
     public function system(int $id): array {return $this->query('SELECT * FROM systems WHERE id=?',[$id])[0]??throw new RuntimeException('System not found.');}
     public function run(int $id): array {return $this->query('SELECT * FROM system_runs WHERE id=?',[$id])[0]??throw new RuntimeException('System task not found.');}
     public static function keypair(): array

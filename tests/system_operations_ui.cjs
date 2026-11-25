@@ -1,16 +1,76 @@
-// Real owner forms/CSRF and masked records, synthetic observed server state, no live VPS changes.
+// Real owner forms and persisted state with synthetic SSH and OpenAI responses.
 const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=require('path'),net=require('net'),{spawn,spawnSync}=require('child_process');
-(async()=>{const root=path.resolve(__dirname,'..'),php=process.env.PHP_BINARY||'php',tmp=fs.mkdtempSync(path.join(os.tmpdir(),'aicontrol-ops-ui-')),home=path.join(tmp,'private'),env={...process.env,AICONTROL_PRIVATE_DIR:home,AICONTROL_LOCAL_DEV:'1',AICONTROL_PIN_VERIFIED:'1',AICONTROL_OPENAI_API_KEY:''};
+(async()=>{const root=path.resolve(__dirname,'..'),php=process.env.PHP_BINARY||'php',tmp=fs.mkdtempSync(path.join(os.tmpdir(),'aicontrol-ops-ui-')),home=path.join(tmp,'private'),env={...process.env,AICONTROL_PRIVATE_DIR:home,AICONTROL_LOCAL_DEV:'1',AICONTROL_PIN_VERIFIED:'1',AICONTROL_OPENAI_API_KEY:'',AICONTROL_OPENAI_MODEL:''};
  const setup=spawnSync(php,['bin/setup.php','--access-mode=local','--private-dir='+home,'--public-root='+root],{cwd:root,env,encoding:'utf8'});if(setup.status)throw Error(setup.stderr);
- const seed=spawnSync(php,['-r',`require_once 'src/Vault.php';require_once 'src/SystemsAgent.php';require_once 'src/SystemNotebook.php';$s=new \\AIcontrol\\Systems(getenv('AICONTROL_PRIVATE_DIR'));$id=$s->add('Guided VPS fixture','192.0.2.31','2222','private_fixture_login','maintain','');$s->write("UPDATE systems SET risk_level='admin',verified_at=12345,host_key='fixture' WHERE id=?",[$id]);`],{cwd:root,env,encoding:'utf8'});if(seed.status)throw Error(seed.stderr+seed.stdout);
- const port=await new Promise(r=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const n=s.address().port;s.close(()=>r(n));});}),url=`http://127.0.0.1:${port}/loader.php`;const server=spawn(php,['-S',`127.0.0.1:${port}`,'bin/dev-router.php'],{cwd:root,env,stdio:'ignore'});let browser;
+ const seed=spawnSync(php,['-r',`
+ require_once 'src/Vault.php';
+ require_once 'src/SystemsAgent.php';
+ require_once 'src/SystemEnrollment.php';
+ $dir=getenv('AICONTROL_PRIVATE_DIR');
+ $systems=new \\AIcontrol\\Systems($dir);
+ $enrollments=new \\AIcontrol\\SystemEnrollment($systems);
+ $host=\\AIcontrol\\Systems::keypair()['public'];
+ file_put_contents($dir.'/fixture-host-key',$host);
+ $e=$enrollments->prepare('admin');
+ $identity=['enrollment_id'=>$e['id'],'risk_level'=>'admin','username'=>$e['username'],'machine_tag'=>str_repeat('a',64),
+     'host_fingerprint'=>\\AIcontrol\\SystemEnrollment::fingerprint($host),'uid'=>1001,
+     'home_dir'=>'/var/lib/aicontrol/homes/'.$e['username'],'sudo_granted'=>true];
+ $format=static fn($kind,$report)=>'---BEGIN AICONTROL '.strtoupper($kind)." V1---\\n".json_encode(['format'=>'AIcontrol SSH '.$kind.' v1']+$report)."\\n---END AICONTROL ".strtoupper($kind).' V1---';
+ $saved=$enrollments->importDiscovery($e['id'],$format('discovery',$identity+['challenge'=>$e['challenge'],'hostname'=>'Guided VPS fixture','connection_host'=>'192.0.2.31','ssh_port'=>2222,'host_key'=>$host]));
+ $system=$systems->system((int)$saved['system_id']);
+ file_put_contents($dir.'/fixture-receipt',$format('receipt',$identity+['challenge'=>$e['receipt_challenge'],'authorized_key_sha256'=>\\AIcontrol\\SystemEnrollment::fingerprint($system['public_key']),'read_only_enforced'=>false]));
+ (new \\AIcontrol\\Vault($dir))->change('openai_api_key','key','fixture-saved-openai-key',false);
+ echo $e['username'];
+ `],{cwd:root,env,encoding:'utf8'});if(seed.status)throw Error(seed.stderr);const username=seed.stdout;
+ const port=await new Promise(r=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const n=s.address().port;s.close(()=>r(n));});}),url=`http://127.0.0.1:${port}/loader.php`;const server=spawn(php,['-S',`127.0.0.1:${port}`,'tests/fixtures/system_workflow_router.php'],{cwd:root,env,stdio:'ignore'});let browser;
  try{browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH||['/usr/bin/google-chrome','/usr/bin/chromium'].find(fs.existsSync),args:['--no-sandbox']});const context=await browser.newContext({viewport:{width:1440,height:1000}}),page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(url+'?view=systems&system=1');
   await page.getByRole('heading',{name:'Connect a DigitalOcean VPS',exact:true}).waitFor();if(await page.getByRole('link',{name:'Set Systems password to connect',exact:true}).getAttribute('href')!=='#systems-protection')throw Error('Locked connection entry does not point to protection');if(await page.locator('[data-system-risk-form]').count())throw Error('Locked connection entry exposes enrollment');
-  if((await page.content()).includes('private_fixture_login'))throw Error('Locked page contains protected connection username');if(await page.locator('.system-action-card').count()!==8)throw Error('Guided action catalog missing');for(const b of await page.locator('.system-action-card button').all())if(!await b.isDisabled())throw Error('Locked action is enabled');
-  await require('./system_guard_helpers.cjs')(page);if(!await page.getByLabel('Server risk level',{exact:true}).isVisible()||!await page.getByRole('button',{name:'Prepare first command',exact:true}).isVisible())throw Error('Existing server hides new VPS setup');await page.getByLabel('Readable notes',{exact:true}).fill('Web service on this VPS. password=synthetic-protected-value username=private_fixture_login');await page.getByText('Add or replace a protected value',{exact:true}).click();await page.getByLabel('Protected label (for example database_login)',{exact:true}).fill('database_password');await page.getByLabel('Protected value',{exact:true}).fill('synthetic-protected-value');await page.getByRole('button',{name:'Save VPS notes',exact:true}).click();
+  if((await page.content()).includes(username))throw Error('Locked page contains protected connection username');if(await page.locator('.system-action-card').count()!==8)throw Error('Guided action catalog missing');for(const b of await page.locator('.system-action-card button').all())if(!await b.isDisabled())throw Error('Locked action is enabled');
+  await require('./system_guard_helpers.cjs')(page);if(!await page.getByLabel('Server risk level',{exact:true}).isVisible()||!await page.getByRole('button',{name:'Prepare first command',exact:true}).isVisible())throw Error('Existing server hides new VPS setup');await page.getByLabel('Readable notes',{exact:true}).fill('Web service on this VPS. password=synthetic-protected-value username='+username);await page.getByText('Add or replace a protected value',{exact:true}).click();await page.getByLabel('Protected label (for example database_login)',{exact:true}).fill('database_password');await page.getByLabel('Protected value',{exact:true}).fill('synthetic-protected-value');await page.getByRole('button',{name:'Save VPS notes',exact:true}).click();
   if((await page.content()).includes('synthetic-protected-value'))throw Error('Protected value was embedded in HTML');await page.getByRole('button',{name:'Reveal protected values and full observations',exact:true}).click();await page.locator('[data-protected-output]').filter({hasText:'synthetic-protected-value'}).waitFor();await page.getByRole('button',{name:'Hide protected values',exact:true}).click();if(await page.locator('[data-protected-output]').textContent())throw Error('Hide retained protected plaintext');
+  const vpn=page.getByRole('button',{name:'Review Set up VPN',exact:true});
+  if(!await vpn.isDisabled())throw Error('VPN was enabled without a verified SSH connection');
+  await page.getByLabel('Second reply — SSH setup receipt',{exact:true}).fill(fs.readFileSync(path.join(home,'fixture-receipt'),'utf8'));
+  await page.getByRole('button',{name:'Connect and open command line',exact:true}).click();
+  const terminal=page.locator('[data-system-terminal]');
+  await terminal.waitFor();const terminalId=await terminal.getAttribute('data-system-terminal');
+  const command=page.getByLabel('Shell command',{exact:true});
+  await command.fill("printf 'manual shell fixture'");
+  await page.getByRole('button',{name:'Run command',exact:true}).click();
+  await terminal.locator('[data-terminal-output]').filter({hasText:'complete · exit 0'}).waitFor();
+
+  await vpn.click();
+  const operation=page.locator('[data-playbook]');
+  await operation.locator('[data-playbook-status]').filter({hasText:'review'}).waitFor();
+  if(await terminal.getAttribute('data-system-terminal')!==terminalId||await command.isDisabled())throw Error('VPN review lost the SSH console');
+  await page.getByLabel('Client WireGuard public key',{exact:true}).fill(Buffer.alloc(32,'c').toString('base64'));
+  await page.getByLabel('I have tested access to this VPS provider’s recovery console.',{exact:true}).check();
+  await page.getByLabel('Type APPLY 1',{exact:true}).fill('APPLY 1');
+  await page.getByRole('button',{name:'Apply this reviewed action',exact:true}).click();
+  await operation.locator('[data-playbook-status]').filter({hasText:'running'}).waitFor();
+  if(await terminal.getAttribute('data-system-terminal')!==terminalId||!await command.isDisabled())throw Error('Active VPN work hid the console or allowed a competing command');
+  const csrf=await terminal.locator('input[name=csrf]').first().inputValue();
+  const blocked=await page.request.post(url+'?view=systems&systems_api=1',{form:{action:'system_console_command',csrf,system_id:'1',terminal_id:terminalId,command:"printf 'manual shell fixture'"}});
+  if(blocked.status()!==422||(await blocked.json()).error.includes('guided server operation')===false)throw Error('VPN did not block competing SSH on the server');
+  fs.writeFileSync(path.join(home,'fixture-vpn-finished'),'complete');
+  await page.getByRole('button',{name:'Check progress',exact:true}).click();
+  await operation.getByText('Fixture WireGuard interface configured.',{exact:true}).waitFor();
+  await operation.getByText('Handshake is not yet verified.',{exact:false}).waitFor();
+  if(await terminal.getAttribute('data-system-terminal')!==terminalId||await command.isDisabled())throw Error('Completed VPN work did not restore shell entry');
+  const providerCalls=path.join(home,'fixture-provider-calls');
+  if(fs.existsSync(providerCalls))throw Error('The reviewed VPN used a model call');
+
+  await page.getByLabel('Task for the Linux agent',{exact:true}).fill('Print a disposable shell test marker');
+  await page.getByRole('button',{name:'Start system task',exact:true}).click();
+  const agent=page.locator('[data-system-run]');
+  await agent.waitFor();if(await terminal.getAttribute('data-system-terminal')!==terminalId)throw Error('Starting an agent task hid the console');
+  await agent.locator('[data-system-action=system_step] button').click();
+  await agent.getByText(/agent shell fixture/).first().waitFor();
+  await agent.locator('[data-system-action=system_step] button').click();
+  await agent.getByText('Verified the fixture shell output.',{exact:false}).first().waitFor();
+  if(fs.readFileSync(providerCalls,'utf8')!=='step\nstep\n'||(await page.content()).includes('fixture-saved-openai-key'))throw Error('Saved-key agent did not complete without exposing the key');
   const audit=async()=>{await page.evaluate(require('axe-core').source);const issues=await page.evaluate(async()=>(await axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa','wcag22aa']}})).violations.map(v=>({id:v.id,targets:v.nodes.map(n=>n.target)})));if(issues.length)throw Error(JSON.stringify(issues));};await audit();fs.mkdirSync(path.join(root,'test-artifacts'),{recursive:true});await page.screenshot({path:path.join(root,'test-artifacts/ui-system-actions-desktop.png'),fullPage:true});
-  await page.setViewportSize({width:390,height:844});await audit();if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1))throw Error('Operations overflow mobile');await page.getByRole('button',{name:'Lock Systems now',exact:true}).click();await page.getByRole('button',{name:'Unlock Systems',exact:true}).waitFor();await page.getByRole('heading',{name:'Connect a DigitalOcean VPS',exact:true}).waitFor();await page.getByRole('link',{name:'Unlock Systems to connect',exact:true}).waitFor();const locked=await page.content();if(locked.includes('private_fixture_login')||locked.includes('synthetic-protected-value'))throw Error('Lock retained plaintext');if(!locked.includes('Web service on this VPS.'))throw Error('Readable notes hidden while locked');await audit();await page.screenshot({path:path.join(root,'test-artifacts/ui-system-actions-locked-mobile.png'),fullPage:true});
-  if(errors.length)throw Error(errors.join('\n'));console.log('PASS: separate Systems setup/unlock, eight gated actions, readable masked notes, explicit reveal/hide, lock removes protected DOM, desktop/mobile axe (no remote changes)');
+  await page.setViewportSize({width:390,height:844});await audit();if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1))throw Error('Operations overflow mobile');await page.getByRole('button',{name:'Lock Systems now',exact:true}).click();await page.getByRole('button',{name:'Unlock Systems',exact:true}).waitFor();await page.getByRole('heading',{name:'Connect a DigitalOcean VPS',exact:true}).waitFor();await page.getByRole('link',{name:'Unlock Systems to connect',exact:true}).waitFor();const locked=await page.content();if(locked.includes(username)||locked.includes('synthetic-protected-value'))throw Error('Lock retained plaintext');if(!locked.includes('Web service on this VPS.'))throw Error('Readable notes hidden while locked');await audit();await page.screenshot({path:path.join(root,'test-artifacts/ui-system-actions-locked-mobile.png'),fullPage:true});
+  if(errors.length)throw Error(errors.join('\n'));console.log('PASS: website SSH console, reviewed VPN with preserved console and no handshake claim, saved-key shell agent, masked notes, protected reveal and desktop/mobile axe (synthetic transports)');
  }finally{if(browser)await browser.close();server.kill();await new Promise(r=>server.exitCode!==null?r():server.once('exit',r));fs.rmSync(tmp,{recursive:true,force:true});}
 })().catch(e=>{console.error(e.stack||e.message);process.exitCode=1;});

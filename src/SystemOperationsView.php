@@ -31,7 +31,7 @@ final class SystemOperationsView
   echo '</div></div></section>';
   if(!$unlocked)return;
   $selected=$data['playbook']??null;if($selected)self::operation($selected,$csrf);
-  if($data['playbooks']??[]){echo '<section class="card mb-3"><div class="card-body"><h2>Guided action history</h2><ul>';foreach($data['playbooks'] as $r)echo '<li><a href="/loader.php?view=systems&amp;system='.$id.'&amp;operation='.Ui::e($r['id']).'#server-operation">'.Ui::e(SystemPlaybooks::RECIPES[$r['recipe']]['title']).'</a> · '.Ui::e($r['status']).' · '.Ui::e(gmdate('c',(int)$r['updated_at'])).'</li>';echo '</ul></div></section>';}
+  if($data['playbooks']??[]){echo '<section class="card mb-3"><div class="card-body"><h2>Guided action history</h2><ul>';foreach($data['playbooks'] as $r)echo '<li><a class="text-decoration-underline" href="/loader.php?view=systems&amp;system='.$id.'&amp;operation='.Ui::e($r['id']).'#server-operation">'.Ui::e(SystemPlaybooks::RECIPES[$r['recipe']]['title']).'</a> · '.Ui::e($r['status']).' · '.Ui::e(gmdate('c',(int)$r['updated_at'])).'</li>';echo '</ul></div></section>';}
  }
  private static function operation(array $r,string $csrf):void{
   $id=(int)$r['system_id'];$p=$r['data'];$title=SystemPlaybooks::RECIPES[$r['recipe']]['title'];$extra=['operation_id'=>$r['id']];echo '<section id="server-operation" class="card mb-3" data-playbook="'.Ui::e($r['id']).'" data-playbook-active="'.($r['blocking']?'1':'0').'"><div class="card-body"><h2>'.Ui::e($title).'</h2><p role="status" data-playbook-status>'.Ui::e($r['status']).'</p>';

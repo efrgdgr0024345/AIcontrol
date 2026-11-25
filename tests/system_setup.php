@@ -35,9 +35,11 @@ try{
    verifySetup(str_contains($log,'systems.ssh.verification_failed')&&str_contains($log,'public_key_rejected')&&str_contains($log,'"elapsed_ms":123')&&!str_contains($log,'SSH-PRIVATE-STD'),'SSH failure log lost typed details or retained raw output');
   }
   $console=new SystemTerminal($systems,$ssh);$t=$console->connect((int)$s['id'],'owner-one');rejectSetup(fn()=>$console->get($t['id'],'other-owner'));
+  verifySetup($console->current((int)$s['id'],'owner-one')['id']===$t['id']&&$console->current((int)$s['id'],'other-owner')===null,'Console recovery escaped its owning sign-in');
   if($risk==='readonly'){rejectSetup(fn()=>$console->command($t['id'],'owner-one','touch /tmp/forbidden'));$result=$console->command($t['id'],'owner-one','whoami');}
   else{$result=$console->command($t['id'],'owner-one','cd /tmp && printf done');verifySetup($result['cwd']==='/tmp'&&$result['cwd_verified'],'Working directory was not confirmed');}
   verifySetup($result['command']['exit_code']===0&&!str_contains(json_encode($result),'PRIVATE KEY'),'Missing or unsafe console result');$console->disconnect($t['id'],'owner-one');rejectSetup(fn()=>$console->get($t['id'],'owner-one'));
+  verifySetup($console->current((int)$s['id'],'owner-one')===null,'Disconnected console was recovered on navigation');
   $systems->revoke((int)$s['id']);$systems->purge((int)$s['id'],'DELETE SYSTEM '.$s['id']);
  }
  $expired=$setups->prepare('admin');$systems->write('UPDATE system_enrollments SET created_at=? WHERE id=?',[time()-90000,$expired['id']]);

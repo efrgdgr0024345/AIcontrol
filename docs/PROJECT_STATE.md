@@ -184,6 +184,22 @@ The new five-round/Stop/failure test uses synthetic provider replies and actual
 local research actions; no billed call or live-host installation is claimed.
 Required planning-panel CI is verified on the published commit before readiness.
 
+## Website console during guided server actions
+
+An open SSH command line stays on the selected server page while reviewing and
+reconciling guided actions and when opening an agent task. The console remains
+scoped to the original sign-in, selected server and active Systems unlock.
+When a guided action owns the server operation lock, the transcript stays
+visible and command entry is disabled.
+
+The Chromium workflow test uses real protected website forms and synthetic SSH
+and OpenAI replies. It covers the bound setup receipt, pinned host confirmation,
+manual shell output, VPN review and reconciliation, protected key use in the
+agent’s HTTPS Authorization header, an agent-selected shell command, and a final
+summary based on the returned output. Separate local OpenSSH protocol and VPN
+worker tests cover transport and recipe behavior. These checks do not establish
+a live VPS installation, VPN client handshake or billed provider response.
+
 ## Resumable server setup and SSH diagnostics
 
 Saved Linux server links reopen their original enrollment. An existing first

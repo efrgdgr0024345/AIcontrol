@@ -79,6 +79,9 @@ review. Stop never commits a firewall change that is awaiting rollback.
 The short SSH console remains bounded. Longer installations use an explicitly
 approved per-operation detached Python worker with private state/log files and a
 30-minute overall bound. This is a per-action process, not a persistent agent.
+The open console and its transcript remain on the selected server page for the
+same unlocked browser session. Command input is disabled during an active or
+uncertain guided action and becomes available when reconciliation releases it.
 The worker and rollback watchdog inherit a remote execution lock; status checks
 only inspect the same token. Local blocking records exclude console/model steps
 and other guided jobs while a mutation is running or uncertain. Stop pauses

@@ -434,7 +434,18 @@ final class Panel
                 }
                 try{
                     $requestedTerminal=(string)($_GET['terminal']??($terminalId??''));
-                    if($requestedTerminal&&$data['systems']['guard']['unlocked']){$data['systems']['terminal']=(new SystemTerminal($systemStore))->view($requestedTerminal,hash('sha256',session_id()));if((int)$data['systems']['terminal']['system_id']!==(int)($data['systems']['selected']['id']??0))throw new RuntimeException('Console does not belong to the selected system.');}
+                    if($data['systems']['guard']['unlocked']&&$selectedSystem){
+                        $console=new SystemTerminal($systemStore);$owner=hash('sha256',session_id());
+                        if($requestedTerminal!==''){
+                            $terminal=$console->view($requestedTerminal,$owner);
+                            if((int)$terminal['system_id']!==$selectedSystem)throw new RuntimeException('Console does not belong to the selected system.');
+                        }else{
+                            $selected=$data['systems']['selected'];
+                            $terminal=$selected['enabled']&&$selected['verified_at']?$console->current($selectedSystem,$owner):null;
+                        }
+                        $data['systems']['terminal']=$terminal;
+                        $data['systems']['ssh_blocked']=$systemStore->playbookBlocksSsh();
+                    }
                 }catch(Throwable $failure){unset($data['systems']['terminal']);$error=Diagnostics::clean($failure->getMessage());}
                 if($method==='POST')foreach(['discovery_reply','setup_reply','connection_host','connection_port'] as $field)if(is_string($_POST[$field]??null))$data['systems']['setup_values'][$field]=self::input($field);
             }

@@ -116,6 +116,9 @@ host-pinned SSH authentication. Additive system_enrollments/system_terminals
 persist in systems.sqlite. Web console sessions are bound to the creating login,
 expire after 30 minutes, and allow at most 60 bounded commands/hour/system.
 The console is noninteractive; no terminal daemon or external relay is installed.
+The current console remains visible on its server during guided actions. An
+active or uncertain guided action blocks command entry until reconciliation
+releases the operation lock.
 Unused first commands expire after 24 hours. Saved discoveries can resume with
 the same public key and bound receipt. Setup and SSH verification failures
 include a reference tied to a private Admin diagnostic event.
