@@ -4,6 +4,17 @@ namespace AIcontrol;
 
 use RuntimeException;
 
+final class SshConnectionError extends RuntimeException
+{
+    public readonly array $details;
+
+    public function __construct(public readonly string $stage, public readonly string $reason, string $message, array $result=[])
+    {
+        parent::__construct($message);
+        $this->details=array_intersect_key($result,array_flip(['exit_code','timed_out','cancelled','elapsed_ms']));
+    }
+}
+
 /** No shell on the web host. Only the remote, selected account executes commands. */
 final class SshTransport
 {
@@ -36,8 +47,34 @@ final class SshTransport
     public function probe(array $system): string
     {
         $r=self::process(['/usr/bin/ssh-keyscan','-T','5','-t','ed25519','-p',(string)$system['port'],$system['host']],8);
-        foreach(explode("\n",$r['stdout']) as $line){$parts=preg_split('/\s+/',trim($line));if(count($parts)!==3||$parts[1]!=='ssh-ed25519')continue;$raw=base64_decode($parts[2],true);if($raw===false)continue;$fingerprint='SHA256:'.rtrim(base64_encode(hash('sha256',$raw,true)),'=');if(hash_equals($system['fingerprint'],$fingerprint))return $parts[1].' '.$parts[2];}
-        throw new RuntimeException('Server identity could not be verified. Check the address, SSH port and fingerprint printed on your server; a changed key is never accepted automatically.');
+        $observed=false;
+        foreach(explode("\n",$r['stdout']) as $line){
+            $parts=preg_split('/\s+/',trim($line));
+            if(count($parts)!==3||$parts[1]!=='ssh-ed25519')continue;
+            $raw=base64_decode($parts[2],true);
+            if($raw===false||strlen($raw)!==51||substr($raw,0,19)!==pack('N',11).'ssh-ed25519'.pack('N',32))continue;
+            $observed=true;
+            $fingerprint='SHA256:'.rtrim(base64_encode(hash('sha256',$raw,true)),'=');
+            if(hash_equals($system['fingerprint'],$fingerprint))return $parts[1].' '.$parts[2];
+        }
+        if($observed)throw new SshConnectionError('host_identity','fingerprint_mismatch','The SSH host fingerprint differs from the saved fingerprint. Check the address, port and server identity before reconnecting.',$r);
+        if($r['timed_out'])throw new SshConnectionError('host_identity','probe_timeout','The SSH host-key check timed out. Check the SSH port, VPS firewall and whether the website host can make outbound SSH connections.',$r);
+        throw new SshConnectionError('host_identity','host_key_unavailable','The website could not read an ED25519 SSH host key. Check the address, SSH port, VPS firewall and outbound SSH from the website host.',$r);
+    }
+
+    public static function verificationFailure(array $result): SshConnectionError
+    {
+        $stderr=strtolower($result['stderr']??'');
+        [$stage,$reason,$message]=match(true){
+            !empty($result['cancelled'])=>['inspection','cancelled','The SSH verification was cancelled. Open the saved setup before reconnecting.'],
+            !empty($result['timed_out']), str_contains($stderr,'connection timed out')=>['inspection','timeout','SSH verification timed out. Check the SSH service and network path from the website host.'],
+            str_contains($stderr,'host key verification failed'), str_contains($stderr,'remote host identification has changed')=>['host_identity','fingerprint_mismatch','The SSH host key changed between verification and sign-in. Check the server identity before reconnecting.'],
+            preg_match('/permission denied \([^)]*publickey/i',$stderr)===1=>['authentication','public_key_rejected','The SSH server rejected the connection key. Run command 2 from this saved setup and check its dedicated Linux account.'],
+            str_contains($stderr,'connection refused'), str_contains($stderr,'no route to host')=>['authentication','connection_unavailable','The website could not open the SSH connection. Check the address, SSH port, and firewall.'],
+            ($result['exit_code']??null)===255=>['authentication','ssh_failed','The SSH client could not establish a verified session. Check the SSH service, the dedicated account and the server’s SSH log.'],
+            default=>['inspection','inspection_failed','The SSH inspection did not complete successfully. Check the setup account and the server’s timeout utility.'],
+        };
+        return new SshConnectionError($stage,$reason,$message,$result);
     }
 
     public function execute(array $system,string $private,string $command,string $directory,callable $cancel): array

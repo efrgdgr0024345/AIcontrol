@@ -31,9 +31,20 @@ No previous PIN, provider key, signing identity or project is reset.
 Commands are single shell lines containing an embedded base64 Python program,
 not a curl-to-shell installer. Neither command includes an application API key,
 PIN, SSH private key or browser session. The formatted reports contain public
-connection/enrollment metadata. They expire for unfinished setup after 24 hours.
-Both scripts are idempotent for the same enrollment; an unrecognised existing
-account/home is not adopted. Changing risk creates a separate enrollment/account.
+connection/enrollment metadata.
+Unused first commands expire after 24 hours. Once AIcontrol has accepted the
+first reply, open the saved server to resume with its existing command and key.
+**Resume a setup from the first reply** finds the matching enrollment regardless
+of the risk picker. It still validates the original challenge, account, risk
+level and server identity. Both scripts are idempotent for the same enrollment.
+Changing risk creates a separate enrollment and account.
+
+The Systems page shows whether discovery, the SSH receipt or verified access is
+the next step. Failed setup and verification actions show a reference you can
+find in **Admin → Detailed error and research log**. The log distinguishes
+receipt rejection, hosting limitations, host identity checks, key rejection and
+inspection failure. It omits discovery and receipt bodies, SSH private keys,
+and raw SSH output from these failure events.
 
 The first command collects local addresses and the active SSH session port (or
 sshd's effective listening port). It optionally queries https://api.ipify.org

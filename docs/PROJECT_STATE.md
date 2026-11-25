@@ -184,6 +184,23 @@ The new five-round/Stop/failure test uses synthetic provider replies and actual
 local research actions; no billed call or live-host installation is claimed.
 Required planning-panel CI is verified on the published commit before readiness.
 
+## Resumable server setup and SSH diagnostics
+
+Saved Linux server links reopen their original enrollment. An existing first
+reply can also select its matching setup without preparing another command.
+AIcontrol checks the same enrollment challenge, account, risk and host
+identity. Accepted discoveries remain resumable after the 24-hour window for
+unused first commands.
+
+Systems shows the next setup step per account and reports the SSH verification
+failure when it can classify it. Failure references correlate with stage,
+reason and available exit status and timing in the private Admin log. These
+failure records omit pasted replies and raw SSH output.
+
+PHP and Chromium fixtures check resume, key reuse, rejection, diagnostics and
+the two-command flow. Live cPanel and VPS verification are independent of these
+synthetic checks.
+
 ## Two-command server setup, risk accounts and web console (2026-11-15 AWST)
 
 Systems now offers a risk dropdown, one discovery/account-setup command, a first

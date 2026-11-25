@@ -170,6 +170,7 @@ final class Panel
                 session_write_close();NasaActions::serve($directory,$action,self::entry());return;
             } elseif (str_starts_with($action,'system_')) {
                 $json=($_GET['systems_api']??'')==='1';
+                $setupStage=null;
                 try {
                     if($config['access_mode']==='testing')throw new RuntimeException('Systems control requires PIN, password or host-authenticated access.');
                     $systems=new Systems($directory);$id=(int)self::input('system_id');$runId=(int)self::input('run_id');$systemOwner=hash('sha256',session_id());$enrollmentId=self::input('enrollment_id');$terminalId=self::input('terminal_id');$terminalResult=null;
@@ -193,14 +194,21 @@ final class Panel
                         if($json){$op=$playbooks->get($operationId,$id);header('Content-Type: application/json');echo json_encode(['playbook'=>array_intersect_key($op,array_flip(['id','system_id','status','blocking']))],JSON_THROW_ON_ERROR);return;}
                         header('Location: '.self::entry().'?view=systems&system='.$id.'&operation='.$operationId.'#server-operation',true,303);return;
                     }
-                    elseif($action==='system_prepare'){$enrollment=(new SystemEnrollment($systems))->prepare(self::input('risk_level'));$enrollmentId=$enrollment['id'];}
-                    elseif($action==='system_import_discovery'){$enrollment=(new SystemEnrollment($systems))->importDiscovery($enrollmentId,self::input('discovery_reply'));$id=(int)$enrollment['system_id'];}
+                    elseif($action==='system_prepare'){$setupStage='prepare';$enrollment=(new SystemEnrollment($systems))->prepare(self::input('risk_level'));$enrollmentId=$enrollment['id'];}
+                    elseif($action==='system_import_discovery'){
+                        $setupStage='discovery';
+                        $enrollment=(new SystemEnrollment($systems))->importDiscovery($enrollmentId,self::input('discovery_reply'));
+                        $enrollmentId=$enrollment['id'];$id=(int)$enrollment['system_id'];
+                    }
                     elseif($action==='system_connect'){
+                        $setupStage='receipt';
                         $enrollments=new SystemEnrollment($systems);$s=$enrollments->receipt($enrollmentId,self::input('setup_reply'));$id=(int)$s['id'];
+                        $setupStage='network_address';
                         $host=strtolower(trim(self::input('connection_host')));$port=self::input('connection_port');
                         if((!filter_var($host,FILTER_VALIDATE_IP)&&!preg_match('/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/D',$host))||!ctype_digit($port)||(int)$port<1||(int)$port>65535)throw new RuntimeException('Enter a valid connection address and SSH port.');
                         if($systems->query('SELECT id FROM system_terminals WHERE system_id=? AND enabled=1 AND expires_at>?',[$id,time()])&&($s['host']!==$host||(int)$s['port']!==(int)$port))throw new RuntimeException('Disconnect existing consoles before changing the connection address.');
                         $systems->write('UPDATE systems SET host=?,port=? WHERE id=?',[$host,(int)$port,$id]);
+                        $setupStage='ssh_verification';
                         $terminal=(new SystemTerminal($systems))->connect($id,$systemOwner);$terminalId=$terminal['id'];$runId=(int)$terminal['run_id'];
                     }
                     elseif($action==='system_console_connect'){$terminal=(new SystemTerminal($systems))->connect($id,$systemOwner);$terminalId=$terminal['id'];$runId=(int)$terminal['run_id'];}
@@ -221,8 +229,16 @@ final class Panel
                     if($json){header('Content-Type: application/json');echo json_encode(['run'=>$runId&&!str_starts_with($action,'system_guard_')?$systems->run($runId):null,'terminal_result'=>$terminalResult],JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);return;}
                     header('Location: '.self::entry().'?view=systems&system='.$id.($runId?'&system_run='.$runId:'').($enrollmentId?'&enrollment='.$enrollmentId:'').($terminalId?'&terminal='.$terminalId.'#ssh-console':''),true,303);return;
                 }catch(Throwable $failure){
-                    Diagnostics::record('systems.action.failed',['action'=>$action],$failure);http_response_code(422);$error=Diagnostics::clean($failure->getMessage());
-                    if($json){header('Content-Type: application/json');echo json_encode(['error'=>$error],JSON_INVALID_UTF8_SUBSTITUTE);return;}
+                    $context=['action'=>$action,'system_id'=>$id??0];
+                    if($setupStage!==null){
+                        $context['stage']=$failure instanceof SshConnectionError?$failure->stage:$setupStage;
+                        if($failure instanceof SshConnectionError)$context['reason']=$failure->reason;
+                        if(preg_match('/^[a-f0-9]{32}$/D',$enrollmentId??''))$context['enrollment_id']=$enrollmentId;
+                    }
+                    Diagnostics::record($setupStage!==null?'systems.setup.failed':'systems.action.failed',$context,$failure);
+                    http_response_code(422);$error=Diagnostics::clean($failure->getMessage());
+                    if($json){header('Content-Type: application/json');echo json_encode(['error'=>$error,'request_id'=>Diagnostics::requestId(),'stage'=>$context['stage']??null],JSON_INVALID_UTF8_SUBSTITUTE);return;}
+                    if($setupStage!==null)$error.=' Find reference '.Diagnostics::requestId().' in Admin diagnostics.';
                 }
             } elseif ($action === 'admin_project_json') {
                 try {
@@ -406,12 +422,21 @@ final class Panel
                 $data['systems']['guard']=(new SystemGuard($systemStore))->state();
                 $selectedSystem=(int)($data['systems']['selected']['id']??0);
                 if($selectedSystem){$data['systems']['notebook']=(new SystemNotebook($systemStore))->view($selectedSystem);if($data['systems']['guard']['unlocked']){$books=new SystemPlaybooks($systemStore);$data['systems']['playbooks']=$books->history($selectedSystem);$requestedOperation=(string)($_GET['operation']??($operationId??''));if($requestedOperation)try{$data['systems']['playbook']=$books->get($requestedOperation,$selectedSystem);}catch(Throwable $failure){$error='The selected server action is unavailable.';}}}
-                try{if($data['systems']['guard']['unlocked'])$data['systems']['setup']=(new SystemEnrollment($systemStore))->view((string)($_GET['enrollment']??($enrollmentId??'')));}catch(Throwable $failure){$error=Diagnostics::clean($failure->getMessage());}
+                try{
+                    if($data['systems']['guard']['unlocked']){
+                        $requestedEnrollment=(string)($_GET['enrollment']??($enrollmentId??''));
+                        if($requestedEnrollment==='')$requestedEnrollment=(string)($data['systems']['selected']['enrollment_id']??'');
+                        $data['systems']['setup']=(new SystemEnrollment($systemStore))->view($requestedEnrollment);
+                    }
+                }catch(Throwable $failure){
+                    Diagnostics::record('systems.setup.open_failed',['system_id'=>$selectedSystem],$failure);
+                    if($error==='')$error=Diagnostics::clean($failure->getMessage()).' Find reference '.Diagnostics::requestId().' in Admin diagnostics.';
+                }
                 try{
                     $requestedTerminal=(string)($_GET['terminal']??($terminalId??''));
                     if($requestedTerminal&&$data['systems']['guard']['unlocked']){$data['systems']['terminal']=(new SystemTerminal($systemStore))->view($requestedTerminal,hash('sha256',session_id()));if((int)$data['systems']['terminal']['system_id']!==(int)($data['systems']['selected']['id']??0))throw new RuntimeException('Console does not belong to the selected system.');}
                 }catch(Throwable $failure){unset($data['systems']['terminal']);$error=Diagnostics::clean($failure->getMessage());}
-                if($method==='POST')foreach(['discovery_reply','setup_reply','connection_host','connection_port'] as $field)$data['systems']['setup_values'][$field]=self::input($field);
+                if($method==='POST')foreach(['discovery_reply','setup_reply','connection_host','connection_port'] as $field)if(is_string($_POST[$field]??null))$data['systems']['setup_values'][$field]=self::input($field);
             }
         }
         if ($authenticated && $view === 'research') { $data['research'] = (new Research($directory))->snapshot(); $data['research']['owner_controls']=$config['access_mode']!=='testing'; $data['research']['workspace'] = (new Investigation($directory))->workspace((int)($_GET['project'] ?? 0), (int)($_GET['run'] ?? 0),($_GET['new']??'')==='1'||(($action??'')==='research_project'&&$error!=='')); }

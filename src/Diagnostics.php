@@ -6,6 +6,10 @@ namespace AIcontrol;
 final class Diagnostics
 {
     private static ?string $request = null;
+    public static function requestId(): string
+    {
+        return self::$request??=bin2hex(random_bytes(8));
+    }
     public static function install(): void
     {
         set_error_handler(static function(int $severity,string $message,string $file,int $line): bool {
@@ -40,13 +44,12 @@ final class Diagnostics
         try {
             $directory=getenv('AICONTROL_PRIVATE_DIR'); if (!is_string($directory)||$directory==='') return;
             $path=$directory.'/diagnostics.jsonl'; if (is_link($path)) return;
-            self::$request??=bin2hex(random_bytes(8));
             if ($error) {
                 $context['exception']=['class'=>get_class($error),'message'=>$error->getMessage(),'code'=>$error->getCode(),
                     'file'=>basename($error->getFile()),'line'=>$error->getLine(),
                     'trace'=>array_map(static fn(array $f):array=>array_intersect_key($f,array_flip(['function','class','type','line'])),array_slice($error->getTrace(),0,15))];
             }
-            $row=['utc'=>gmdate('c'),'request_id'=>self::$request,'event'=>$event,'context'=>$context];
+            $row=['utc'=>gmdate('c'),'request_id'=>self::requestId(),'event'=>$event,'context'=>$context];
             $line=self::clean(json_encode($row,JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE));
             if (strlen($line)>16000) $line=json_encode(['utc'=>$row['utc'],'request_id'=>self::$request,'event'=>$event,'truncated'=>true,'detail'=>substr($line,0,12000)],JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR);
             $line.="\n";

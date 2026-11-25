@@ -21,7 +21,7 @@ final class SystemEnrollment
     {
         if(!preg_match('/^[a-f0-9]{32}$/D',$id))throw new RuntimeException('Choose a valid setup.');
         $e=$this->systems->query('SELECT * FROM system_enrollments WHERE id=?',[$id])[0]??throw new RuntimeException('This setup is unavailable. Prepare a new command.');
-        if($e['created_at']<time()-86400&&$e['state']!=='connected')throw new RuntimeException('This setup expired. Prepare a new command.');
+        if(!$e['system_id']&&$e['created_at']<time()-86400)throw new RuntimeException('This unused first command expired. Prepare a new first command and run it on the server.');
         return $e;
     }
     public static function parse(string $text,string $kind): array
@@ -48,8 +48,10 @@ final class SystemEnrollment
     }
     public function importDiscovery(string $id,string $text): array
     {
-        $e=$this->get($id);$d=self::parse($text,'discovery');$this->bound($e,$d,$e['challenge']);
-        if(!is_string($d['host_key']??null)||self::fingerprint($d['host_key'])!==($d['host_fingerprint']??null)||!preg_match('/^[a-f0-9]{64}$/D',$d['machine_tag']??'')||!is_int($d['uid']??null)||$d['uid']<1||($d['home_dir']??'')!=='/var/lib/aicontrol/homes/'.$e['username']||($d['sudo_granted']??null)!==($e['risk_level']==='admin'))throw new RuntimeException('The discovered identity or risk permissions are invalid. Rerun command 1 on the selected server.');
+        $d=self::parse($text,'discovery');
+        if($id==='')$id=is_string($d['enrollment_id']??null)?$d['enrollment_id']:'';
+        $e=$this->get($id);$this->bound($e,$d,$e['challenge']);
+        if(!is_string($d['host_key']??null)||self::fingerprint($d['host_key'])!==($d['host_fingerprint']??null)||!is_string($d['machine_tag']??null)||!preg_match('/^[a-f0-9]{64}$/D',$d['machine_tag'])||!is_int($d['uid']??null)||$d['uid']<1||($d['home_dir']??'')!=='/var/lib/aicontrol/homes/'.$e['username']||($d['sudo_granted']??null)!==($e['risk_level']==='admin'))throw new RuntimeException('The discovered identity or risk permissions are invalid. Rerun command 1 on the selected server.');
         if(!is_string($d['connection_host']??null)||!filter_var($d['connection_host'],FILTER_VALIDATE_IP)||!is_int($d['ssh_port']??null)||$d['ssh_port']<1||$d['ssh_port']>65535||!is_string($d['hostname']??null)||strlen($d['hostname'])>120)throw new RuntimeException('The report must contain a valid connection IP address, SSH port and hostname.');
         $safe=array_intersect_key($d,array_flip(['format','enrollment_id','risk_level','username','challenge','machine_tag','hostname','connection_host','ssh_port','host_key','host_fingerprint','uid','home_dir','sudo_granted']));
         $safe['addresses']=array_values(array_slice(array_filter(is_array($d['addresses']??null)?$d['addresses']:[],static fn($v)=>is_string($v)&&filter_var($v,FILTER_VALIDATE_IP)),0,32));

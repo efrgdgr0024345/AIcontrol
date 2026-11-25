@@ -108,7 +108,7 @@ PHP host. An external relay is not included. Private systems.sqlite persists acr
 updates; Admin inventories it. Disconnect/delete is explicit in Systems, separate
 from project resets. See SYSTEMS.md for exact access and uncertainty semantics.
 
-Two-command Systems setup defaults (2026-11-15 AWST): Low/Read-only, a unique
+Two-command Systems setup defaults: Low/Read-only, a unique
 locked-password account and no sudo. Medium grants an account-level shell; High
 explicitly creates a full passwordless sudo policy. Root/Python 3 is needed on
 the target for setup. Finished setup requires both bound replies and actual
@@ -116,6 +116,9 @@ host-pinned SSH authentication. Additive system_enrollments/system_terminals
 persist in systems.sqlite. Web console sessions are bound to the creating login,
 expire after 30 minutes, and allow at most 60 bounded commands/hour/system.
 The console is noninteractive; no terminal daemon or external relay is installed.
+Unused first commands expire after 24 hours. Saved discoveries can resume with
+the same public key and bound receipt. Setup and SSH verification failures
+include a reference tied to a private Admin diagnostic event.
 See SYSTEM_SETUP.md for server-side enforcement and account removal semantics.
 
 Security boundaries (2026-11-22): pasted bootstrap and new readonly inspector

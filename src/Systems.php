@@ -59,7 +59,7 @@ final class Systems
     }
     public function snapshot(int $id=0,int $run=0): array
     {
-        $systems=$this->query('SELECT * FROM systems ORDER BY id DESC');$selected=$id?$this->system($id):null;
+        $systems=$this->query('SELECT s.*, e.state AS setup_state FROM systems s LEFT JOIN system_enrollments e ON e.id=s.enrollment_id AND e.system_id=s.id ORDER BY s.id DESC');$selected=$id?$this->system($id):null;
         $runs=$id?$this->query('SELECT * FROM system_runs WHERE system_id=? ORDER BY id DESC LIMIT 50',[$id]):[];
         $current=$run?$this->run($run):($runs[0]??null);if($current&&(!$selected||(int)$current['system_id']!==$id))throw new RuntimeException('Task does not belong to this system.');
         return ['systems'=>$systems,'selected'=>$selected,'runs'=>$runs,'run'=>$current,'messages'=>$current?$this->query('SELECT * FROM system_messages WHERE run_id=? ORDER BY id',[$current['id']]):[],'commands'=>$current?$this->query('SELECT * FROM system_commands WHERE run_id=? ORDER BY id',[$current['id']]):[],'script'=>$selected&&$selected['enabled']&&$selected['risk_level']==='legacy'?$this->script($id):'','runner_available'=>SshTransport::available()];
@@ -92,8 +92,22 @@ final class Systems
     public function verify(int $id,?object $transport=null): void
     {
         $this->requireNoPlaybook();$s=$this->system($id);if(!$s['enabled'])throw new RuntimeException('This system is disconnected. Add it again to issue a new key.');$transport??=new SshTransport();
-        try{$s['host_key']=$transport->probe($s);$r=$transport->execute($s,$this->privateKey($id),SystemsAgent::INSPECT['system_info'],$this->directory,fn()=>!(bool)$this->system($id)['enabled']);if($r['exit_code']!==0||$r['timed_out']||$r['cancelled'])throw new RuntimeException('SSH authentication or inspection failed. Check the setup script, account permissions and timeout utility.');
+        $stage='host_identity';
+        try{
+            if($transport instanceof SshTransport&&!SshTransport::available())throw new SshConnectionError('hosting','runner_unavailable','The website host needs PHP proc_open, /usr/bin/ssh and /usr/bin/ssh-keyscan to verify this connection.');
+            $s['host_key']=$transport->probe($s);
+            $stage='connection_key';
+            $private=$this->privateKey($id);
+            $stage='inspection';
+            $r=$transport->execute($s,$private,SystemsAgent::INSPECT['system_info'],$this->directory,fn()=>!(bool)$this->system($id)['enabled']);
+            if($r['exit_code']!==0||$r['timed_out']||$r['cancelled'])throw SshTransport::verificationFailure($r);
             $this->write('UPDATE systems SET host_key=?,verified_at=?,facts=?,error=NULL WHERE id=? AND enabled=1',[$s['host_key'],time(),Diagnostics::clean($r['stdout']),$id]);$this->observe($id,'SSH connection check','verified',['results'=>[['tool'=>'system_info','result'=>$r]]]);
-        }catch(\Throwable $e){$this->write('UPDATE systems SET verified_at=NULL,error=? WHERE id=?',[Diagnostics::clean($e->getMessage()),$id]);throw $e;}
+        }catch(\Throwable $e){
+            $details=['system_id'=>$id,'stage'=>$stage];
+            if($e instanceof SshConnectionError)$details=array_merge($details,['stage'=>$e->stage,'reason'=>$e->reason],$e->details);
+            Diagnostics::record('systems.ssh.verification_failed',$details);
+            $this->write('UPDATE systems SET verified_at=NULL,error=? WHERE id=?',[Diagnostics::clean($e->getMessage()).' Reference: '.Diagnostics::requestId().'.',$id]);
+            throw $e;
+        }
     }
 }

@@ -24,7 +24,19 @@ final class SystemsView
         foreach([['name','System name','text','120','Web server'],['host','IP address or hostname','text','253','192.0.2.10'],['port','SSH port','number','5','22'],['username','Linux account','text','32','aicontrol']] as [$name,$label,$type,$max,$value])echo '<label class="form-label" for="system-'.$name.'">'.$label.'</label><input class="form-control" id="system-'.$name.'" name="'.$name.'" type="'.$type.'" maxlength="'.$max.'" value="'.($name==='port'||$name==='username'?$value:'').'" placeholder="'.$value.'" required>';
         echo '<label class="form-label" for="system-access">Agent access</label><select class="form-select" id="system-access" name="access"><option value="inspect">Inspection — fixed diagnostic commands</option><option value="maintain">Maintenance — shell commands within the Linux account’s permissions</option></select><p>Manual setup grants no sudo privileges. Maintenance can change files and services only where this account already has permission.</p><button class="btn btn-primary">Add server and generate setup script</button></form></details></details>';
         if(!$data['systems'])echo '<p class="mt-3">No Linux servers saved yet.</p>';
-        echo '<ul class="systems-list mt-3">';foreach($data['systems'] as $s)echo '<li><a href="/loader.php?view=systems&amp;system='.(int)$s['id'].'">'.Ui::e($s['name']).'</a> · '.Ui::e($s['host']).' · '.(!$s['enabled']?'Disconnected':($s['verified_at']?'Connection tested':'Setup pending')).'</li>';echo '</ul></div></section>';
+        echo '<ul class="systems-list mt-3">';
+        foreach($data['systems'] as $s){
+            $status=match(true){
+                !$s['enabled']=>'Disconnected',
+                (bool)$s['verified_at']=>'Connection verified',
+                !empty($s['error'])=>'SSH verification failed',
+                ($s['setup_state']??null)==='discovered'=>'Waiting for command 2 receipt',
+                in_array($s['setup_state']??null,['configured','connected'],true)=>'Receipt saved · SSH verification pending',
+                default=>'SSH setup pending',
+            };
+            echo '<li><a href="/loader.php?view=systems&amp;system='.(int)$s['id'].'">'.Ui::e($s['name']).'</a> · '.Ui::e($s['username'].'@'.$s['host']).' · '.Ui::e($status).'</li>';
+        }
+        echo '</ul></div></section>';
         $s=$data['selected'];if(!$s)return;$id=(int)$s['id'];SystemOperationsView::workspace($s,$data,$csrf,true);
         echo '<section class="card mb-3 systems-section"><div class="card-body"><h2>'.Ui::e($s['name']).'</h2><p>'.Ui::e($s['username'].'@'.$s['host'].':'.$s['port'].' · '.$s['access']).'</p>';
         if(!$s['enabled']){if(!$s['key_deleted_at']){echo '<p>Credential deletion is unconfirmed. Retry disconnect after checking the private vault.</p>';self::form($csrf,'system_revoke',$id,'Retry disconnect and delete local SSH key');}echo '<p>Disconnected. Local SSH execution is disabled. '.($s['key_deleted_at']?'The local private key was deleted.':'').' Remove the authorized_keys line ending <code>aicontrol-system-'.$id.'</code> on the server to revoke its public key there.</p><details><summary>Delete saved system and task logs</summary><form method="post" action="/loader.php?view=systems" class="systems-form">'.$csrf.'<input type="hidden" name="action" value="system_delete"><input type="hidden" name="system_id" value="'.$id.'"><label class="form-label" for="system-delete-confirm">Type DELETE SYSTEM '.$id.'</label><input id="system-delete-confirm" class="form-control" name="confirmation" required autocomplete="off"><button class="btn btn-outline-danger">Delete saved system and task logs</button></form></details>';}
@@ -34,7 +46,7 @@ final class SystemsView
                 echo '<form method="post" action="/loader.php?view=systems" class="systems-form">'.$csrf.'<input type="hidden" name="action" value="system_test"><input type="hidden" name="system_id" value="'.$id.'"><label class="form-label" for="system-fingerprint">Server SHA256 fingerprint</label><input class="form-control" id="system-fingerprint" name="fingerprint" value="'.Ui::e($s['fingerprint']).'" required placeholder="SHA256:…"><button class="btn btn-outline-primary">Verify identity and test SSH</button></form>';
             }else echo '<p>Risk: <strong>'.Ui::e(SystemRisk::level($s['risk_level'])['label']).'</strong> · <a class="text-decoration-underline" href="/loader.php?view=systems&amp;system='.$id.'&amp;enrollment='.Ui::e($s['enrollment_id']??'').'">Open this server’s two-command setup</a></p>';
             if($s['verified_at'])echo '<p>Last successful check: '.Ui::e(Ui::time(gmdate('c',(int)$s['verified_at']))).'. Each SSH connection checks the pinned server key.</p>';
-            if($s['error'])echo '<p class="alert alert-warning">'.Ui::e($s['error']).'</p>';
+            if($s['error'])echo '<p class="alert alert-warning">'.Ui::e($s['error']).' <a href="/loader.php?view=admin#diagnostics-report">Open Admin diagnostics</a>.</p>';
             if($s['facts'])echo '<details><summary>Last observed system information</summary><pre class="systems-code">'.Ui::e($s['facts']).'</pre></details>';
             SystemTerminalView::render($s,$data['terminal']??null,$csrf);
             if($s['verified_at']){

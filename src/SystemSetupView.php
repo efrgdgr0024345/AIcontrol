@@ -13,19 +13,36 @@ final class SystemSetupView
     {
         echo '<label class="form-label" for="'.$id.'">'.Ui::e($label).'</label><textarea id="'.$id.'" class="form-control systems-code system-one-command" rows="3" readonly spellcheck="false">'.Ui::e($command).'</textarea><button type="button" class="btn btn-outline-primary mt-2" data-copy-report="'.$id.'">Copy '.Ui::e(strtolower($label)).'</button><span class="ms-2" role="status" data-copy-report-status></span><details class="mt-2"><summary>Review what this command runs</summary><pre class="systems-code system-script-preview">'.Ui::e($script).'</pre></details>';
     }
+    private static function discoveryForm(string $csrf,string $id,string $value,string $label,string $button): void
+    {
+        $field=$id===''?'system-resume-reply':'system-discovery-reply';
+        echo '<form method="post" action="/loader.php?view=systems" class="systems-form">'.$csrf.'<input type="hidden" name="action" value="system_import_discovery"><input type="hidden" name="enrollment_id" value="'.Ui::e($id).'"><label class="form-label" for="'.$field.'">'.Ui::e($label).'</label><textarea class="form-control systems-code" id="'.$field.'" name="discovery_reply" rows="8" required placeholder="Paste from BEGIN AICONTROL DISCOVERY V1 through END AICONTROL DISCOVERY V1">'.Ui::e($value).'</textarea><button class="btn btn-primary">'.Ui::e($button).'</button></form>';
+    }
     public static function render(?array $e,string $csrf,array $values=[]): void
     {
         $risk=$e['risk_level']??'readonly';
         echo '<section class="card mb-3 systems-section" id="server-setup" data-vps-connection><div class="card-body"><h2>Connect a DigitalOcean VPS</h2><p>Connect an existing Linux Droplet or another Linux VPS in two commands. Open the Droplet console in <a class="text-decoration-underline" href="https://cloud.digitalocean.com/droplets" target="_blank" rel="noopener noreferrer">DigitalOcean</a>, or use your existing SSH terminal. Run each command there, then paste its complete formatted reply below. Python 3 and sudo or root access are required.</p><form method="post" action="/loader.php?view=systems" class="systems-form" data-system-risk-form>'.$csrf.'<input type="hidden" name="action" value="system_prepare"><label class="form-label" for="setup-risk">Server risk level</label><select class="form-select" id="setup-risk" name="risk_level" data-system-risk>';
         foreach(SystemRisk::LEVELS as $key=>$level)echo '<option value="'.$key.'"'.($key===$risk?' selected':'').'>'.Ui::e($level['label']).'</option>';
         echo '</select><p data-system-risk-description>'.Ui::e(SystemRisk::level($risk)['description']).'</p><button class="btn btn-primary">Prepare first command</button><noscript><p>Choose the risk level, then prepare the command.</p></noscript></form>';
+        echo '<details'.(!$e&&isset($values['discovery_reply'])?' open':'').'><summary>Resume a setup from the first reply</summary><p>Paste the discovery reply from the first command. AIcontrol will open the matching setup and reuse its existing key if one was already issued.</p>';
+        self::discoveryForm($csrf,'',$e?'':($values['discovery_reply']??''),'Saved discovery reply','Resume matching setup');
+        echo '</details>';
         if(!$e){echo '<p>The first command creates an account for your chosen risk level and reports the server’s addresses, SSH port and public host fingerprint. It optionally looks up the public IP through ipify; the connection address remains editable for NAT or private networks.</p></div></section>';return;}
         if(isset($e['system'])&&!$e['system']['enabled']){echo '<p>This setup is disconnected. Prepare a new first command to issue a new account and key.</p></div></section>';return;}
         echo '<p><strong>'.Ui::e(SystemRisk::level($risk)['label']).'</strong> · Dedicated account <code>'.Ui::e($e['username']).'</code>. Changing the risk selection prepares a different account and setup.</p>';
+        $status=match($e['state']){
+            'discovered'=>'Discovery saved. Run command 2 on this server and paste the SSH setup receipt.',
+            'configured'=>'SSH setup receipt saved. Verify the SSH connection to finish.',
+            'connected'=>empty($e['system']['verified_at'])?'SSH setup receipt saved. Verify the SSH connection again.':'SSH connection verified.',
+            default=>'First command prepared. Run it on the server and paste the discovery reply.',
+        };
+        echo '<p role="status" data-system-setup-stage>'.Ui::e($status).'</p>';
         if($risk==='admin')echo '<p class="alert alert-warning">Administrator gives this dedicated account full passwordless sudo. Command 1 creates that grant on the server.</p>';
         echo '<details'.(!$e['system_id']?' open':'').'><summary>1. Create the account and discover the server</summary>';
         self::command('system-discovery-command','First command',$e['command1'],$e['script1']);
-        echo '<form method="post" action="/loader.php?view=systems" class="systems-form">'.$csrf.'<input type="hidden" name="action" value="system_import_discovery"><input type="hidden" name="enrollment_id" value="'.$e['id'].'"><label class="form-label" for="system-discovery-reply">First reply — server details</label><textarea class="form-control systems-code" id="system-discovery-reply" name="discovery_reply" rows="8" required placeholder="Paste from BEGIN AICONTROL DISCOVERY V1 through END AICONTROL DISCOVERY V1">'.Ui::e($values['discovery_reply']??($e['discovery_json']?'---BEGIN AICONTROL DISCOVERY V1---'."\n".$e['discovery_json']."\n".'---END AICONTROL DISCOVERY V1---':'')).'</textarea><button class="btn btn-primary">Use discovery reply</button></form></details>';
+        $savedDiscovery=$e['discovery_json']?'---BEGIN AICONTROL DISCOVERY V1---'."\n".$e['discovery_json']."\n".'---END AICONTROL DISCOVERY V1---':'';
+        self::discoveryForm($csrf,$e['id'],$values['discovery_reply']??$savedDiscovery,'First reply — server details','Use discovery reply');
+        echo '</details>';
         if(!$e['system_id']){echo '</div></section>';return;}
         $s=$e['system'];
         echo '<section class="mt-3"><h3>2. Install the SSH key and connect</h3><p>Command 2 checks the same account, machine and host key, installs this setup’s public key, and returns a matching receipt. The private key stays encrypted in AIcontrol.</p>';
