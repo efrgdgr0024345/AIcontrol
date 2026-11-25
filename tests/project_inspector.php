@@ -5,7 +5,7 @@ use AIcontrol\ProjectInspector;
 umask(0077);$dir=sys_get_temp_dir().'/aicontrol-inspect-'.bin2hex(random_bytes(6));mkdir($dir,0700);putenv('AICONTROL_PRIVATE_DIR='.$dir);putenv('AICONTROL_OPENAI_API_KEY=PRIVATE-INSPECT-KEY');$checks=0;
 function verify(bool $ok,string $message):void{global $checks;if(!$ok)throw new RuntimeException($message);$checks++;}
 function denied(callable $work,string $message):void{$blocked=false;try{$work();}catch(Throwable){$blocked=true;}verify($blocked,$message);}
-function state(PDO $db):string{$all=[];foreach($db->query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")->fetchAll(PDO::FETCH_COLUMN) as $table)$all[$table]=$db->query('SELECT * FROM '.$table.' ORDER BY id')->fetchAll(PDO::FETCH_ASSOC);return json_encode($all,JSON_THROW_ON_ERROR);}
+function state(PDO $db):string{$all=[];foreach($db->query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")->fetchAll(PDO::FETCH_COLUMN) as $table)$all[$table]=$db->query('SELECT * FROM '.$table.' ORDER BY rowid')->fetchAll(PDO::FETCH_ASSOC);return json_encode($all,JSON_THROW_ON_ERROR);}
 try {
  $research=new AIcontrol\Research($dir);$a=$research->create('Selected project','Selected question?');$b=$research->create('Other project','PRIVATE OTHER PROJECT CONTENT');$empty=$research->create('Empty project','No investigation yet?');
  (new AIcontrol\Vault($dir))->change('hidden','note','PRIVATE VAULT NOTE',false);
