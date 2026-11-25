@@ -23,6 +23,7 @@ private records persist on the hosting server.
 | New research investigations | Exploration-first `flow_version=2`: provisional model growth, explicit selected-branch Evidence lock-in; saved runs retain their flow |
 | Task/chat model | `gpt-4.1-mini`, overridden only by server `AICONTROL_OPENAI_MODEL` |
 | AI key | Server `AICONTROL_OPENAI_API_KEY`; never browser/source/chat |
+| Research term help | Local highlighting; explicit click only; gpt-5.4-nano, no tools, 700-character context, 160 output tokens, 20 seconds; saved source-aware definitions; separate workspace 30-call/US$0.01 rolling hour including unverified reservations |
 | Task agent bounds | One active run, three requests/hour, 1,000 output tokens/call |
 | Research bounds | One active investigation/pending request; 30 calls/hour shared with chat/Learn; 3,200 output tokens for new specialist flows, 1,600 for legacy/Learn; 60 seconds |
 | Evidence lock-in | New flow: N selected branches need N+4 available calls (plan, N searches + Challenge, extraction, verifier); searches advance explicitly; one optional repair per round. Saved version-one runs retain prior bounds |

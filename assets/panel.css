@@ -1214,3 +1214,15 @@ body.research-map-open { overflow:hidden; }
  .systems-enrollment > summary { color:#dfeef7; background:#173147; border-color:#567083; }
  .systems-privacy summary { color:#dfeef7; }
 }
+
+/* Context explanations never dispatch on hover; marks remain normal inline text. */
+.term-help-word { display:inline; padding:0 1px; margin:0; border:0; border-bottom:1px dotted #39849b; border-radius:2px; background:transparent; color:inherit; font:inherit; line-height:inherit; text-align:inherit; cursor:help; text-decoration:none; }
+.term-help-word:hover,.term-help-word:focus-visible { background:#dceef4; color:#123b50; }
+.mindmap .term-help-word:hover,.mindmap .term-help-word:focus-visible { color:#f1fbff; background:#244c65; }
+.term-help-panel { position:fixed; inset:auto; margin:0; box-sizing:border-box; padding:20px; max-width:calc(100vw - 24px); max-height:min(420px,70dvh); overflow:auto; border:1px solid #7f9dad; border-radius:12px; background:#fff; color:#202631; z-index:12000; box-shadow:0 8px 32px #0005; }
+.term-help-panel h3 { margin:0 30px 10px 0; font-size:1.05rem; color:inherit; }
+.term-help-panel p { color:inherit; line-height:1.6; overflow-wrap:anywhere; }
+.term-help-panel .term-help-note { font-size:.78rem; color:#455b6c; }
+.term-help-panel .term-help-definition { white-space:pre-line; }
+.term-help-close { position:absolute; top:8px; right:8px; min-width:36px; min-height:36px; border:0; border-radius:6px; background:transparent; color:inherit; font-size:1.3rem; }
+@media(prefers-color-scheme:dark) { .term-help-panel { background:#14283b; color:#e5f2fc; border-color:#82a9bc; }.term-help-panel .term-help-note { color:#bfd4e2; } }

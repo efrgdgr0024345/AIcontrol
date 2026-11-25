@@ -53,6 +53,7 @@ jobs:
           php tests/admin_data.php
           python3 -B -m unittest -v tests/admin_http.py
           php tests/research_brief_suggest.php
+          php tests/term_help.php
           python3 -B -m unittest -v tests/brief_http.py
           php tests/diagnostics.php
           php tests/investigation.php

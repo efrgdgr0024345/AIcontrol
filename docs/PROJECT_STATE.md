@@ -1,5 +1,27 @@
 # AIcontrol — current project state
 
+## Click-only research term definitions (2026-11-25)
+
+Local phrase/acronym/long-word heuristics add dotted term buttons to research
+briefs, open outputs and the map concept reader. Highlighting, hovering, focus,
+scrolling and polling make no model request. An explicit click uses the owner's
+approved fast `gpt-5.4-nano`, no tools, a 700-character saved-source excerpt and
+160 output tokens. Definitions are contextual AI learning aids, saved separately
+from original research and Evidence. Loaded definitions can be viewed on hover;
+later clicks retrieve the private cache without another model call.
+
+New additive research_term_explanations/research_term_usage tables support stable
+source-aware caching, export, Admin inventory and rolling-hour cost reporting.
+The separate workspace allowance is 30 calls/US$0.01 including reservations.
+The shared provider lock remains authoritative. Unknown outcomes retain costs
+and require explicit retry; cached results do not require a provider credential.
+Owner/CSRF/project checks, changed-source rejection, literal text output and
+project/reset cleanup are covered by synthetic PHP and real local HTTP/browser
+tests, including desktop/mobile/dark axe and keyboard behavior. The separate
+whole-output STE explanation and canceled Nextstop UI request are outside scope.
+See [TERM_HELP.md](TERM_HELP.md). Exact-SHA CI and hosted evidence belong to the
+release/test reports; synthetic checks are not live provider operation.
+
 ## NASA Managed project engineering workspace (2026-11-22)
 
 NASA Managed adds a visual seven-phase dashboard, local readiness coverage and

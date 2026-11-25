@@ -69,6 +69,19 @@ final class Investigation
         $columns = array_column($db->query('PRAGMA table_info(research_nodes)')->fetchAll(PDO::FETCH_ASSOC), 'name');
         if (!in_array('data_json', $columns, true)) $db->exec("ALTER TABLE research_nodes ADD COLUMN data_json TEXT NOT NULL DEFAULT '{}'");
         if (!in_array('selected', $columns, true)) $db->exec('ALTER TABLE research_nodes ADD COLUMN selected INTEGER NOT NULL DEFAULT 1');
+        $db->exec('CREATE TABLE IF NOT EXISTS research_term_explanations (
+            cache_key TEXT PRIMARY KEY, project_id INTEGER NOT NULL REFERENCES research_projects(id) ON DELETE CASCADE,
+            node_id INTEGER REFERENCES research_nodes(id) ON DELETE CASCADE, term TEXT NOT NULL, source_kind TEXT NOT NULL,
+            context_sha TEXT NOT NULL, definition TEXT NOT NULL, model TEXT NOT NULL, created_at INTEGER NOT NULL, purpose TEXT NOT NULL DEFAULT "term");
+            CREATE TABLE IF NOT EXISTS research_term_usage (
+            id TEXT PRIMARY KEY, project_id INTEGER REFERENCES research_projects(id) ON DELETE SET NULL,
+            cache_key TEXT NOT NULL, status TEXT NOT NULL, model TEXT NOT NULL, created_at INTEGER NOT NULL, finished_at INTEGER,
+            token_input INTEGER, token_output INTEGER, estimated_usd REAL, reserved_usd REAL NOT NULL DEFAULT 0, billing_json TEXT, purpose TEXT NOT NULL DEFAULT "term");
+            CREATE INDEX IF NOT EXISTS research_term_usage_window ON research_term_usage(created_at);
+            CREATE INDEX IF NOT EXISTS research_term_usage_key ON research_term_usage(cache_key,status);
+            CREATE INDEX IF NOT EXISTS research_term_usage_project ON research_term_usage(project_id);
+            CREATE INDEX IF NOT EXISTS research_term_explanations_project ON research_term_explanations(project_id);');
+        foreach(['research_term_explanations','research_term_usage'] as $table)UsageMeter::columns($db,$table,['purpose'=>"TEXT NOT NULL DEFAULT 'term'"]);
     }
     private function transaction(callable $work): mixed
     {

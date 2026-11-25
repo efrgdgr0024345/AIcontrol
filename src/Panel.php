@@ -12,6 +12,7 @@ require_once __DIR__.'/SystemTerminal.php';
 require_once __DIR__.'/SystemGuard.php';
 require_once __DIR__.'/SystemPlaybooks.php';
 require_once __DIR__.'/ResearchHandover.php';
+require_once __DIR__.'/TermExplainer.php';
 require_once __DIR__.'/NasaActions.php';
 require_once __DIR__.'/NasaView.php';
 require_once __DIR__.'/AdminTestActions.php';
@@ -256,6 +257,22 @@ final class Panel
                 foreach(['http_status','content_type','redirected','response_path','error_kind'] as $field)$responseDetails[$field]=substr(self::input($field),0,160);
                 Diagnostics::record('browser.research.failed',array_merge($responseDetails,['stage'=>substr(self::input('stage'),0,80),'message'=>substr(self::input('message'),0,1000),'run_id'=>(int)self::input('run_id')]));
                 http_response_code(204);return;
+            } elseif ($action === 'research_define_term') {
+                header('Content-Type: application/json; charset=utf-8');
+                header('Cache-Control: no-store');
+                if($config['access_mode']==='testing'){http_response_code(403);echo '{"error":"Owner access is required for quick explanations."}';return;}
+                session_write_close();ignore_user_abort(true);
+                try {
+                    $project=filter_var(self::input('project_id'),FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
+                    $node=filter_var(self::input('node_id')?:'0',FILTER_VALIDATE_INT,['options'=>['min_range'=>0]]);
+                    if($project===false||$node===false)throw new TermHelpError('Choose saved research text.');
+                    echo json_encode((new TermExplainer($directory))->explain($project,self::input('source_kind'),$node,self::input('term'),self::input('retry')==='1'),JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);
+                } catch(Throwable $failure) {
+                    Diagnostics::record('term_help.endpoint',[],$failure);
+                    http_response_code($failure instanceof TermHelpError?$failure->status:409);
+                    echo json_encode(['error'=>$failure instanceof TermHelpError?$failure->getMessage():'Another AI request may be finishing. Click again when it is idle; no automatic retry was made.','allow_retry'=>$failure instanceof TermHelpError&&$failure->retry],JSON_THROW_ON_ERROR);
+                }
+                return;
             } elseif ($action === 'research_brief_usage') {
                 if($config['access_mode']==='testing'){http_response_code(403);header('Content-Type: application/json');echo '{"error":"Owner access is required for writing-help usage."}';return;}
                 session_write_close();require_once __DIR__.'/BriefSuggestions.php';header('Content-Type: application/json; charset=utf-8');header('Cache-Control: no-store');

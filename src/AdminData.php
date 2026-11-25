@@ -69,7 +69,7 @@ final class AdminData
                 try {
                     if(in_array($operation,['delete_research_project','reset_research_project','clear_research_chat'],true)){
                         self::requireRow($db,'SELECT id FROM research.research_projects WHERE id=?',$id);
-                        if($operation!=='clear_research_chat')self::deleteRuns($db,'project_id=?',[$id]);
+                        if($operation!=='clear_research_chat'){self::deleteRuns($db,'project_id=?',[$id]);self::exec($db,'DELETE FROM research.research_term_explanations WHERE project_id=?',[$id]);}
                         self::exec($db,'DELETE FROM research.research_messages WHERE project_id=?',[$id]);
                         if($operation==='delete_research_project'){self::deleteEngineering($db,'research',$id);self::exec($db,'DELETE FROM research.research_projects WHERE id=?',[$id]);}
                     } elseif($operation==='delete_research_run'){
@@ -126,7 +126,7 @@ final class AdminData
             'database_setup'=>'Embedded SQLite through PDO; no MySQL server is used by this application.',
             'php'=>['version'=>PHP_VERSION,'sapi'=>PHP_SAPI,'os_family'=>PHP_OS_FAMILY,'ini_file'=>php_ini_loaded_file()?:null,'additional_ini_files'=>php_ini_scanned_files()?:null,'error_reporting_mask'=>error_reporting(),'timezone'=>date_default_timezone_get(),'pdo_drivers'=>PDO::getAvailableDrivers(),'memory_used_bytes'=>memory_get_usage(true),'settings'=>$settings,'extensions'=>$extensions],
             'databases'=>[],'private_files'=>[]];
-        $databases=['panel.sqlite'=>'Task projects, tasks, agent outputs, activity, login throttling, NASA Managed engineering records and release/test reports','research.sqlite'=>'Research projects, conversations, investigations, evidence ledger and usage'];
+        $databases=['panel.sqlite'=>'Task projects, tasks, agent outputs, activity, login throttling, NASA Managed engineering records and release/test reports','research.sqlite'=>'Research projects, conversations, investigations, evidence ledger, saved term definitions and usage'];
         if(file_exists($this->directory.'/systems.sqlite'))$databases['systems.sqlite']='Linux systems, pinned SSH identities, protected notes and guided actions; configured Systems protection encrypts SSH credentials under the separate passphrase-wrapped key';
         foreach($databases as $file=>$purpose){
             $db=$this->connect($file);$db->exec('PRAGMA query_only=ON');$list=self::rows($db,'PRAGMA database_list');$path=$list[0]['file'];$tables=[];
@@ -137,6 +137,8 @@ final class AdminData
             clearstatcache(true,$path);$report['databases'][]=['file'=>$file,'purpose'=>$purpose,'driver'=>$db->getAttribute(PDO::ATTR_DRIVER_NAME),'path'=>$path,'size_bytes'=>filesize($path),'permissions'=>sprintf('%04o',fileperms($path)&0777),'writable'=>is_writable($path),'sqlite_version'=>$db->query('SELECT sqlite_version()')->fetchColumn(),'journal_mode'=>$db->query('PRAGMA journal_mode')->fetchColumn(),'foreign_keys_enabled'=>(bool)$db->query('PRAGMA foreign_keys')->fetchColumn(),'quick_check'=>$db->query('PRAGMA quick_check')->fetchColumn(),'foreign_key_issues'=>self::rows($db,'PRAGMA foreign_key_check'),'tables'=>$tables];
         }
         foreach(['config.json'=>'Installation settings; protected','vault.json'=>'Encrypted keys/notes; manage individual entries below','vault.key'=>'Vault encryption key; protected','diagnostics.jsonl'=>'Diagnostic events; clearable','brief-suggestions.json'=>'Writing-help usage and local allowance; clearable','sessions'=>'Panel sessions; protected'] as $file=>$purpose){$path=$this->directory.'/'.$file;clearstatcache(true,$path);$report['private_files'][]=['file'=>$file,'present'=>file_exists($path),'bytes'=>is_file($path)?filesize($path):null,'permissions'=>file_exists($path)?sprintf('%04o',fileperms($path)&0777):null,'purpose'=>$purpose];}
+        require_once __DIR__.'/TermExplainer.php';
+        $report['term_help']=['model'=>TermExplainer::MODEL,'trigger'=>'Explicit term click only; highlighting and hovering are local','rolling_hour'=>(new TermExplainer($this->directory))->usage()];
         return $report;
     }
 }

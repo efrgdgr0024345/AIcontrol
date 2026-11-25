@@ -49,7 +49,7 @@ final class ResearchView
     public static function nodes(array $nodes,?int $parent=null):void
     {
         foreach($nodes as $node)if($node['type']!=='learn' && (($node['parent_id']===null?null:(int)$node['parent_id'])===$parent)){
-            echo '<details class="investigation-node" id="research-node-'.(int)$node['id'].'" data-node-id="'.(int)$node['id'].'" data-status="'.Ui::e($node['status']).'" open><summary><span>'.Ui::e($node['title']).'</span> <small>'.Ui::e($node['type'].' · '.$node['status']).'</small></summary><div class="node-content">'.Ui::e($node['content']).'</div><div class="node-children">';
+            echo '<details class="investigation-node" id="research-node-'.(int)$node['id'].'" data-node-id="'.(int)$node['id'].'" data-status="'.Ui::e($node['status']).'" open><summary><span>'.Ui::e($node['title']).'</span> <small>'.Ui::e($node['type'].' · '.$node['status']).'</small></summary><div class="node-content" data-term-kind="node" data-term-node="'.(int)$node['id'].'" data-term-version="'.(int)$node['updated_at'].'">'.Ui::e($node['content']).'</div><div class="node-children">';
             if(self::$ownerControls&&in_array($node['type'],Investigation::ideaTypes(),true))echo '<p><a href="/loader.php?view=nasa&amp;source=research:'.self::$researchProject.'&amp;promote_run='.(int)$node['run_id'].'&amp;promote_node='.(int)$node['id'].'">Promote this idea into NASA planning</a></p>';
             self::nodes($nodes,(int)$node['id']);echo '</div></details>';
         }
@@ -184,6 +184,7 @@ final class ResearchView
         $review=$run && $run['status']==='running' && $run['phase']==='dream_review';
         $entry=$_SERVER['SCRIPT_NAME']??'/loader.php';
         if(!preg_match('~^/[A-Za-z0-9_./-]+\.php$~D',$entry))$entry='/loader.php';
+        if($project&&self::$ownerControls)echo '<div hidden data-term-help-config data-entry="'.Ui::e($entry).'" data-project-id="'.(int)$project['id'].'"></div>';
         if(!$project)self::createCard($csrf,$data['create_values']??[]);
         else {self::dashboard($project,$snapshot);echo '<p class="research-new-link"><a class="btn btn-outline-primary" href="/loader.php?view=research&amp;new=1">New research</a></p>';}
         if($project&&self::$ownerControls)echo '<form method="post" target="_blank" action="/loader.php?view=research" data-research-handover>'.$csrf.'<input type="hidden" name="action" value="research_handover"><input type="hidden" name="project_id" value="'.(int)$project['id'].'"><input type="hidden" name="format" value="view"><button class="btn btn-outline-primary">Export for chatbot review</button></form>';
@@ -196,7 +197,7 @@ final class ResearchView
         }
         if(!AgentRunner::configured())echo '<div class="alert alert-info">Connect OpenAI in <a href="/loader.php?view=admin">Admin</a> to start an investigation or use live writing help. You can create projects now.</div>';
         if(!$project)return;
-        echo '<section class="card mb-3 research-project-brief"><div class="card-body"><h2>'.Ui::e($project['name']).'</h2><p class="text-break">'.Ui::e($project['brief']).'</p><details class="brief-help"><summary>What makes a useful investigation brief?</summary><p>Include the decision you face, relevant place or timeframe, and what would count as convincing evidence. Review these against the generated verification angles.</p></details><form method="post" action="/loader.php?view=research" data-research-action="research_start">'.$csrf.'<input type="hidden" name="action" value="research_start"><input type="hidden" name="project_id" value="'.(int)$project['id'].'"><button class="btn btn-primary"'.(!AgentRunner::configured()||($run&&in_array($run['status'],['pending','running'],true))?' disabled':'').'>Start research</button></form></div></section>';
+        echo '<section class="card mb-3 research-project-brief"><div class="card-body"><h2>'.Ui::e($project['name']).'</h2><p class="text-break" data-term-kind="brief" data-term-node="0">'.Ui::e($project['brief']).'</p><details class="brief-help"><summary>What makes a useful investigation brief?</summary><p>Include the decision you face, relevant place or timeframe, and what would count as convincing evidence. Review these against the generated verification angles.</p></details><form method="post" action="/loader.php?view=research" data-research-action="research_start">'.$csrf.'<input type="hidden" name="action" value="research_start"><input type="hidden" name="project_id" value="'.(int)$project['id'].'"><button class="btn btn-primary"'.(!AgentRunner::configured()||($run&&in_array($run['status'],['pending','running'],true))?' disabled':'').'>Start research</button></form></div></section>';
         self::settings($project,$csrf);echo '<a href="#research-history">History and earlier chat</a></details>';
         if($run){
             $active=in_array($run['status'],['pending','running'],true);$pending=(bool)array_filter($snapshot['requests'],static fn(array $r):bool=>$r['status']==='pending');$busy=$run['busy_since']!==null;

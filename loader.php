@@ -1629,6 +1629,7 @@ document.addEventListener('submit', event => {
       const opened=new Set([...inspector.querySelectorAll('details[open]')].map(item=>item.querySelector('summary')?.textContent));
       const title=el('h3',node.title),detail=el('p',`${node.type.replaceAll('_',' ')} · ${node.status}`,'map-inspector-status');
       inspector.replaceChildren(title,detail,el('p',node.dead_end_reason||node.content||'No details saved yet.','map-inspector-text'));
+      const original=snapshot.nodes.find(item=>String(item.id)===String(node.id));if(original){inspector.dataset.termKind='node';inspector.dataset.termNode=String(original.id);inspector.dataset.termVersion=JSON.stringify([original.updated_at,original.title,original.content,original.data_json]);}else{delete inspector.dataset.termKind;delete inspector.dataset.termNode;delete inspector.dataset.termVersion;}
       if(conceptTypes.includes(node.type))inspector.append(el('p',`Priority ${node.path_weight||50} · ${node.model_tier||'primary'} model tier. ${node.weight_reason||'Priority is separate from evidence strength.'}${Number(node.speculative)?' Untested idea — may be wrong.':''}`));
       if(Number(snapshot.run.flow_version)>=2)inspector.append(el('p',`${['Active','Secondary','Tertiary'][Number(node.layer)||0]} · ${originLabel(node.origin)} · ${provenanceLabel(node.provenance_tag)}${node.park_reason?' · Park reason: '+node.park_reason:''}`));
       if(stages.length){const history=el('details');history.append(el('summary','Planning, evidence and findings history'));for(const stage of stages)history.append(el('h4',stage.title+' · '+stage.status),el('p',stage.content));inspector.append(history);}
@@ -1861,6 +1862,62 @@ document.addEventListener('submit', event => {
  map.addEventListener('research:concept-selected',event=>{const id=String(event.detail.nodeId);if(id!==selected){if(selected)drafts.set(selected,question.value);selected=id;question.value=drafts.get(id)||'';threadStamp='';}queueMicrotask(()=>{renderList();renderThread();updateControls();});});
  root.addEventListener('research:snapshot',event=>{snapshot=event.detail;verified=true;renderList();renderThread();updateControls();});
  root.addEventListener('research:controls',updateControls);root.addEventListener('research:error',event=>{const message=String(event.detail||'');problem.textContent=message;problem.hidden=!message;if(message)verified=false;updateControls();});root.addEventListener('research:contact',()=>{verified=true;updateControls();});
+})();
+
+// Discovery and hover are local. Only an explicit click can request a definition.
+((global)=>{
+ const phrases=['Bayesian inference','causal inference','confirmation bias','selection bias','survivorship bias','confounding variable','confidence interval','statistical significance','null hypothesis','opportunity cost','feedback loop','sensitivity analysis','systems thinking','trade-off','counterfactual','falsifiability','epistemology','epistemic','ontology','ontological','heuristic','heuristics','hypothesis','hypotheses','provenance','traceability','emergence','emergent behaviour','emergent behavior','nonlinearity','latent variable','model latent','entropy','uncertainty','correlation','causation','extrapolation','interpolation','optimization','optimisation','regularization','regularisation','stochastic','deterministic','probabilistic','heterogeneity','endogeneity','externality','externalities','arbitrage','liquidity','decentralization','decentralisation','interoperability','cryptography','encryption','authentication','idempotent','asynchronous','recursion','reframing','cognitive dissonance','reinforcement learning','neural network','machine learning','large language model','carbon sequestration','ecosystem','biodiversity','photosynthesis','thermodynamics','electromagnetic','quantum','molecular','genomics','epigenetics','metacognition','deductive reasoning','inductive reasoning','first principles','circular economy','marginal cost','supply elasticity','systematic review','peer review','counter-evidence','counter evidence','verification','validation'];
+ const stop=new Set(['understanding','information','instructions','investigation','investigations','independent','independently','alternatives','alternative','approximately','automatically','explanation','explanations','conversation','conversations','participants','consideration','considerations','requirements','recommendation','recommendations','implementation','documentation']);
+ const escape=text=>text.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+ const dictionary=new RegExp(phrases.sort((a,b)=>b.length-a.length).map(escape).join('|'),'giu');
+ function candidates(text,limit=8){const result=[],seen=new Set(),all=[];dictionary.lastIndex=0;for(const m of text.matchAll(dictionary)){const before=text.slice(0,m.index).at(-1)||'',after=text[m.index+m[0].length]||'';if(!/[\p{L}\p{N}]/u.test(before+after))all.push({start:m.index,end:m.index+m[0].length,text:m[0],score:3});}
+  for(const m of text.matchAll(/[\p{L}][\p{L}\p{M}\p{N}-]*/gu)){const word=m[0],long=word.length>=12&&!stop.has(word.toLowerCase()),acronym=/^[A-Z]{3,7}$/.test(word);if(long||acronym)all.push({start:m.index,end:m.index+word.length,text:word,score:acronym?2:1});}
+  all.sort((a,b)=>b.score-a.score||(b.end-b.start)-(a.end-a.start)||a.start-b.start);for(const item of all){const key=item.text.toLowerCase();if(seen.has(key)||result.some(p=>item.start<p.end&&item.end>p.start))continue;seen.add(key);result.push(item);if(result.length>=limit)break;}return result.sort((a,b)=>a.start-b.start);
+ }
+ const api={candidates};global.AIcontrolTerms=api;if(typeof module!=='undefined')module.exports=api;
+})(typeof globalThis!=='undefined'?globalThis:this);
+(()=>{
+ if(typeof document==='undefined')return;const config=document.querySelector('[data-term-help-config]');if(!config)return;
+ const project=config.dataset.projectId,entry=config.dataset.entry||location.pathname,selector='.node-content[data-term-kind],.map-inspector-text,.research-project-brief p[data-term-kind]';
+ const cache=new Map(),processed=new WeakMap();let active=null,opened=false,hideTimer,queued=false,restoringFocus=false;
+ const panel=document.createElement('section');panel.className='term-help-panel';panel.hidden=true;panel.setAttribute('popover','auto');panel.setAttribute('role','dialog');panel.setAttribute('aria-labelledby','term-help-title');panel.id='term-help-popup';
+ const heading=document.createElement('h3');heading.id='term-help-title';const close=document.createElement('button');close.type='button';close.className='term-help-close';close.setAttribute('aria-label','Close term explanation');close.textContent='×';
+ const note=document.createElement('p');note.className='term-help-note';const body=document.createElement('p');body.className='term-help-definition';body.setAttribute('role','status');const retry=document.createElement('button');retry.type='button';retry.className='btn btn-sm btn-outline-secondary';retry.textContent='Retry (another paid request)';retry.hidden=true;panel.append(close,heading,note,body,retry);document.body.append(panel);
+ function context(region,term){const owner=region.closest('[data-term-kind]');if(!owner)return null;const node=owner.dataset.termNode||'0',kind=owner.dataset.termKind;if(kind==='node'&&!/^[1-9][0-9]*$/.test(node))return null;return {project_id:project,source_kind:kind,node_id:node,term,key:JSON.stringify([project,kind,node,owner.dataset.termVersion||'',region.textContent,term.toLowerCase()])};}
+ const popoverOpen=()=>typeof panel.showPopover==='function'&&panel.matches(':popover-open');
+ function hide(focus=false){restoringFocus=true;clearTimeout(hideTimer);if(popoverOpen())panel.hidePopover();panel.hidden=true;opened=false;if(active){active.button.setAttribute('aria-expanded','false');if(focus&&active.button.isConnected)active.button.focus();}restoringFocus=false;}
+ function position(button){const r=button.getBoundingClientRect(),width=Math.min(360,innerWidth-24);panel.style.width=width+'px';panel.style.left=Math.max(12,Math.min(r.left,innerWidth-width-12))+'px';const height=panel.getBoundingClientRect().height;panel.style.top=Math.max(12,r.bottom+8+height<innerHeight-12?r.bottom+8:r.top-height-8)+'px';}
+ function show(button,c){const host=button.closest('[data-mindmap]')||document.body;if(panel.parentElement!==host){hide();host.append(panel);}panel.inert=false;panel.removeAttribute('aria-hidden');panel.classList.remove('map-underlay');clearTimeout(hideTimer);if(active&&active.button!==button)active.button.setAttribute('aria-expanded','false');active={button,c};heading.textContent=c.term;const saved=cache.get(c.key);retry.hidden=true;
+  if(saved?.state==='ready'){body.textContent=saved.value.definition;note.textContent=(saved.value.cached?'Saved explanation':'Fast AI explanation')+' · '+saved.value.model+' · learning aid, not verified evidence.';}
+  else if(saved?.state==='pending'){body.textContent='Explaining this term in its research context…';note.textContent='One short nano-model request, saved for reuse. Limited to 30 requests / US$0.01 per rolling hour.';}
+  else if(saved?.state==='error'){body.textContent=saved.message;note.textContent='No automatic retry is made.';retry.hidden=!saved.retry;}
+  else{body.textContent='Click the highlighted term to request a short explanation. Hovering makes no AI request.';note.textContent='A small excerpt is used, rather than the whole project.';}
+  panel.hidden=false;if(panel.showPopover&&!popoverOpen())panel.showPopover();opened=true;button.setAttribute('aria-expanded','true');position(button);
+ }
+ async function request(button,c,explicitRetry=false){const old=cache.get(c.key);if(old?.state==='pending'||old?.state==='ready'){show(button,c);return;}if(old?.retry&&!explicitRetry){show(button,c);return;}
+  cache.set(c.key,{state:'pending'});show(button,c);
+  const form=new FormData();for(const [key,value]of Object.entries(c))if(key!=='key')form.set(key,value);form.set('action','research_define_term');form.set('csrf',document.querySelector('input[name=csrf]')?.value||'');if(explicitRetry)form.set('retry','1');
+  try{const response=await fetch(entry,{method:'POST',body:form,credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});if(!(response.headers.get('content-type')||'').includes('application/json'))throw Error('Sign in again before requesting an explanation.');const value=await response.json();if(!response.ok){cache.set(c.key,{state:'error',message:value.error||'Explanation unavailable.',retry:value.allow_retry===true});}else{if(typeof value.definition!=='string'||!value.definition)throw Error('No usable explanation was returned.');cache.set(c.key,{state:'ready',value});}}
+  catch(error){cache.set(c.key,{state:'error',message:error.message+' The result may be unverified.',retry:true});}
+  if(opened&&active?.c.key===c.key&&button.isConnected)show(button,c);
+  if(cache.size>200)for(const [key,value]of cache){if(value.state!=='pending'&&key!==active?.c.key){cache.delete(key);break;}}
+ }
+ close.addEventListener('click',()=>hide(true));retry.addEventListener('click',()=>{if(active)request(active.button,active.c,true);});panel.addEventListener('toggle',event=>{if(event.newState==='closed'){panel.hidden=true;opened=false;active?.button.setAttribute('aria-expanded','false');}});
+ panel.addEventListener('pointerenter',()=>clearTimeout(hideTimer));panel.addEventListener('pointerleave',()=>{hideTimer=setTimeout(()=>{if(!panel.contains(document.activeElement)&&document.activeElement!==active?.button)hide();},180);});document.addEventListener('keydown',event=>{if(event.key==='Escape'&&opened){event.stopPropagation();hide(true);}},true);document.addEventListener('pointerdown',event=>{if(opened&&!panel.contains(event.target)&&!event.target.closest('.term-help-word'))hide();},true);
+ window.addEventListener('resize',()=>hide());document.addEventListener('scroll',event=>{if(opened&&!panel.contains(event.target))hide();},true);
+ function annotate(region){if(!region.isConnected||!region.getClientRects().length||region.closest('[hidden],details:not([open])'))return;const owner=region.closest('[data-term-kind]');if(!owner)return;const stamp=JSON.stringify([owner.dataset.termKind,owner.dataset.termNode,owner.dataset.termVersion,region.textContent]);if(processed.get(region)===stamp)return;
+  for(const old of region.querySelectorAll('.term-help-word'))old.replaceWith(document.createTextNode(old.textContent));region.normalize();const walker=document.createTreeWalker(region,NodeFilter.SHOW_TEXT,{acceptNode:n=>n.parentElement.closest('button,a,code,pre,textarea,input,script,style')?NodeFilter.FILTER_REJECT:NodeFilter.FILTER_ACCEPT});const nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);let remaining=8;
+  for(const text of nodes){if(!remaining)break;const matches=AIcontrolTerms.candidates(text.data,remaining);if(!matches.length)continue;const fragment=document.createDocumentFragment();let last=0;
+   for(const match of matches){const c=context(region,match.text);if(!c)continue;fragment.append(document.createTextNode(text.data.slice(last,match.start)));const button=document.createElement('button');button.type='button';button.className='term-help-word';button.textContent=match.text;button.title='Click to explain “'+match.text+'”. Hovering does not use API credits.';button.setAttribute('aria-label','Explain term: '+match.text);button.setAttribute('aria-haspopup','dialog');button.setAttribute('aria-expanded','false');button.setAttribute('aria-controls',panel.id);button.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();request(button,c);});button.addEventListener('pointerenter',()=>{clearTimeout(hideTimer);if(cache.get(c.key)?.state==='ready')show(button,c);});button.addEventListener('focus',()=>{if(!restoringFocus&&cache.get(c.key)?.state==='ready')show(button,c);});button.addEventListener('pointerleave',()=>{hideTimer=setTimeout(()=>{if(!panel.matches(':hover')&&document.activeElement!==button&&!panel.contains(document.activeElement))hide();},180);});fragment.append(button);last=match.end;remaining--;}
+   fragment.append(document.createTextNode(text.data.slice(last)));text.replaceWith(fragment);
+  }
+  processed.set(region,JSON.stringify([owner.dataset.termKind,owner.dataset.termNode,owner.dataset.termVersion,region.textContent]));
+ }
+ function stamp(region){const owner=region.closest('[data-term-kind]');return owner?JSON.stringify([owner.dataset.termKind,owner.dataset.termNode,owner.dataset.termVersion,region.textContent]):null;}
+ function scan(){queued=false;if(opened&&!active?.button.isConnected)hide();const regions=[...document.querySelectorAll(selector)];let index=0;function batch(){for(let end=Math.min(index+30,regions.length);index<end;index++)annotate(regions[index]);if(index<regions.length)requestAnimationFrame(batch);}batch();}
+ const schedule=()=>{if(!queued){queued=true;requestAnimationFrame(scan);}};
+ new MutationObserver(records=>{if(records.some(record=>{if(panel.contains(record.target))return false;const target=record.target.nodeType===Node.ELEMENT_NODE?record.target:record.target.parentElement;const region=target?.closest(selector);return !region||processed.get(region)!==stamp(region);}))schedule();}).observe(document.body,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['hidden','open','data-term-node','data-term-version']});
+ document.addEventListener('pointerover',event=>{const region=event.target.closest(selector);if(region)annotate(region);},{passive:true});document.addEventListener('toggle',schedule,true);schedule();
 })();
 
 // Explicit, sequential system steps. Reloading never retries a dispatched step.
@@ -3254,6 +3311,18 @@ body.research-map-open { overflow:hidden; }
  .systems-enrollment > summary { color:#dfeef7; background:#173147; border-color:#567083; }
  .systems-privacy summary { color:#dfeef7; }
 }
+
+/* Context explanations never dispatch on hover; marks remain normal inline text. */
+.term-help-word { display:inline; padding:0 1px; margin:0; border:0; border-bottom:1px dotted #39849b; border-radius:2px; background:transparent; color:inherit; font:inherit; line-height:inherit; text-align:inherit; cursor:help; text-decoration:none; }
+.term-help-word:hover,.term-help-word:focus-visible { background:#dceef4; color:#123b50; }
+.mindmap .term-help-word:hover,.mindmap .term-help-word:focus-visible { color:#f1fbff; background:#244c65; }
+.term-help-panel { position:fixed; inset:auto; margin:0; box-sizing:border-box; padding:20px; max-width:calc(100vw - 24px); max-height:min(420px,70dvh); overflow:auto; border:1px solid #7f9dad; border-radius:12px; background:#fff; color:#202631; z-index:12000; box-shadow:0 8px 32px #0005; }
+.term-help-panel h3 { margin:0 30px 10px 0; font-size:1.05rem; color:inherit; }
+.term-help-panel p { color:inherit; line-height:1.6; overflow-wrap:anywhere; }
+.term-help-panel .term-help-note { font-size:.78rem; color:#455b6c; }
+.term-help-panel .term-help-definition { white-space:pre-line; }
+.term-help-close { position:absolute; top:8px; right:8px; min-width:36px; min-height:36px; border:0; border-radius:6px; background:transparent; color:inherit; font-size:1.3rem; }
+@media(prefers-color-scheme:dark) { .term-help-panel { background:#14283b; color:#e5f2fc; border-color:#82a9bc; }.term-help-panel .term-help-note { color:#bfd4e2; } }
 
 AICONTROL_UI_CSS;
     }
