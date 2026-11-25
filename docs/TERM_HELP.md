@@ -21,6 +21,11 @@ the term can show its local saved explanation without another request. A click
 after a page reload retrieves the private saved definition without model credits.
 Loading and failed results never start an automatic retry.
 
+The popup owns its outside-click/Escape dismissal so clicking an already hovered
+term keeps it open. It follows the term while a long mobile concept reader scrolls,
+and closes when its source disappears or scrolls out of view. Closing it restores
+keyboard focus without scrolling the reader.
+
 The shared provider lock serializes dispatch with research, chat and writing help.
 Saved definitions are available even without a provider credential or while that
 lock is occupied. Quick explanations have their own workspace-wide rolling-hour

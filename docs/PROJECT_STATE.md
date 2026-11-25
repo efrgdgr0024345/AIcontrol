@@ -15,6 +15,8 @@ source-aware caching, export, Admin inventory and rolling-hour cost reporting.
 The separate workspace allowance is 30 calls/US$0.01 including reservations.
 The shared provider lock remains authoritative. Unknown outcomes retain costs
 and require explicit retry; cached results do not require a provider credential.
+Popup dismissal is explicit, and its position follows scrolling in long mobile
+readers; the stronger regression fails the previous dismissal behavior.
 Owner/CSRF/project checks, changed-source rejection, literal text output and
 project/reset cleanup are covered by synthetic PHP and real local HTTP/browser
 tests, including desktop/mobile/dark axe and keyboard behavior. The separate
