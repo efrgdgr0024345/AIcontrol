@@ -192,3 +192,9 @@ and only caches a definition after server validation/persistence. Truncated stre
 retain partial text with an error and never retry automatically. Cached results
 remain immediate. A delayed synthetic provider regression asserts partial text is
 visible while final output is still unavailable.
+
+Whole-output Explain: explicit owner click only, gpt-5.4-nano with no tools,
+ASD-STE100 writing principles (not certification), complete saved B up to 32 KB,
+4,000 output tokens/24 KB and 60 seconds. Separate ste100 workspace allowance:
+10 dispatches/US$0.05 per rolling hour including unverified reservations. Saved
+source-aware C is auxiliary; original research/Evidence remain unchanged.

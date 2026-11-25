@@ -278,7 +278,7 @@
       const button=card.querySelector('button'); button.setAttribute('aria-pressed',String(node.id===selected));
       button.querySelector('.map-node-type').textContent=(node.type==='dream_claim'?'concept':node.type==='root'?'project':node.type.replaceAll('_',' ')) + (collapsed.has(node.id)?(Number(snapshot.run.flow_version)>=2?' · receded':' · collapsed'):'');
       if(!button.querySelector('[data-map-work-badge]')){const badge=el('span','','map-node-work-badge');badge.dataset.mapWorkBadge='1';const ring=el('span',undefined,'map-node-work-ring');ring.setAttribute('aria-hidden','true');button.append(badge,ring);}
-      button.querySelector('.map-node-title').textContent=node.title;button.dataset.baseLabel=`${node.title}. ${node.type.replaceAll('_',' ')}. ${node.status}. ${originLabel(node.origin)}. ${provenanceLabel(node.provenance_tag)}`;button.setAttribute('aria-label',button.dataset.baseLabel);
+      button.querySelector('.map-node-title').textContent=Engine.shortNote(node.title);button.dataset.baseLabel=`${node.title}. ${node.type.replaceAll('_',' ')}. ${node.status}. ${originLabel(node.origin)}. ${provenanceLabel(node.provenance_tag)}`;button.setAttribute('aria-label',button.dataset.baseLabel);
       const source=snapshot.sources.find(source => sourceIds(node).includes(Number(source.id)));
       button.querySelector('.map-node-status').textContent=source?`${source.domain} · ${links(node).map(id=>'claim #'+id).join(', ')}`:`${node.status}${node.confidence?' · '+node.confidence+' prior confidence':''}`;
       if(conceptTypes.includes(node.type))button.querySelector('.map-node-status').textContent+=(node.type==='question'?' · untested':'')+' · priority '+priority;
@@ -362,7 +362,7 @@
     if(inspector.dataset.stamp!==stamp){
       const opened=new Set([...inspector.querySelectorAll('details[open]')].map(item=>item.querySelector('summary')?.textContent));
       const title=el('h3',node.title),detail=el('p',`${node.type.replaceAll('_',' ')} · ${node.status}`,'map-inspector-status');
-      inspector.replaceChildren(title,detail,el('p',node.dead_end_reason||node.content||'No details saved yet.','map-inspector-text'));
+      title.dataset.originalOutput='1';inspector.replaceChildren(title,detail,el('p',node.dead_end_reason||node.content||'No details saved yet.','map-inspector-text'));
       const original=snapshot.nodes.find(item=>String(item.id)===String(node.id));if(original){inspector.dataset.termKind='node';inspector.dataset.termNode=String(original.id);inspector.dataset.termVersion=JSON.stringify([original.updated_at,original.title,original.content,original.data_json]);}else{delete inspector.dataset.termKind;delete inspector.dataset.termNode;delete inspector.dataset.termVersion;}
       if(conceptTypes.includes(node.type))inspector.append(el('p',`Priority ${node.path_weight||50} · ${node.model_tier||'primary'} model tier. ${node.weight_reason||'Priority is separate from evidence strength.'}${Number(node.speculative)?' Untested idea — may be wrong.':''}`));
       if(Number(snapshot.run.flow_version)>=2)inspector.append(el('p',`${['Active','Secondary','Tertiary'][Number(node.layer)||0]} · ${originLabel(node.origin)} · ${provenanceLabel(node.provenance_tag)}${node.park_reason?' · Park reason: '+node.park_reason:''}`));

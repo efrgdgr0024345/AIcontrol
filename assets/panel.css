@@ -1226,3 +1226,10 @@ body.research-map-open { overflow:hidden; }
 .term-help-panel .term-help-definition { white-space:pre-line; }
 .term-help-close { position:absolute; top:8px; right:8px; min-width:36px; min-height:36px; border:0; border-radius:6px; background:transparent; color:inherit; font-size:1.3rem; }
 @media(prefers-color-scheme:dark) { .term-help-panel { background:#14283b; color:#e5f2fc; border-color:#82a9bc; }.term-help-panel .term-help-note { color:#bfd4e2; } }
+
+.output-explanation-box {margin:16px 0;padding:16px;border:1px solid #65889e;border-radius:10px;background:#12283b;color:#edf5fc;}
+.output-explanation-text {white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.65;}
+.output-explanation-note,.output-explanation-status {font-size:.8rem;color:inherit;}
+.output-explanation-box h4 {color:inherit;font-size:1.1rem;}
+
+[data-original-output]::before {content:"B · Original model output";display:block;font-size:.75rem;line-height:1.5;margin-bottom:8px;color:#bed0df;}

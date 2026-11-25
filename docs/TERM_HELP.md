@@ -69,3 +69,28 @@ and only caches a definition after server validation/persistence. Truncated stre
 retain partial text with an error and never retry automatically. Cached results
 remain immediate. A delayed synthetic provider regression asserts partial text is
 visible while final output is still unavailable.
+
+## Whole-output Explain
+
+The map reader separates A (a local short title note, shared with the map node),
+B (the unchanged original model title and body), and C (an optional rewrite).
+Explain appears immediately before Expand this pathway. Only an explicit click
+requests C; selection, polling and growth do not. The same gpt-5.4-nano streams
+text as it arrives, using ASD-STE100 writing principles and preserving claims,
+numbers, constraints, confidence, uncertainty and verification steps. The UI
+labels this AI-generated guidance, not certified compliance with the standard.
+
+The server takes B from the selected project's saved node, never browser-supplied
+source text. Input is limited to 32,000 bytes, output to 4,000 tokens/24,000 bytes,
+and duration to 60 seconds. The separate workspace rolling-hour allowance is
+10 requests/US$0.05 including unverified reservations. Purpose ste100 uses the
+existing private cache/usage tables, source digests, shared provider lock, explicit
+retry rules, Admin cleanup/export and owner/CSRF guards. Original research and
+Evidence are not modified. Partial/failed rewrites remain marked unfinished.
+A changed source gets a new cache key. Switching concepts preserves the correct
+local rewrite without exposing it under another branch.
+
+The delayed provider/browser regression verifies partial C before completion,
+button order, no selection-triggered generation, branch switching, unchanged B,
+cache reuse and desktop/mobile/dark accessibility. Server tests verify complete
+source input, project isolation and separate rewrite allowance/cache.

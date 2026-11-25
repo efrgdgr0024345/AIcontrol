@@ -257,7 +257,7 @@ final class Panel
                 foreach(['http_status','content_type','redirected','response_path','error_kind'] as $field)$responseDetails[$field]=substr(self::input($field),0,160);
                 Diagnostics::record('browser.research.failed',array_merge($responseDetails,['stage'=>substr(self::input('stage'),0,80),'message'=>substr(self::input('message'),0,1000),'run_id'=>(int)self::input('run_id')]));
                 http_response_code(204);return;
-            } elseif ($action === 'research_define_term') {
+            } elseif (in_array($action,['research_define_term','research_explain_output'],true)) {
                 header('Content-Type: application/json; charset=utf-8');
                 header('Cache-Control: no-store');
                 if($config['access_mode']==='testing'){http_response_code(403);echo '{"error":"Owner access is required for quick explanations."}';return;}
@@ -272,7 +272,7 @@ final class Panel
                     $project=filter_var(self::input('project_id'),FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
                     $node=filter_var(self::input('node_id')?:'0',FILTER_VALIDATE_INT,['options'=>['min_range'=>0]]);
                     if($project===false||$node===false)throw new TermHelpError('Choose saved research text.');
-                    $result=(new TermExplainer($directory))->explain($project,self::input('source_kind'),$node,self::input('term'),self::input('retry')==='1',$wantsStream?$emit:null);
+                    $result=(new TermExplainer($directory))->explain($project,$action==='research_explain_output'?'node':self::input('source_kind'),$node,$action==='research_explain_output'?'':self::input('term'),self::input('retry')==='1',$wantsStream?$emit:null,$action==='research_explain_output'?'ste100':'term');
                     if(!$wantsStream)echo json_encode($result,JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);
                 } catch(Throwable $failure) {
                     Diagnostics::record('term_help.endpoint',[],$failure);

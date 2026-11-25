@@ -346,6 +346,7 @@
     }
     return out;
   }
+  function shortNote(text) { const clean=sentence(text);return clean.length<=95?clean:clean.slice(0,92).replace(/\s+\S*$/, '')+'…'; }
   function sentence(text) {
     const clean = String(text || '').replace(/https?:\/\/\S+/g, '').replace(/[*_#`]/g, '').replace(/\b(?:Completed search\.|No completed search reported\.)\s*/g, '').replace(/\s+/g, ' ').trim();
     const first = clean.match(/^.*?[.!?](?=\s+[A-Z]|$)/)?.[0] || clean;
@@ -357,5 +358,5 @@
     add(text) { text = sentence(text); if (!text || this.seen.has(text)) return; this.seen.add(text); this.items.push(text); this.history.push(text); if (this.items.length > 50) this.items.shift(); if (this.history.length > 100) this.history.shift(); }
     tick(now, visible = true) { const elapsed = this.last ? now - this.last : 0; this.last = now; if (!visible || this.paused) { this.until += elapsed; return null; } if (!this.items.length || this.current && now < this.until) return null; this.current = this.items.shift(); this.until = now + Math.max(5000, Math.min(10000, this.current.split(/\s+/).length * 260 + 2000)); return this.current; }
   }
-  return {owner, project, layout, constellationLayout, spatialLayout, starPresentation, familyColour, relatedLinks, sentence, ReadingQueue};
+  return {owner, project, layout, constellationLayout, spatialLayout, starPresentation, familyColour, relatedLinks, sentence,shortNote, ReadingQueue};
 });

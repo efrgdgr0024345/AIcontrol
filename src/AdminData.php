@@ -139,6 +139,7 @@ final class AdminData
         foreach(['config.json'=>'Installation settings; protected','vault.json'=>'Encrypted keys/notes; manage individual entries below','vault.key'=>'Vault encryption key; protected','diagnostics.jsonl'=>'Diagnostic events; clearable','brief-suggestions.json'=>'Writing-help usage and local allowance; clearable','sessions'=>'Panel sessions; protected'] as $file=>$purpose){$path=$this->directory.'/'.$file;clearstatcache(true,$path);$report['private_files'][]=['file'=>$file,'present'=>file_exists($path),'bytes'=>is_file($path)?filesize($path):null,'permissions'=>file_exists($path)?sprintf('%04o',fileperms($path)&0777):null,'purpose'=>$purpose];}
         require_once __DIR__.'/TermExplainer.php';
         $report['term_help']=['model'=>TermExplainer::MODEL,'trigger'=>'Explicit term click only; highlighting and hovering are local','rolling_hour'=>(new TermExplainer($this->directory))->usage()];
+        $report['output_explanation']=['model'=>TermExplainer::MODEL,'trigger'=>'Explicit Explain click only','rolling_hour'=>(new TermExplainer($this->directory))->usage('ste100')];
         return $report;
     }
 }

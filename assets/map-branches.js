@@ -70,7 +70,7 @@
  }
  function updateControls(){
   if(!snapshot)return;const n=snapshot.nodes.find(n=>String(n.id)===selected),valid=!!n&&types.has(n.type),busy=snapshot.run.busy_since!=null||snapshot.requests.some(r=>r.status==='pending')||root.dataset.requestBusy==='1';
-  currentLabel.textContent=n?window.AIcontrolMap.sentence(n.title):'Concept details';currentLabel.title=n?.title||'';
+  currentLabel.textContent=n?window.AIcontrolMap.shortNote(n.title):'Concept details';currentLabel.title=n?.title||'';
   const capacity=root.dataset.connected!=='0'&&snapshot.budget?.remaining!==0;
   expand.hidden=!valid||Number(snapshot.run.flow_version)<2;expand.disabled=!valid||!verified||busy||!capacity||snapshot.run.status!=='running'||!['exploring','verification_review'].includes(snapshot.run.phase);
   chat.disabled=!valid;form.elements.node_id.value=valid?selected:'';form.elements.run_id.value=snapshot.run.id;

@@ -363,6 +363,7 @@ final class AIcontrolUi
     }
     return out;
   }
+  function shortNote(text) { const clean=sentence(text);return clean.length<=95?clean:clean.slice(0,92).replace(/\s+\S*$/, '')+'…'; }
   function sentence(text) {
     const clean = String(text || '').replace(/https?:\/\/\S+/g, '').replace(/[*_#`]/g, '').replace(/\b(?:Completed search\.|No completed search reported\.)\s*/g, '').replace(/\s+/g, ' ').trim();
     const first = clean.match(/^.*?[.!?](?=\s+[A-Z]|$)/)?.[0] || clean;
@@ -374,7 +375,7 @@ final class AIcontrolUi
     add(text) { text = sentence(text); if (!text || this.seen.has(text)) return; this.seen.add(text); this.items.push(text); this.history.push(text); if (this.items.length > 50) this.items.shift(); if (this.history.length > 100) this.history.shift(); }
     tick(now, visible = true) { const elapsed = this.last ? now - this.last : 0; this.last = now; if (!visible || this.paused) { this.until += elapsed; return null; } if (!this.items.length || this.current && now < this.until) return null; this.current = this.items.shift(); this.until = now + Math.max(5000, Math.min(10000, this.current.split(/\s+/).length * 260 + 2000)); return this.current; }
   }
-  return {owner, project, layout, constellationLayout, spatialLayout, starPresentation, familyColour, relatedLinks, sentence, ReadingQueue};
+  return {owner, project, layout, constellationLayout, spatialLayout, starPresentation, familyColour, relatedLinks, sentence,shortNote, ReadingQueue};
 });
 
 /* DOM-free camera. World coordinates are read, never changed. */
@@ -1544,7 +1545,7 @@ document.addEventListener('submit', event => {
       const button=card.querySelector('button'); button.setAttribute('aria-pressed',String(node.id===selected));
       button.querySelector('.map-node-type').textContent=(node.type==='dream_claim'?'concept':node.type==='root'?'project':node.type.replaceAll('_',' ')) + (collapsed.has(node.id)?(Number(snapshot.run.flow_version)>=2?' · receded':' · collapsed'):'');
       if(!button.querySelector('[data-map-work-badge]')){const badge=el('span','','map-node-work-badge');badge.dataset.mapWorkBadge='1';const ring=el('span',undefined,'map-node-work-ring');ring.setAttribute('aria-hidden','true');button.append(badge,ring);}
-      button.querySelector('.map-node-title').textContent=node.title;button.dataset.baseLabel=`${node.title}. ${node.type.replaceAll('_',' ')}. ${node.status}. ${originLabel(node.origin)}. ${provenanceLabel(node.provenance_tag)}`;button.setAttribute('aria-label',button.dataset.baseLabel);
+      button.querySelector('.map-node-title').textContent=Engine.shortNote(node.title);button.dataset.baseLabel=`${node.title}. ${node.type.replaceAll('_',' ')}. ${node.status}. ${originLabel(node.origin)}. ${provenanceLabel(node.provenance_tag)}`;button.setAttribute('aria-label',button.dataset.baseLabel);
       const source=snapshot.sources.find(source => sourceIds(node).includes(Number(source.id)));
       button.querySelector('.map-node-status').textContent=source?`${source.domain} · ${links(node).map(id=>'claim #'+id).join(', ')}`:`${node.status}${node.confidence?' · '+node.confidence+' prior confidence':''}`;
       if(conceptTypes.includes(node.type))button.querySelector('.map-node-status').textContent+=(node.type==='question'?' · untested':'')+' · priority '+priority;
@@ -1628,7 +1629,7 @@ document.addEventListener('submit', event => {
     if(inspector.dataset.stamp!==stamp){
       const opened=new Set([...inspector.querySelectorAll('details[open]')].map(item=>item.querySelector('summary')?.textContent));
       const title=el('h3',node.title),detail=el('p',`${node.type.replaceAll('_',' ')} · ${node.status}`,'map-inspector-status');
-      inspector.replaceChildren(title,detail,el('p',node.dead_end_reason||node.content||'No details saved yet.','map-inspector-text'));
+      title.dataset.originalOutput='1';inspector.replaceChildren(title,detail,el('p',node.dead_end_reason||node.content||'No details saved yet.','map-inspector-text'));
       const original=snapshot.nodes.find(item=>String(item.id)===String(node.id));if(original){inspector.dataset.termKind='node';inspector.dataset.termNode=String(original.id);inspector.dataset.termVersion=JSON.stringify([original.updated_at,original.title,original.content,original.data_json]);}else{delete inspector.dataset.termKind;delete inspector.dataset.termNode;delete inspector.dataset.termVersion;}
       if(conceptTypes.includes(node.type))inspector.append(el('p',`Priority ${node.path_weight||50} · ${node.model_tier||'primary'} model tier. ${node.weight_reason||'Priority is separate from evidence strength.'}${Number(node.speculative)?' Untested idea — may be wrong.':''}`));
       if(Number(snapshot.run.flow_version)>=2)inspector.append(el('p',`${['Active','Secondary','Tertiary'][Number(node.layer)||0]} · ${originLabel(node.origin)} · ${provenanceLabel(node.provenance_tag)}${node.park_reason?' · Park reason: '+node.park_reason:''}`));
@@ -1849,7 +1850,7 @@ document.addEventListener('submit', event => {
  }
  function updateControls(){
   if(!snapshot)return;const n=snapshot.nodes.find(n=>String(n.id)===selected),valid=!!n&&types.has(n.type),busy=snapshot.run.busy_since!=null||snapshot.requests.some(r=>r.status==='pending')||root.dataset.requestBusy==='1';
-  currentLabel.textContent=n?window.AIcontrolMap.sentence(n.title):'Concept details';currentLabel.title=n?.title||'';
+  currentLabel.textContent=n?window.AIcontrolMap.shortNote(n.title):'Concept details';currentLabel.title=n?.title||'';
   const capacity=root.dataset.connected!=='0'&&snapshot.budget?.remaining!==0;
   expand.hidden=!valid||Number(snapshot.run.flow_version)<2;expand.disabled=!valid||!verified||busy||!capacity||snapshot.run.status!=='running'||!['exploring','verification_review'].includes(snapshot.run.phase);
   chat.disabled=!valid;form.elements.node_id.value=valid?selected:'';form.elements.run_id.value=snapshot.run.id;
@@ -1933,8 +1934,44 @@ document.addEventListener('submit', event => {
  function stamp(region){const owner=region.closest('[data-term-kind]');return owner?JSON.stringify([owner.dataset.termKind,owner.dataset.termNode,owner.dataset.termVersion,region.textContent]):null;}
  function scan(){queued=false;if(opened&&(!active?.button.isConnected||!active.button.getClientRects().length||active.button.closest('[hidden]')))hide();const regions=[...document.querySelectorAll(selector)];let index=0;function batch(){for(let end=Math.min(index+30,regions.length);index<end;index++)annotate(regions[index]);if(index<regions.length)requestAnimationFrame(batch);}batch();}
  const schedule=()=>{if(!queued){queued=true;requestAnimationFrame(scan);}};
- new MutationObserver(records=>{if(records.some(record=>{if(panel.contains(record.target))return false;const target=record.target.nodeType===Node.ELEMENT_NODE?record.target:record.target.parentElement;const region=target?.closest(selector);return !region||processed.get(region)!==stamp(region);}))schedule();}).observe(document.body,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['hidden','open','data-term-node','data-term-version']});
+ new MutationObserver(records=>{if(records.some(record=>{if(panel.contains(record.target)||record.target.parentElement?.closest('[data-output-explanation]'))return false;const target=record.target.nodeType===Node.ELEMENT_NODE?record.target:record.target.parentElement;const region=target?.closest(selector);return !region||processed.get(region)!==stamp(region);}))schedule();}).observe(document.body,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['hidden','open','data-term-node','data-term-version']});
  document.addEventListener('pointerover',event=>{const region=event.target.closest(selector);if(region)annotate(region);},{passive:true});document.addEventListener('toggle',schedule,true);schedule();
+})();
+
+// Explicit Explain streams C; A is a local short note and B stays unchanged.
+(()=>{
+ const config=document.querySelector('[data-term-help-config]');if(!config)return;
+ const cache=new Map(),project=config.dataset.projectId,entry=config.dataset.entry||location.pathname;let current=null,queued=false;
+ const make=(tag,text,cls)=>{const el=document.createElement(tag);if(text!==undefined)el.textContent=text;if(cls)el.className=cls;return el;};
+ function identify(){const original=document.querySelector('[data-map-inspector-content] .map-inspector-text'),owner=original?.closest('[data-term-kind="node"]');if(!owner||!original||!/^[1-9][0-9]*$/.test(owner.dataset.termNode||''))return null;return {original,node:owner.dataset.termNode,key:JSON.stringify([project,owner.dataset.termNode,owner.querySelector('h3')?.textContent,original.textContent])};}
+ const side=document.querySelector('[data-map-inspector]'),expand=document.querySelector('[data-branch-expand]');if(!side||!expand)return;
+ const button=make('button','Explain','btn btn-outline-primary');button.type='button';button.dataset.explainOutput='';button.title='Rewrite this output using ASD-STE100 writing principles';expand.before(button);
+ const area=make('section',undefined,'output-explanation');area.dataset.outputExplanation='';area.setAttribute('aria-label','C · Simplified rewrite');
+ const box=make('div',undefined,'output-explanation-box');box.hidden=true;box.dataset.outputExplanationBox='';box.append(make('h4','C · Simplified rewrite'),make('p','ASD-STE100 writing principles · AI-generated; formal compliance is not certified. Original output B stays unchanged.','output-explanation-note'));
+ const status=make('p','','output-explanation-status');status.setAttribute('role','status');status.dataset.outputExplanationStatus='';const text=make('div','','output-explanation-text');text.tabIndex=0;text.dataset.outputExplanationText='';text.setAttribute('aria-label','Simplified explanation text');const retry=make('button','Retry (another paid request)','btn btn-sm btn-outline-secondary');retry.type='button';retry.dataset.retryOutputExplanation='';retry.hidden=true;box.append(status,text,retry);area.append(box);side.querySelector('[data-map-inspector-content]').after(area);
+ button.addEventListener('click',()=>{const source=identify();if(source)run(source,false);});retry.addEventListener('click',()=>{const source=identify();if(source)run(source,true);});
+ function draw(){queued=false;const source=identify();current=source?{...source,area}:null;button.hidden=!source;paint();}
+ function paint(){const state=current?cache.get(current.key):null;box.hidden=!state;button.disabled=state?.status==='pending';button.textContent=state?.status==='pending'?'Explaining…':'Explain';retry.hidden=!state?.retry;if(!state)return;text.textContent=state.text||'';status.textContent=state.status==='pending'?'Streaming rewrite · unfinished until saved.':state.status==='ready'?(state.cached?'Saved rewrite.':'Rewrite saved.'):(state.error||'Unfinished rewrite. No automatic retry was made.');}
+ async function run(source,retry){const old=cache.get(source.key);if(old?.status==='ready'||old?.status==='pending'){paint();return;}if(old?.retry&&!retry){paint();return;}const state={status:'pending',text:'',retry:false};cache.set(source.key,state);paint();
+  const form=new FormData();for(const [key,value]of Object.entries({action:'research_explain_output',csrf:document.querySelector('input[name=csrf]')?.value||'',project_id:project,node_id:source.node,retry:retry?'1':'0'}))form.set(key,value);
+  let complete=false;
+  try{
+   const response=await fetch(entry,{method:'POST',body:form,credentials:'same-origin',cache:'no-store',headers:{Accept:'text/event-stream'}});
+   if(!response.ok||!(response.headers.get('content-type')||'').includes('text/event-stream')){let message='The explanation could not start. Your original text is unchanged.';if((response.headers.get('content-type')||'').includes('application/json')){const value=await response.json();message=value.error||message;state.retry=value.allow_retry===true;}throw Error(message);}
+   if(!response.body)throw Error('Streaming is unavailable in this browser.');const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='';
+   const event=block=>{const lines=block.split('\n'),type=lines.find(l=>l.startsWith('event:'))?.slice(6).trim(),value=JSON.parse(lines.filter(l=>l.startsWith('data:')).map(l=>l.slice(5).trim()).join('\n')||'{}');
+    if(type==='delta'&&typeof value.text==='string'){state.text+=value.text;if(state.text.length>24000)throw Error('The explanation exceeded its limit.');}
+    if(type==='error'){state.retry=value.allow_retry===true;throw Error(value.error||'Explanation stopped. No automatic retry was made.');}
+    if(type==='done'){if(typeof value.definition!=='string'||!value.definition)throw Error('No complete explanation was returned.');state.text=value.definition;state.cached=value.cached===true;state.status='ready';complete=true;}
+    if(current?.key===source.key)paint();
+   };
+   while(true){const chunk=await reader.read();buffer+=decoder.decode(chunk.value||new Uint8Array(),{stream:!chunk.done});buffer=buffer.replace(/\r\n/g,'\n');if(buffer.length>80000)throw Error('The explanation stream exceeded its limit.');let i;while((i=buffer.indexOf('\n\n'))!==-1){event(buffer.slice(0,i));buffer=buffer.slice(i+2);}if(chunk.done)break;}
+   if(!complete){state.retry=true;throw Error('The stream ended before completion. No automatic retry was made.');}
+  }catch(error){state.status='error';state.error=(state.text?'Unfinished rewrite. ':'')+error.message;if(error instanceof TypeError)state.retry=true;}
+  if(current?.key===source.key)paint();if(cache.size>100)for(const [key,value]of cache)if(value.status!=='pending'&&key!==current?.key){cache.delete(key);break;}
+ }
+ const schedule=()=>{if(!queued){queued=true;requestAnimationFrame(draw);}};
+ new MutationObserver(records=>{if(records.some(record=>{const target=record.target.nodeType===Node.ELEMENT_NODE?record.target:record.target.parentElement;return !target?.closest('[data-output-explanation],.term-help-panel');}))schedule();}).observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['data-term-node','data-term-version']});schedule();
 })();
 
 // Explicit, sequential system steps. Reloading never retries a dispatched step.
@@ -3340,6 +3377,13 @@ body.research-map-open { overflow:hidden; }
 .term-help-panel .term-help-definition { white-space:pre-line; }
 .term-help-close { position:absolute; top:8px; right:8px; min-width:36px; min-height:36px; border:0; border-radius:6px; background:transparent; color:inherit; font-size:1.3rem; }
 @media(prefers-color-scheme:dark) { .term-help-panel { background:#14283b; color:#e5f2fc; border-color:#82a9bc; }.term-help-panel .term-help-note { color:#bfd4e2; } }
+
+.output-explanation-box {margin:16px 0;padding:16px;border:1px solid #65889e;border-radius:10px;background:#12283b;color:#edf5fc;}
+.output-explanation-text {white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.65;}
+.output-explanation-note,.output-explanation-status {font-size:.8rem;color:inherit;}
+.output-explanation-box h4 {color:inherit;font-size:1.1rem;}
+
+[data-original-output]::before {content:"B · Original model output";display:block;font-size:.75rem;line-height:1.5;margin-bottom:8px;color:#bed0df;}
 
 AICONTROL_UI_CSS;
     }

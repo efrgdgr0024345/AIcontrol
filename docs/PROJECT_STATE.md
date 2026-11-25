@@ -1088,3 +1088,17 @@ and only caches a definition after server validation/persistence. Truncated stre
 retain partial text with an error and never retry automatically. Cached results
 remain immediate. A delayed synthetic provider regression asserts partial text is
 visible while final output is still unavailable.
+
+## A/B/C map reader and click-only STE rewrite (2026-11-25)
+
+A uses a short local note shared by map labels and the reader header; B retains
+the original high-level model output. Explain, immediately before Expand this
+pathway, streams C using gpt-5.4-nano and ASD-STE100 writing principles. C is
+separate AI guidance, not certified standards compliance or verified Evidence.
+Saved source-aware rewrites use purpose ste100 in the existing private reading
+help tables and a separate 10-call/US$0.05 rolling-hour allowance, including
+unverified reservations. Admin reports usage; export/reset/delete include C.
+Delayed synthetic HTTP/browser tests cover early rendering, branch/source
+isolation, reuse, unchanged originals and desktop/mobile/dark accessibility.
+See TERM_HELP.md for complete bounds. Exact-SHA CI and hosted observations must
+be distinguished from synthetic validation in the retained release reports.
