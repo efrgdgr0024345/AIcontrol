@@ -126,11 +126,13 @@ Admin reports or run Admin cleanup. PIN-verified access overrides that demo flag
 These restrictions preserve existing records and keys; they do not reset access
 configuration or modify existing remote servers during application installation.
 
-Map execution controls (2026-11-21 AWST): one compact top Start/Stop icon;
-automatic model-only growth defaults to five rounds, accepts 1–20, dispatches
-sequentially and pauses on user interruption/errors/limits. It uses the existing
-research API, model, spend cap, rate limit and flow-2 permissions. No new daemon,
-provider allowance, database field or automatic Evidence stage is introduced.
+Map execution controls: compact play, Stop and automatic growth. With an idle
+or stopped flow-2 idea selected, play grows the same pathway for one round.
+A stopped map at the project root offers a fresh investigation. Frozen Evidence
+remains read-only during resumed growth. Automatic model-only growth defaults
+to five rounds, accepts 1–20, dispatches sequentially and pauses on user
+interruption, errors or limits. Both use the existing model, spend cap, rate
+limit and flow-2 permissions. The pathway display toggle only changes the canvas.
 
 NASA Managed defaults (2026-11-22): owner-only planning for explicitly selected
 task/research projects, additive nasa_* tables in panel.sqlite, original versioned

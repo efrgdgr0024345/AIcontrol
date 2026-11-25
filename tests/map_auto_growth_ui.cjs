@@ -12,8 +12,8 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   const read=async()=>{const run=await page.locator('[data-investigation]').getAttribute('data-run-id'),csrf=await page.locator('input[name=csrf]').first().inputValue();const r=await page.request.post(url+'?research_api=1',{form:{csrf,run_id:run,action:'research_status'}});return r.json();};
   const header=page.locator('.map-screen-header'),toggle=page.locator('[data-map-run-toggle]'),rounds=page.getByLabel('Automatic growth rounds',{exact:true});
   await header.getByRole('button',{name:'Stop research',exact:true}).waitFor();if(await toggle.count()!==1||await page.locator('.map-controls-tray').isVisible())throw Error('Compact controls are not available with the tray closed');
-  const s0=await read(),startNodes=new Set(s0.nodes.map(n=>n.id)),anchor=String(s0.nodes.find(n=>n.type==='dream_claim').id),sent=[];
-  page.on('request',request=>{const data=new URLSearchParams();for(const [,name,value]of (request.postData()||'').matchAll(/name="([^"]+)"\r\n\r\n([^\r]*)/g))data.append(name,value);if(data.get('action')==='research_explore')sent.push(data);});
+  const s0=await read(),startNodes=new Set(s0.nodes.map(n=>n.id)),anchor=String(s0.nodes.find(n=>n.type==='dream_claim').id),sent=[],manual=[];
+  page.on('request',request=>{const data=new URLSearchParams();for(const [,name,value]of (request.postData()||'').matchAll(/name="([^"]+)"\r\n\r\n([^\r]*)/g))data.append(name,value);if(data.get('action')==='research_explore')sent.push(data);if(data.get('action')==='research_expand_pathway')manual.push(data);});
   const focus=async id=>{await page.locator('[data-map-controls]').click();await page.getByLabel('Find an idea or evidence card',{exact:true}).selectOption(String(id));await page.getByRole('button',{name:'Focus selected star',exact:true}).click();};
   const park=await page.request.post(url+'?research_api=1',{form:{csrf:await page.locator('input[name=csrf]').first().inputValue(),run_id:String(s0.run.id),action:'research_park','node_ids[]':anchor,park_reason:'Older interest to bring back into focus'}});if(!park.ok())throw Error('Could not park the focus fixture');await page.reload();await page.waitForFunction(()=>document.querySelector('[data-investigation]')?.dataset.phase==='exploring');
   await focus(anchor);const label=page.locator(`[data-map-node="${anchor}"] .map-node-title`);if(!await label.evaluate(n=>{const s=getComputedStyle(n),card=n.closest('[data-map-node]');return s.fontSize==='16px'&&s.webkitLineClamp==='none'&&card.dataset.starSize==='1.0000'&&card.dataset.starBrightness==='1.0000'&&card.dataset.labelSuppressed==='false';}))throw Error('Selected path did not regain full size, light and readable text');
@@ -30,14 +30,51 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   let release,held=false,finished;const hold=new Promise(resolve=>release=resolve),fulfilled=new Promise(resolve=>finished=resolve);const route=async route=>{if(!(route.request().postData()||'').includes('research_explore'))return route.continue();const response=await route.fetch();held=true;await hold;await route.fulfill({response});finished();};await page.route('**/loader.php?**',route);
   await rounds.fill('5');await page.getByRole('button',{name:'Start automatic growth',exact:true}).click();await page.waitForFunction(()=>document.querySelector('[data-map-auto-grow]')?.getAttribute('aria-pressed')==='true');for(let i=0;i<100&&!held;i++)await page.waitForTimeout(20);if(!held)throw Error('Round did not dispatch');
   await header.getByRole('button',{name:'Stop research',exact:true}).click();await page.waitForFunction(()=>document.querySelector('[data-investigation]')?.dataset.status==='interrupted');release();await fulfilled;await page.unroute('**/loader.php?**',route);await page.waitForTimeout(800);
-  if(await toggle.getAttribute('aria-label')!=='Start research'||(await read()).requests.filter(r=>r.kind==='model_explore').length!==8)throw Error('Stop dispatched another round or stale response reactivated the map');
-  // Start from the compact toggle; a new run has no automatic queue carried over.
+  const stopped=await read();
+  if(stopped.run.status!=='interrupted'||stopped.requests.filter(r=>r.kind==='model_explore').length!==8)throw Error('Stop dispatched another round or stale response reactivated the map');
+  const verifyContinuation=async(selected,before)=>{
+    const start=header.getByRole('button',{name:'Continue from selected pathway',exact:true});
+    await start.click();
+    await page.waitForFunction(()=>document.querySelector('[data-investigation]').dataset.requestBusy==='0');
+    const after=await read(),oldIds=new Set(before.nodes.map(n=>n.id));
+    const idea=after.nodes.find(n=>!oldIds.has(n.id)&&n.type==='model_idea');
+    const request=after.requests.at(-1);
+    const phase=after.nodes.find(n=>n.id===request.node_id);
+    const context=JSON.parse(phase.data_json);
+    if(after.run.id!==before.run.id||after.run.status!=='running'||after.run.phase!=='exploring'||after.requests.length!==before.requests.length+1||request.kind!=='model_explore'||request.status!=='complete'||String(request.path_node_id)!==selected||String(idea?.parent_id)!==selected||String(context.interest_ids[0])!==selected||manual.at(-1)?.get('node_id')!==selected||sent.length!==8||after.sources.length)throw Error('Compact Start lost the selected pathway or dispatched an unexpected request');
+    if(!before.nodes.every(n=>after.nodes.some(saved=>saved.id===n.id)))throw Error('Continuing dropped a saved node');
+    return after;
+  };
+  const resumed=await verifyContinuation(alternate,stopped);
+  await focus(String(resumed.nodes.at(-1).id));await page.getByRole('button',{name:'Close details',exact:true}).click();
+  await verifyContinuation(String(resumed.nodes.at(-1).id),resumed);
+  if(manual.length!==2)throw Error('Compact Start did not make one request per click');
+  // A manual response that arrives after Stop must not reopen the map.
+  let releasePathway,confirmPathway,finishPathway;
+  const pathwayHeld=new Promise(resolve=>confirmPathway=resolve);
+  const pathwayRelease=new Promise(resolve=>releasePathway=resolve);
+  const pathwayDone=new Promise(resolve=>finishPathway=resolve);
+  const holdPathway=async route=>{
+    if(!(route.request().postData()||'').includes('research_expand_pathway'))return route.continue();
+    const response=await route.fetch();confirmPathway();
+    await pathwayRelease;await route.fulfill({response});finishPathway();
+  };
+  await page.route('**/loader.php?**',holdPathway);
+  await header.getByRole('button',{name:'Continue from selected pathway',exact:true}).click();
+  await Promise.race([pathwayHeld,page.waitForTimeout(5000).then(()=>{throw Error('Manual pathway did not dispatch');})]);
+  await header.getByRole('button',{name:'Stop research',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('[data-investigation]').dataset.status==='interrupted');
+  releasePathway();await pathwayDone;await page.unroute('**/loader.php?**',holdPathway);
+  await page.waitForFunction(()=>document.querySelector('[data-investigation]').dataset.requestBusy==='0');
+  if(await page.locator('[data-investigation]').getAttribute('data-status')!=='interrupted')throw Error('Late manual response reopened a stopped map');
+  // Selecting the project root still offers a fresh run after Stop.
+  await focus('root');await page.getByRole('button',{name:'Close details',exact:true}).click();
   await toggle.click();await page.waitForFunction(old=>{const r=document.querySelector('[data-investigation]');return r?.dataset.phase==='exploring'&&r.dataset.status==='running'&&r.dataset.runId!==old;},String(grown.run.id));const fresh=await read();if(fresh.run.id===grown.run.id||fresh.requests.filter(r=>r.kind==='model_explore').length)throw Error('Start toggle did not start a fresh, manual run');
   await page.setViewportSize({width:390,height:844});await audit();if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1))throw Error('Compact map controls overflow mobile');const b=await toggle.boundingBox();if(!b||b.y>70||b.width>40)throw Error('Start/Stop is not a compact top control');await page.screenshot({path:path.join(root,'test-artifacts/ui-map-auto-grow-mobile.png')});
   // Repeated provider output ends a batch after one confirmed call without growing duplicate stars.
   await rounds.fill('1');await page.getByRole('button',{name:'Start automatic growth',exact:true}).click();await page.locator('[data-map-grow-progress]').filter({hasText:'1/1'}).waitFor();await page.waitForFunction(()=>!document.querySelector('[data-map-auto-grow]').disabled);const beforeRepeat=await read(),sentBefore=sent.length;fs.writeFileSync(path.join(home,'repeat-idea-fixture'),'repeat');await rounds.fill('5');await page.getByRole('button',{name:'Start automatic growth',exact:true}).click();await page.waitForFunction(()=>document.querySelector('[data-map-auto-grow]').getAttribute('aria-pressed')==='false');await page.waitForTimeout(350);const afterRepeat=await read();fs.unlinkSync(path.join(home,'repeat-idea-fixture'));if(sent.length!==sentBefore+1||afterRepeat.nodes.filter(n=>n.type==='model_idea').length!==beforeRepeat.nodes.filter(n=>n.type==='model_idea').length||!(await page.locator('[data-map-grow-progress]').getAttribute('title')).includes('no new ideas'))throw Error('Duplicate-only round grew stars or automatically retried');
   // A transport failure ends the sequence, with no automatic retry.
   let attempts=0;await page.route('**/loader.php?**',async route=>{if((route.request().postData()||'').includes('research_explore')){attempts++;return route.fulfill({status:503,contentType:'application/json',body:'{"error":"Synthetic growth outage"}'});}return route.continue();});await page.getByRole('button',{name:'Start automatic growth',exact:true}).click();await page.locator('[data-map-grow-progress]').filter({hasText:'0/5'}).waitFor();await page.waitForFunction(()=>document.querySelector('[data-map-auto-grow]')?.getAttribute('aria-pressed')==='false');await page.waitForTimeout(500);if(attempts!==1)throw Error('Failed automatic request was retried');
-  if(errors.length)throw Error(errors.join('\n'));console.log('PASS: compact controls, readable selected path, stable interests, live steering, sequential growth, duplicate-only stop, Stop/stale response, failure/no-retry and desktop/mobile axe (synthetic provider)');
+  if(errors.length)throw Error(errors.join('\n'));console.log('PASS: compact Start continues selected ideas in active and stopped runs, root Start, selected-path readability, automatic steering, Stop/stale response, no-retry and desktop/mobile axe (synthetic provider)');
  }finally{if(browser)await browser.close();server.kill();await new Promise(resolve=>server.exitCode!==null?resolve():server.once('exit',resolve));fs.rmSync(tmp,{recursive:true,force:true});}
 })().catch(e=>{console.error(e.stack||e.message);process.exitCode=1;});

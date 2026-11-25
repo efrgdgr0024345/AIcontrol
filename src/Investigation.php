@@ -148,6 +148,10 @@ final class Investigation
     public function appendNode(int $run, ?int $parent, string $type, string $status, string $title, string $content = ''): int
     {
         if($type!=='learn'&&(int)$this->run($run)['rigour_version']===1)$this->writableLedger($run);
+        return $this->insertNode($run,$parent,$type,$status,$title,$content);
+    }
+    private function insertNode(int $run, ?int $parent, string $type, string $status, string $title, string $content): int
+    {
         if (!in_array($type, ['phase','dream_claim','plan_step','search','source','dead_end','synthesis','learn','question','model_idea','association','counter','edge_case','reframing'], true)
             || !in_array($status,['pending','running','complete','failed','incomplete','uncertain','interrupted','dead_end'],true)) { throw new RuntimeException('Invalid research node.'); }
         if ($parent !== null && !$this->rows('SELECT id FROM research_nodes WHERE id=? AND run_id=?', [$parent,$run])) { throw new RuntimeException('Invalid node parent.'); }
@@ -443,13 +447,22 @@ final class Investigation
     {
         return ProviderGate::run($this->directory,fn()=> $this->stepWork($id,$focusNode,$note));
     }
-    private function stepWork(int $id, ?int $focusNode = null, string $note = '', ?array $explore=null): array
+    private function stepWork(int $id, ?int $focusNode = null, string $note = '', ?array $explore=null, bool $resumePathway=false): array
     {
         $this->credentials();
         if(strlen($note)>1000||!mb_check_encoding($note,'UTF-8')||($focusNode===null&&$note!==''))throw new RuntimeException('Invalid focus note.');
-        $job = $this->transaction(function () use ($id,$focusNode,$note,$explore): ?array {
+        $job = $this->transaction(function () use ($id,$focusNode,$note,$explore,$resumePathway): ?array {
             $run=$this->run($id);
-            if($explore!==null){$this->livingIdle($id);$this->livingNodes($id,$explore['ids'],true);$this->livingNodes($id,$explore['interest_ids']??[],true);$run['phase']='model_explore';}
+            if($explore!==null){
+                $this->livingNodes($id,$explore['ids'],true);
+                $this->livingNodes($id,$explore['interest_ids']??[],true);
+                if($resumePathway){
+                    $this->budget();
+                    if($run['status']!=='running')$this->resumePathway($id,$run);
+                }
+                $run=$this->livingIdle($id,true);
+                $run['phase']='model_explore';
+            }
             elseif($run['phase']==='exploring')return null;
             if((int)$run['flow_version']>=2&&$focusNode!==null)throw new RuntimeException('Evidence is restricted to the explicitly locked branches.');
             $focus=null;
@@ -466,7 +479,10 @@ final class Investigation
             try { $this->budget(); } catch (Throwable $e) { $this->updateRunStatus($id,'incomplete',$e->getMessage()); return null; }
             $phase=$run['phase'];$this->execute('UPDATE research_runs SET phase=? WHERE id=?',[$phase,$id]);$token=bin2hex(random_bytes(16));
             $this->execute('UPDATE research_runs SET busy=?,busy_since=? WHERE id=?',[$token,time(),$id]);
-            $node=$this->appendNode($id,$explore!==null?($explore['ids'][0]??null):($focus!==null?(int)$focus['focus_node_id']:null),'phase','running',ucfirst($phase),$phase==='dream'?'Model’s prior thoughts — not yet checked.':'Phase request in progress.');
+            // Model-only bookkeeping can be appended alongside a frozen evidence ledger.
+            $node=$explore!==null
+                ?$this->insertNode($id,$explore['ids'][0]??null,'phase','running',ucfirst($phase),'Phase request in progress.')
+                :$this->appendNode($id,$focus!==null?(int)$focus['focus_node_id']:null,'phase','running',ucfirst($phase),$phase==='dream'?'Model’s prior thoughts — not yet checked.':'Phase request in progress.');
             if($focus!==null)$this->execute('UPDATE research_nodes SET data_json=? WHERE id=?',[json_encode($focus,JSON_THROW_ON_ERROR),$node]);
             $worker=$this->worker($run,$phase,$focus);if($explore!==null){$worker['path']=$explore['ids'][0]??null;$worker['role']='Model-only '.$explore['mode'];$this->execute('UPDATE research_nodes SET data_json=? WHERE id=?',[json_encode($explore,JSON_THROW_ON_ERROR),$node]);}
             $request=$this->request($id,$node,$phase);

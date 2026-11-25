@@ -52,10 +52,27 @@ try{
  Wire::$handler=fn($body)=>reply(json_encode(['assessments'=>[['claim_id'=>$second,'status'=>'supported','rationale'=>'Unsupported model assertion','strength'=>'moderate']],'defects'=>[],'calculations'=>[]]));$s=$engine->step($run);$node=array_values(array_filter($s['nodes'],fn($n)=>$n['id']===$b))[0];
  verify($s['run']['phase']==='verification_review'&&$node['provenance_tag']==='locked','Unbacked verifier assertion incorrectly marked branch grounded');
  $engine->finishVerification($run);denied(fn()=>$engine->explore($run,[]),'Frozen run accepted growth');$engine->changeLayer($run,[$a],'promote');verify($engine->getRunSnapshot($run)['nodes'][1]['layer']===0,'Frozen metadata stewardship failed');
+ $frozen=$engine->getRunSnapshot($run);
+ denied(fn()=>$engine->expandPathway($run,99999),'Pathway continuation admitted an unknown concept');
+ verify($engine->getRunSnapshot($run)['run']['status']==='complete','Rejected pathway selection reopened a completed run');
+ Wire::$handler=function($body)use($a){
+  $input=json_decode($body['input'],true);
+  verify(!isset($body['tools'])&&$input['parents'][0]['id']===$a&&$input['areas_of_interest'][0]['id']===$a,'Continuation lost the selected frontier, interest or model-only bounds');
+  return reply(json_encode(['ideas'=>[['parent_id'=>$a,'title'=>'Joint testing standards','idea'=>'Measure equipment variance under a single protocol','uncertainty'=>'Interlaboratory comparability','test'=>'Run a blind comparison across sites']]]));
+ };
+ $resumed=$engine->expandPathway($run,$a);
+ verify($resumed['run']['status']==='running'&&$resumed['run']['phase']==='exploring'&&(int)$resumed['run']['evidence_frozen']===1
+     &&$resumed['run']['evidence_version']===$frozen['run']['evidence_version']&&$resumed['ledger']===$frozen['ledger']&&$resumed['sources']===$frozen['sources'],'Continuation changed a frozen ledger');
+ verify(end($resumed['nodes'])['parent_id']===$a,'Continuation attached a new idea outside the selected pathway');
+ denied(fn()=>$engine->lockEvidence($run,[$a]),'Resuming model exploration reopened frozen Evidence');
  // Stop races retain usage but reject all late ideas.
  $engine->stop($run);[$raceDir,$race,$raceOld,$raceDb]=fixture(true);$raceRun=$race->createRun(1);Wire::$handler=fn($body)=>reply(json_encode(seedPrior()));$s=$race->step($raceRun);$before=count($s['nodes']);
  Wire::$handler=function($body)use($race,$raceRun){$race->stop($raceRun);return reply(json_encode(['ideas'=>[['parent_id'=>0,'title'=>'Late idea','idea'=>'Must not save','uncertainty'=>'Unknown','test'=>'None']]]));};$s=$race->explore($raceRun,[]);verify($s['run']['status']==='interrupted'&&count($s['nodes'])===$before+1&&!array_filter($s['nodes'],fn($n)=>$n['title']==='Late idea'),'Stop allowed late growth');
  denied(fn()=>$race->explore($raceRun,[]),'Stopped run grew again');
+ $saved=(int)$s['ledger']['claims'][0]['id'];
+ Wire::$handler=function($body)use($race,$raceRun,$saved){$race->stop($raceRun);return reply(json_encode(['ideas'=>[['parent_id'=>$saved,'title'=>'Late continuation','idea'=>'Must not save','uncertainty'=>'Unknown','test'=>'None']]]));};
+ $s=$race->expandPathway($raceRun,$saved);
+ verify($s['run']['status']==='interrupted'&&!array_filter($s['nodes'],fn($n)=>$n['title']==='Late continuation'),'Stop allowed late pathway continuation');
  // Multi-selection produces one plan slot for every target plus Challenge.
  [$multiDir,$multi,$multiOld,$multiDb]=fixture(true);$multiRun=$multi->createRun(1);Wire::$handler=fn($body)=>reply(json_encode(seedPrior()));$multi->step($multiRun);
  Wire::$handler=fn($body)=>reply(json_encode(['ideas'=>array_map(fn($i)=>['parent_id'=>0,'title'=>'Alternative '.$i,'idea'=>'Unchecked model path','uncertainty'=>'Scope','test'=>'Measure'],range(1,5))]));$s=$multi->explore($multiRun,[]);$ids=array_map('intval',array_column(array_filter($s['nodes'],fn($n)=>$n['type']==='model_idea'),'id'));$multi->lockEvidence($multiRun,$ids);$s=$multi->getRunSnapshot($multiRun);$targets=array_values(array_filter($s['ledger']['claims'],fn($n)=>(int)$n['selected']===1));

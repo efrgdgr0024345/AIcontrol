@@ -380,6 +380,7 @@ document.addEventListener('submit', event => {
   }
   let livingSnapshot;
   let growthBatch=null,growthSerial=0,actionRequests=0;
+  let stopSerial=0,snapshotRevision=0;
   let growthProgress={active:false,completed:0,total:0,message:''};
   const growthTypes=new Set(['dream_claim','question','model_idea','association','counter','edge_case','reframing']);
   function publishGrowth(){root?.dispatchEvent(new CustomEvent('research:auto-grow-state',{detail:{...growthProgress,busy:stepping}}));}
@@ -440,7 +441,8 @@ document.addEventListener('submit', event => {
         let reason='';
         if(chosen.length>5)reason='Select at most five branches.';
         else if(action!=='research_explore'&&!chosen.length)reason='Select at least one branch.';
-        else if(['research_explore','research_lock_evidence'].includes(action)&&!idle)reason='Wait for an idle exploration or verification-review stage; stopped/frozen runs cannot grow.';
+        else if(['research_explore','research_lock_evidence'].includes(action)&&!idle)reason='Wait for an idle exploration or verification-review stage. Select a pathway to continue a stopped map.';
+        else if(action==='research_lock_evidence'&&Number(snapshot.run.evidence_frozen))reason='This Evidence ledger is frozen. Model exploration is available.';
         else if(action==='research_lock_evidence'&&chosen.some(n=>Number(n.layer)>1||n.locked_at!==null||n.origin!=='model_latent'))reason='Lock only unlocked Active or Secondary model branches.';
         else if(action==='research_lock_evidence'&&snapshot.budget.remaining<chosen.length+4)reason=`Lock-in needs ${chosen.length+4} available requests for planning, searches, extraction and verification.`;
         else if(action==='research_explore'&&snapshot.budget.remaining<1)reason='Hourly request limit reached.';
@@ -549,13 +551,15 @@ document.addEventListener('submit', event => {
   async function poll(force = false) {
     if (!root || polling) return;
     const pending = !root.querySelector('[data-stop-control]').hidden;
-    if (!force && !['pending', 'running'].includes(root.dataset.status) && !pending) return;
+    if (!force && !['pending', 'running'].includes(root.dataset.status) && !pending && !actionRequests) return;
     polling = true;
+    const revision=snapshotRevision;
     try {
       const url = new URL(root.dataset.entry, location.href); url.searchParams.set('view', 'research'); url.searchParams.set('research_api', '1');
       const payload = new FormData(); payload.set('action', 'research_status'); payload.set('csrf', csrf()); payload.set('run_id', root.dataset.runId);
       const response = await fetch(url, {method:'POST',body:payload,credentials:'same-origin',cache:'no-store',headers:{'Accept':'application/json'}});
       const data = await researchResponse(response, 'Progress check');
+      if(revision!==snapshotRevision)return;
       root.dataset.lastContact=String(Date.now());render(data);
       if (!halted) advance();
     } catch (failure) { diagnosticFailure('poll', failure); halted = true; error(failure.message); }
@@ -569,19 +573,25 @@ document.addEventListener('submit', event => {
     const button = event.submitter || form.querySelector('button:not([type=button])'); button.disabled = true;
     if(growthBatch)cancelGrowth(action==='research_stop'?'Automatic growth stopped.':'Automatic growth paused for a manual action.');
     if(action!=='research_stop'&&actionRequests){button.disabled=false;return;}
-    if (action === 'research_stop') halted = true;
+    if (action === 'research_stop') {halted=true;stopSerial++;snapshotRevision++;}
+    const startedBeforeStop=stopSerial;
     if (action === 'research_step' && !form.hasAttribute('data-map-focus')) { halted = false; advance(true); button.disabled = false; return; }
     if (action === 'research_learn') { root.querySelectorAll('[data-learn-followup], [data-learn-submit]').forEach(button => button.disabled = true); error('Explaining collected evidence… No web search.'); root.querySelector('[data-stop-control]').hidden = false; }
     actionRequests++;if(root){root.dataset.requestBusy='1';if(action==='research_stop')root.dataset.stopBusy='1';root.dispatchEvent(new Event('research:controls'));}
     try {
       const snapshot = await send(form);
+      if(action==='research_expand_pathway'&&startedBeforeStop!==stopSerial)return;
       if(action==='research_settings'){location.reload();return;}
       if (action === 'research_start') {
         const url = new URL(form.getAttribute('action'), location.href); url.searchParams.set('project', snapshot.run.project_id); url.searchParams.set('run', snapshot.run.id); if(form.dataset.researchFromMap==='1')url.searchParams.set('map','1'); location.assign(url); return;
       }
-      render(snapshot); error('');
+      snapshotRevision++;render(snapshot); error('');
       if (action === 'research_continue' || (action==='research_living'&&form.elements.action.value==='research_lock_evidence') || form.hasAttribute('data-map-focus')) { halted = false; advance(); }
-    } catch (failure) { diagnosticFailure(action, failure); error(failure.message);  }
+    } catch (failure) {
+      if(action==='research_expand_pathway'&&startedBeforeStop!==stopSerial)return;
+      diagnosticFailure(action, failure); error(failure.message);
+      if(action==='research_expand_pathway')poll(true);
+    }
     finally { actionRequests--;if(root){root.dataset.requestBusy=actionRequests?'1':'0';if(action==='research_stop')root.dataset.stopBusy='0';}button.disabled = false;if(livingSnapshot)renderLiving(livingSnapshot); root?.dispatchEvent(new Event('research:controls')); }
   });
   root?.addEventListener('click', event => {

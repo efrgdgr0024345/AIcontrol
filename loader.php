@@ -921,6 +921,7 @@ document.addEventListener('submit', event => {
   }
   let livingSnapshot;
   let growthBatch=null,growthSerial=0,actionRequests=0;
+  let stopSerial=0,snapshotRevision=0;
   let growthProgress={active:false,completed:0,total:0,message:''};
   const growthTypes=new Set(['dream_claim','question','model_idea','association','counter','edge_case','reframing']);
   function publishGrowth(){root?.dispatchEvent(new CustomEvent('research:auto-grow-state',{detail:{...growthProgress,busy:stepping}}));}
@@ -981,7 +982,8 @@ document.addEventListener('submit', event => {
         let reason='';
         if(chosen.length>5)reason='Select at most five branches.';
         else if(action!=='research_explore'&&!chosen.length)reason='Select at least one branch.';
-        else if(['research_explore','research_lock_evidence'].includes(action)&&!idle)reason='Wait for an idle exploration or verification-review stage; stopped/frozen runs cannot grow.';
+        else if(['research_explore','research_lock_evidence'].includes(action)&&!idle)reason='Wait for an idle exploration or verification-review stage. Select a pathway to continue a stopped map.';
+        else if(action==='research_lock_evidence'&&Number(snapshot.run.evidence_frozen))reason='This Evidence ledger is frozen. Model exploration is available.';
         else if(action==='research_lock_evidence'&&chosen.some(n=>Number(n.layer)>1||n.locked_at!==null||n.origin!=='model_latent'))reason='Lock only unlocked Active or Secondary model branches.';
         else if(action==='research_lock_evidence'&&snapshot.budget.remaining<chosen.length+4)reason=`Lock-in needs ${chosen.length+4} available requests for planning, searches, extraction and verification.`;
         else if(action==='research_explore'&&snapshot.budget.remaining<1)reason='Hourly request limit reached.';
@@ -1090,13 +1092,15 @@ document.addEventListener('submit', event => {
   async function poll(force = false) {
     if (!root || polling) return;
     const pending = !root.querySelector('[data-stop-control]').hidden;
-    if (!force && !['pending', 'running'].includes(root.dataset.status) && !pending) return;
+    if (!force && !['pending', 'running'].includes(root.dataset.status) && !pending && !actionRequests) return;
     polling = true;
+    const revision=snapshotRevision;
     try {
       const url = new URL(root.dataset.entry, location.href); url.searchParams.set('view', 'research'); url.searchParams.set('research_api', '1');
       const payload = new FormData(); payload.set('action', 'research_status'); payload.set('csrf', csrf()); payload.set('run_id', root.dataset.runId);
       const response = await fetch(url, {method:'POST',body:payload,credentials:'same-origin',cache:'no-store',headers:{'Accept':'application/json'}});
       const data = await researchResponse(response, 'Progress check');
+      if(revision!==snapshotRevision)return;
       root.dataset.lastContact=String(Date.now());render(data);
       if (!halted) advance();
     } catch (failure) { diagnosticFailure('poll', failure); halted = true; error(failure.message); }
@@ -1110,19 +1114,25 @@ document.addEventListener('submit', event => {
     const button = event.submitter || form.querySelector('button:not([type=button])'); button.disabled = true;
     if(growthBatch)cancelGrowth(action==='research_stop'?'Automatic growth stopped.':'Automatic growth paused for a manual action.');
     if(action!=='research_stop'&&actionRequests){button.disabled=false;return;}
-    if (action === 'research_stop') halted = true;
+    if (action === 'research_stop') {halted=true;stopSerial++;snapshotRevision++;}
+    const startedBeforeStop=stopSerial;
     if (action === 'research_step' && !form.hasAttribute('data-map-focus')) { halted = false; advance(true); button.disabled = false; return; }
     if (action === 'research_learn') { root.querySelectorAll('[data-learn-followup], [data-learn-submit]').forEach(button => button.disabled = true); error('Explaining collected evidence… No web search.'); root.querySelector('[data-stop-control]').hidden = false; }
     actionRequests++;if(root){root.dataset.requestBusy='1';if(action==='research_stop')root.dataset.stopBusy='1';root.dispatchEvent(new Event('research:controls'));}
     try {
       const snapshot = await send(form);
+      if(action==='research_expand_pathway'&&startedBeforeStop!==stopSerial)return;
       if(action==='research_settings'){location.reload();return;}
       if (action === 'research_start') {
         const url = new URL(form.getAttribute('action'), location.href); url.searchParams.set('project', snapshot.run.project_id); url.searchParams.set('run', snapshot.run.id); if(form.dataset.researchFromMap==='1')url.searchParams.set('map','1'); location.assign(url); return;
       }
-      render(snapshot); error('');
+      snapshotRevision++;render(snapshot); error('');
       if (action === 'research_continue' || (action==='research_living'&&form.elements.action.value==='research_lock_evidence') || form.hasAttribute('data-map-focus')) { halted = false; advance(); }
-    } catch (failure) { diagnosticFailure(action, failure); error(failure.message);  }
+    } catch (failure) {
+      if(action==='research_expand_pathway'&&startedBeforeStop!==stopSerial)return;
+      diagnosticFailure(action, failure); error(failure.message);
+      if(action==='research_expand_pathway')poll(true);
+    }
     finally { actionRequests--;if(root){root.dataset.requestBusy=actionRequests?'1':'0';if(action==='research_stop')root.dataset.stopBusy='0';}button.disabled = false;if(livingSnapshot)renderLiving(livingSnapshot); root?.dispatchEvent(new Event('research:controls')); }
   });
   root?.addEventListener('click', event => {
@@ -1277,7 +1287,7 @@ document.addEventListener('submit', event => {
   const originLabel=value=>({model_latent:'Model idea',web_evidence:'Web evidence',user:'Your idea',synthesis:'Model assessment'}[value]||'Historical record');
   const provenanceLabel=value=>({provisional_model:'Provisional / unchecked',locked:'Locked for Evidence',grounded:'Grounded within source scope'}[value]||'Unchecked');
   const conceptTypes=['dream_claim','question','model_idea','association','counter','edge_case','reframing'];
-  const dimLayers=new Set(),receded=new Set(),handoffReceded=new Set();
+  const dimLayers=new Set(),recededBranches=new Set(),receded=new Set(),handoffReceded=new Set();
   const collapsed = new Set(), selectedSources = new Set();
   let lastCameraPaint=0,framePressure=0,activityVerified=true,relations=[],overviewGraph={nodes:[],edges:[]};
   let showRelated=true,pendingKeyboardFocus=null;
@@ -1311,6 +1321,8 @@ document.addEventListener('submit', event => {
   actions.querySelector('[data-map-screen-action=handover]').hidden=!document.querySelector('[data-research-handover]');
   const quickControls=el('div',undefined,'map-quick-controls');quickControls.setAttribute('role','group');quickControls.setAttribute('aria-label','Research and automatic growth');
   const runToggle=screenButton('▶','start','map-compact-button');runToggle.dataset.mapRunToggle='1';runToggle.setAttribute('aria-label','Start research');runToggle.title='Start research';runToggle.disabled=true;
+  const stopButton=screenButton('■','stop','map-compact-button');
+  stopButton.hidden=true;stopButton.dataset.stopping='true';stopButton.setAttribute('aria-label','Stop research');stopButton.title='Stop research (Alt+S)';stopButton.setAttribute('aria-keyshortcuts','Alt+S');
   const autoGrow=el('button','✦','btn map-compact-button');autoGrow.type='button';autoGrow.dataset.mapAutoGrow='1';autoGrow.setAttribute('aria-label','Start automatic growth');autoGrow.setAttribute('aria-pressed','false');autoGrow.disabled=true;
   const growRounds=el('input',undefined,'map-grow-rounds');growRounds.type='number';growRounds.min='1';growRounds.max='20';growRounds.step='1';growRounds.required=true;growRounds.value='5';growRounds.inputMode='numeric';growRounds.dataset.mapGrowRounds='1';growRounds.setAttribute('aria-label','Automatic growth rounds');growRounds.title='Model-only growth rounds (1–20)';
   const growProgress=el('span','','map-grow-progress');growProgress.dataset.mapGrowProgress='1';growProgress.setAttribute('role','status');growProgress.setAttribute('aria-live','polite');growProgress.hidden=true;
@@ -1318,7 +1330,7 @@ document.addEventListener('submit', event => {
   autoGrow.addEventListener('click',()=>{if(growthState.active){root.dispatchEvent(new Event('research:auto-grow-cancel'));return;}if(!growRounds.reportValidity())return;root.dispatchEvent(new CustomEvent('research:auto-grow',{detail:{rounds:Number(growRounds.value),focusNodeId:selected}}));});
   growRounds.addEventListener('input',()=>screenControls());
   root.addEventListener('research:auto-grow-state',event=>{growthState=event.detail;growProgress.hidden=!growthState.total;growProgress.textContent=growthState.total?`${growthState.completed}/${growthState.total}`:'';growProgress.setAttribute('aria-label',growthState.message||'');growProgress.title=growthState.message||'';screenControls();});
-  quickControls.append(runToggle,autoGrow,growRounds,growProgress);
+  quickControls.append(runToggle,stopButton,autoGrow,growRounds,growProgress);
   tray.append(actions,map.querySelector('.mindmap-toolbar'),map.querySelector('[data-map-outcomes]'));
   const layerControls=el('div',undefined,'map-layer-controls');layerControls.setAttribute('role','group');layerControls.setAttribute('aria-label','Map layers');
   for(const [layer,label] of [[1,'Dim Secondary'],[2,'Dim Tertiary']]){const button=el('button',label,'btn btn-outline-secondary');button.type='button';button.setAttribute('aria-pressed','false');button.addEventListener('click',()=>{dimLayers.has(layer)?dimLayers.delete(layer):dimLayers.add(layer);button.setAttribute('aria-pressed',String(dimLayers.has(layer)));renderCamera(camera.getState());});layerControls.append(button);}
@@ -1389,20 +1401,39 @@ document.addEventListener('submit', event => {
   function screenControls(){
     if(!snapshot)return;
     const active=['pending','running'].includes(snapshot.run.status),pending=snapshot.requests.some(request=>request.status==='pending');
-    const canStop=active||pending;runToggle.dataset.mapScreenAction=canStop?'stop':'start';runToggle.textContent=canStop?'■':'▶';runToggle.setAttribute('aria-label',canStop?'Stop research':'Start research');runToggle.title=canStop?'Stop research (Alt+S)':'Start research';runToggle.dataset.stopping=String(canStop);runToggle.disabled=canStop?root.dataset.stopBusy==='1':root.dataset.requestBusy==='1'||root.dataset.connected==='0'||(snapshot.budget&&snapshot.budget.remaining<6);
-    if(canStop)runToggle.setAttribute('aria-keyshortcuts','Alt+S');else runToggle.removeAttribute('aria-keyshortcuts');
     const idle=active&&snapshot.run.status==='running'&&!snapshot.run.busy_since&&!pending&&['exploring','verification_review'].includes(snapshot.run.phase),living=Number(snapshot.run.flow_version)>=2;
+    const pathway=living&&snapshot.nodes.some(node=>String(node.id)===selected&&conceptTypes.includes(node.type));
+    const canStop=active||pending;
+    const continuing=pathway&&(idle||!canStop);
+    const stopping=canStop&&!continuing;
+    const label=stopping?'Stop research':continuing?'Continue from selected pathway':'Start research';
+    const blocked=root.dataset.requestBusy==='1'||root.dataset.connected==='0'||growthState.busy||snapshot.budget?.remaining===0;
+    runToggle.dataset.mapScreenAction=stopping?'stop':continuing?'continue-pathway':'start';
+    runToggle.textContent=stopping?'■':'▶';runToggle.setAttribute('aria-label',label);runToggle.title=stopping?label+' (Alt+S)':label;
+    runToggle.dataset.stopping=String(stopping);
+    runToggle.disabled=stopping?root.dataset.stopBusy==='1':blocked||(continuing&&!activityVerified);
+    if(stopping)runToggle.setAttribute('aria-keyshortcuts','Alt+S');else runToggle.removeAttribute('aria-keyshortcuts');
+    stopButton.hidden=!canStop||stopping;stopButton.disabled=root.dataset.stopBusy==='1';
+    const expand=map.querySelector('[data-branch-expand]');
+    if(expand){expand.hidden=!pathway;expand.disabled=!continuing||blocked||!activityVerified;}
     autoGrow.disabled=!growthState.active&&(!living||!idle||!activityVerified||growthState.busy||root.dataset.requestBusy==='1'||root.dataset.connected==='0'||!growRounds.checkValidity()||snapshot.budget?.remaining===0);
     autoGrow.textContent=growthState.active?'Ⅱ':'✦';autoGrow.setAttribute('aria-label',growthState.active?'Pause automatic growth':'Start automatic growth');autoGrow.setAttribute('aria-pressed',String(growthState.active));autoGrow.title=growthState.active?'Pause after the current growth request':!living?'Automatic growth is available in exploration-first runs':!idle?'Start research and wait for idle model exploration':'Run the chosen number of model-only growth rounds; no automatic web Evidence';growRounds.disabled=growthState.active;
     actions.querySelector('[data-map-screen-action=step]').hidden=!active||!!snapshot.run.busy_since||snapshot.run.phase!=='evidence';
     const verificationReview=active&&snapshot.run.phase==='verification_review';
-    map.querySelector('[data-map-command=collapse]').textContent=Number(snapshot.run.flow_version)>=2?'Recede all':'Collapse all';map.querySelector('[data-map-command=expand]').textContent=Number(snapshot.run.flow_version)>=2?'Restore all':'Expand all';
+    map.querySelector('[data-map-command=collapse]').textContent=living?'Recede all':'Collapse all';
+    map.querySelector('[data-map-command=expand]').textContent=living?'Restore all':'Expand all';
     map.querySelector('[data-map-focus]').hidden=Number(snapshot.run.flow_version)>=2;
     for(const action of ['finish','repair']){const button=actions.querySelector(`[data-map-screen-action=${action}]`);button.hidden=!verificationReview;button.disabled=root.querySelector(`[data-research-action=research_${action}] button`).disabled||pending;}
     map.querySelector('[data-map-evidence-help]').textContent=Number(snapshot.run.flow_version)?'Choose a direction for the next remaining planned search. Priority and model budgets still apply.':Number(snapshot.run.rigour_version)===1?'Choose a direction or continue the planned search. The reserved Challenge always seeks counter-evidence, including when redirected.':'Choose a direction or continue the planned search. Each uses a remaining slot; at most two searches per run.';
     heading.querySelector('strong').textContent=`${projectName} · #${snapshot.run.id}`;
     notification.hidden=!requestError&&!['failed','uncertain','incomplete','interrupted'].includes(snapshot.run.status)&&!verificationReview;notification.textContent=requestError?'Research needs attention · open controls':verificationReview?'Verification ready · review':snapshot.run.status+' · open controls';handle.dataset.state=snapshot.run.status;handle.title=active?'Research active · open controls to stop (Alt+S)':'Map controls and usage';
     heading.querySelector('span').textContent=`${reviewing()?'Review claims to continue':verificationReview?'Review verification findings · finish or review gaps':snapshot.run.status+' · '+snapshot.run.phase} · ${snapshot.run.token_input} in / ${snapshot.run.token_output} out tokens${snapshot.run.usage_unknown?' · some usage unknown':''}${snapshot.budget?' · '+snapshot.budget.remaining+'/'+(snapshot.budget.limit||10)+' requests remaining':''}`;
+  }
+  function expandPathway(){
+    const form=root.querySelector('[data-research-action=research_expand_pathway]');
+    if(collapsed.delete(selected))draw();
+    form.elements.node_id.value=selected;
+    form.requestSubmit();
   }
   function details(open){map.dataset.readerOpen=String(open);if(open)controls(false);side.hidden=!open;if(open&&!side.contains(document.activeElement))closeSide.focus({preventScroll:true});map.classList.toggle('map-details-open',open);actions.querySelector('[data-map-screen-action=details]').setAttribute('aria-expanded',String(open));if(snapshot&&!map.hidden)renderCamera(camera.getState());}
   header.addEventListener('click',event=>{
@@ -1411,6 +1442,7 @@ document.addEventListener('submit', event => {
     if(action==='list'){showView('list');return;}
     if(action==='menu'){showView('list');const menu=document.querySelector('[data-project-menu]');menu.open=true;menu.querySelector('summary').focus();menu.scrollIntoView({block:'start'});return;}
     if(action==='details'){details(side.hidden);if(!side.hidden)closeSide.focus();return;}
+    if(action==='continue-pathway'){expandPathway();return;}
     const form=root.querySelector(`[data-research-action=research_${action}]`);
     if(action==='start'&&form)form.dataset.researchFromMap='1';
     form?.requestSubmit();
@@ -1473,7 +1505,6 @@ document.addEventListener('submit', event => {
   function renderCamera(state,extra={}){
     if(map.hidden||!visible.length||visible.some(node=>!positions.has(node.id)))return;
     const paintStarted=performance.now(),gap=paintStarted-lastCameraPaint;lastCameraPaint=paintStarted;if(state.transitioning&&gap>28&&gap<250)framePressure=Math.min(8,framePressure+1);else if(gap<23)framePressure=Math.max(0,framePressure-.25);
-    if(selected!==state.focusNodeId&&nodes.some(n=>n.id===state.focusNodeId)){selected=state.focusNodeId;updateInspector();}
     const viewportRect=viewport.getBoundingClientRect(),blocked=[side,tray,workingNow,notification,map.querySelector('[data-map-review]')].filter(element=>element&&!element.hidden&&element.getClientRects().length).map(element=>{const r=element.getBoundingClientRect();return {left:r.left-viewportRect.left,right:r.right-viewportRect.left,top:r.top-viewportRect.top,bottom:r.bottom-viewportRect.top};});
     scale=state.scale;const w=camera.viewport.width,h=camera.viewport.height;
     const heading=`Yaw ${Math.round(state.yaw*180/Math.PI)}° · Pitch ${Math.round(state.pitch*180/Math.PI)}° · ${state.mode==='fly'?'Fly':'Orbit'}`;if(rotationOutput.textContent!==heading)rotationOutput.textContent=heading;orbitMode.setAttribute('aria-pressed',String(state.mode==='orbit'));flyMode.setAttribute('aria-pressed',String(state.mode==='fly'));viewport.dataset.spaceMode=state.mode;
@@ -1530,7 +1561,11 @@ document.addEventListener('submit', event => {
     for(const node of graph.nodes)if(node.parent_id&&children.has(node.parent_id))children.get(node.parent_id).push(node);
     const active=pathIds(nodes.find(n=>n.id===selected)||nodes[0]);active.add(Engine.owner(snapshot,selected));
     visible=[];receded.clear();const visited=new Set();
-    function collect(node,dim=false){if(!node||visited.has(node.id))return;visited.add(node.id);visible.push(node);if(dim)receded.add(node.id);if(!collapsed.has(node.id)||Number(snapshot.run.flow_version)>=2)for(const child of children.get(node.id)||[])collect(child,dim||collapsed.has(node.id));}
+    function collect(node,dim=false){
+      if(!node||visited.has(node.id))return;
+      visited.add(node.id);visible.push(node);if(dim)receded.add(node.id);
+      if(!collapsed.has(node.id))for(const child of children.get(node.id)||[])collect(child,dim||recededBranches.has(node.id));
+    }
     collect(byId.get('root'));
     world.querySelector('svg')?.remove();
     for (const card of [...world.querySelectorAll('[data-map-node]')]) if (!visible.some(node => node.id === card.dataset.mapNode)) card.remove();
@@ -1543,7 +1578,7 @@ document.addEventListener('submit', event => {
       card.dataset.locked=String(!!node.locked_at);card.dataset.layer=String(node.layer||0);card.dataset.origin=node.origin||'';card.dataset.type=node.type;card.dataset.working=String(!!node.working&&activityVerified);card.dataset.activity=node.activity||''; card.dataset.status=node.status; card.dataset.path=String(active.has(node.id));
       const priority=Number(node.path_weight||50);card.dataset.priority=priority>=75?'high':priority<40?'low':'normal';card.dataset.speculative=String(Number(node.speculative||0));
       const button=card.querySelector('button'); button.setAttribute('aria-pressed',String(node.id===selected));
-      button.querySelector('.map-node-type').textContent=(node.type==='dream_claim'?'concept':node.type==='root'?'project':node.type.replaceAll('_',' ')) + (collapsed.has(node.id)?(Number(snapshot.run.flow_version)>=2?' · receded':' · collapsed'):'');
+      button.querySelector('.map-node-type').textContent=(node.type==='dream_claim'?'concept':node.type==='root'?'project':node.type.replaceAll('_',' ')) + (collapsed.has(node.id)?' · collapsed':'');
       if(!button.querySelector('[data-map-work-badge]')){const badge=el('span','','map-node-work-badge');badge.dataset.mapWorkBadge='1';const ring=el('span',undefined,'map-node-work-ring');ring.setAttribute('aria-hidden','true');button.append(badge,ring);}
       button.querySelector('.map-node-title').textContent=Engine.shortNote(node.title);button.dataset.baseLabel=`${node.title}. ${node.type.replaceAll('_',' ')}. ${node.status}. ${originLabel(node.origin)}. ${provenanceLabel(node.provenance_tag)}`;button.setAttribute('aria-label',button.dataset.baseLabel);
       const source=snapshot.sources.find(source => sourceIds(node).includes(Number(source.id)));
@@ -1615,6 +1650,7 @@ document.addEventListener('submit', event => {
   }
   function updateInspector() {
     const node=nodes.find(node=>node.id===selected)||nodes[0];
+    screenControls();
     map.dispatchEvent(new CustomEvent('research:concept-selected',{detail:{nodeId:node.id}}));
     const linked=links(node),sourceIDs=sourceIds(node),sources=snapshot.sources.filter(source=>sourceIDs.includes(Number(source.id)));
     const passages=snapshot.ledger.passages.filter(p=>sourceIDs.includes(Number(p.source_id)));
@@ -1705,14 +1741,26 @@ document.addEventListener('submit', event => {
     map.querySelector('[data-map-learn]').hidden=!learnIds.length;
     const learn=map.querySelector('[data-map-learn-button]');learn.disabled=!learnIds.length||busy||!capacity||capped||['pending','running'].includes(snapshot.run.status)||(Number(snapshot.run.rigour_version)===1&&!Number(snapshot.run.evidence_frozen));
     learn.textContent=selectedSources.size?`Learn from ${selectedSources.size} selected source${selectedSources.size===1?'':'s'}`:'Learn from this source';
-    const toggle=map.querySelector('[data-map-toggle-branch]');toggle.disabled=!nodes.some(child=>child.parent_id===node.id);toggle.hidden=toggle.disabled;toggle.textContent=Number(snapshot.run.flow_version)>=2?(collapsed.has(node.id)?'Restore branch emphasis':'Recede branch'):(collapsed.has(node.id)?'Expand branch':'Collapse branch');
+    const toggle=map.querySelector('[data-map-toggle-branch]');
+    toggle.disabled=!relations.some(edge=>edge.kind==='concept'&&edge.from===node.id);
+    toggle.hidden=toggle.disabled;
+    const expanded=!collapsed.has(node.id);
+    toggle.textContent=expanded?'Collapse pathway':'Expand pathway';
+    toggle.title=expanded?'Hide saved descendants on the map':'Show saved descendants on the map';
+    toggle.setAttribute('aria-expanded',String(expanded));
     map.querySelector('[data-map-copy]').hidden=!sources.some(source=>safe(source.url));
   }
   function inspect(id) {
     pendingKeyboardFocus=null;clearFlight();id=String(id);if(!nodes.some(n=>n.id===id))return;
     handoffReceded.clear();
-    let node=nodes.find(n=>n.id===id);const seen=new Set();while(node&&!seen.has(node.id)){seen.add(node.id);collapsed.delete(node.id);node=nodes.find(n=>n.id===node.parent_id);}
+    let ancestor=nodes.find(n=>n.id===id).parent_id;
+    const seen=new Set([id]);
+    while(ancestor&&!seen.has(ancestor)){
+      seen.add(ancestor);collapsed.delete(ancestor);
+      ancestor=nodes.find(n=>n.id===ancestor)?.parent_id;
+    }
     if(!visible.some(n=>n.id===id)){filter='all';map.querySelectorAll('[data-map-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.mapFilter==='all')));}
+    for(const ancestor of seen)recededBranches.delete(ancestor);
     controls(false);selected=id;details(true);draw();geometry();camera.focus(id);targetPicker.value=id;
     root.dispatchEvent(new CustomEvent('research:interest',{detail:{nodeId:id}}));
   }
@@ -1720,15 +1768,31 @@ document.addEventListener('submit', event => {
   map.addEventListener('research:close-concept',()=>details(false));
   map.addEventListener('click',async event=>{
     const command=event.target.closest('[data-map-command]');
-    if(command){const key=command.dataset.mapCommand;if(key==='fit'){manualViewport=false;fit();}if(key==='in'){manualViewport=true;setScale(scale*1.2);}if(key==='out'){manualViewport=true;setScale(scale/1.2);}if(key==='reset'){positions.clear();sizes.clear();layoutSignature='';manualViewport=false;draw();fit();}if(key==='collapse'){nodes.filter(node=>node.id!=='root').forEach(node=>collapsed.add(node.id));draw();fit();}if(key==='expand'){collapsed.clear();draw();fit();}return;}
+    if(command){
+      const key=command.dataset.mapCommand;
+      if(key==='fit'){manualViewport=false;fit();}
+      if(key==='in'){manualViewport=true;setScale(scale*1.2);}
+      if(key==='out'){manualViewport=true;setScale(scale/1.2);}
+      if(key==='reset'){positions.clear();sizes.clear();layoutSignature='';manualViewport=false;draw();fit();}
+      if(key==='collapse'){
+        const branches=Number(snapshot.run.flow_version)>=2?recededBranches:collapsed;
+        nodes.filter(node=>node.id!=='root').forEach(node=>branches.add(node.id));
+        draw();fit();
+      }
+      if(key==='expand'){recededBranches.clear();collapsed.clear();draw();fit();}
+      return;
+    }
     const chip=event.target.closest('[data-map-filter]');if(chip){filter=chip.dataset.mapFilter;controls(false);details(false);map.querySelectorAll('[data-map-filter]').forEach(button=>button.setAttribute('aria-pressed',String(button===chip)));draw();fit();return;}
     const listJump=event.target.closest('[data-map-list-node]');if(listJump){showView('list');const entry=document.getElementById('research-node-'+listJump.dataset.mapListNode);if(entry){for(let parent=entry;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;entry.setAttribute('tabindex','-1');entry.focus();entry.scrollIntoView({block:'center'});}return;}
     const nodeButton=event.target.closest('.map-node-button');if(nodeButton){if(skipClick)return;inspect(nodeButton.closest('[data-map-node]').dataset.mapNode);return;}
     if(viewport.contains(event.target)&&!event.target.closest('[data-map-node],button,input,label,a')){if(!skipClick){details(false);controls(false);viewport.focus({preventScroll:true});}return;}
-    if(event.target.closest('[data-map-toggle-branch]')){collapsed.has(selected)?collapsed.delete(selected):collapsed.add(selected);draw();return;}
+    const branchToggle=event.target.closest('[data-map-toggle-branch]');
+    if(branchToggle&&!branchToggle.disabled){collapsed.has(selected)?collapsed.delete(selected):collapsed.add(selected);draw();return;}
+    const pathwayExpand=event.target.closest('[data-branch-expand]');
+    if(pathwayExpand&&!pathwayExpand.disabled){expandPathway();return;}
     const selection=event.target.closest('[data-map-select]');if(selection){claimInputs().forEach(input=>input.checked=selection.dataset.mapSelect==='all');claimInputs()[0]?.dispatchEvent(new Event('change',{bubbles:true}));syncSelection();return;}
     if(event.target.closest('[data-map-continue]'))root.querySelector('[data-research-action=research_continue]').requestSubmit();
-    const outcome=event.target.closest('[data-map-jump]');if(outcome){collapsed.clear();filter='all';inspect(Engine.owner(snapshot,outcome.dataset.mapJump));world.querySelector(`[data-map-node="${outcome.dataset.mapJump}"] button`)?.focus({preventScroll:true});}
+    const outcome=event.target.closest('[data-map-jump]');if(outcome){recededBranches.clear();collapsed.clear();filter='all';inspect(Engine.owner(snapshot,outcome.dataset.mapJump));world.querySelector(`[data-map-node="${outcome.dataset.mapJump}"] button`)?.focus({preventScroll:true});}
     if(event.target.closest('[data-map-copy]')){
       const node=nodes.find(node=>node.id===selected),source=snapshot.sources.find(source=>sourceIds(node).includes(Number(source.id))&&safe(source.url));
       try {await navigator.clipboard.writeText(source.url);map.querySelector('[data-map-announcement]').textContent='Source link copied.';}catch(_){map.querySelector('[data-map-announcement]').textContent='Copy the source URL from the inspector link.';}
@@ -1747,7 +1811,7 @@ document.addEventListener('submit', event => {
     if(event.key==='ArrowDown')next=visible[visible.indexOf(node)+1];if(event.key==='ArrowUp')next=visible[visible.indexOf(node)-1];
     if(next){event.preventDefault();const reading=!side.hidden;inspect(next.id);if(!reading)details(false);const target=world.querySelector(`[data-map-node="${next.id}"] button`);if(target&&!target.disabled&&!target.closest('[hidden]'))target.focus({preventScroll:true});else{pendingKeyboardFocus=next.id;viewport.focus({preventScroll:true});}}
   });
-  root.addEventListener('research:contact',()=>{if(!activityVerified&&snapshot){activityVerified=true;updateActivity();renderCamera(camera.getState());}});
+  root.addEventListener('research:contact',()=>{if(!activityVerified&&snapshot){activityVerified=true;updateActivity();renderCamera(camera.getState());screenControls();}});
   root.addEventListener('research:snapshot',event=>{
     activityVerified=true;const incoming=event.detail,oldFocus=snapshot?.nodes.find(n=>String(n.id)===selected),newFocus=incoming.nodes?.find(n=>String(n.id)===selected);
     const demoted=oldFocus&&newFocus&&Number(newFocus.layer)>Number(oldFocus.layer);
@@ -1793,10 +1857,11 @@ document.addEventListener('submit', event => {
  const list=make('ul',undefined,'map-branch-list');list.dataset.branchList='1';const empty=make('p','Research ideas will appear here.','map-branch-empty');
  browser.append(heading,search,list,empty);map.append(browser);
  const actions=make('div',undefined,'map-concept-actions');const back=make('button','← Branches','btn btn-outline-secondary');back.type='button';back.dataset.branchBack='1';
- const expand=make('button','Expand this pathway','btn btn-primary');expand.type='button';expand.dataset.branchExpand='1';expand.disabled=true;
+ const expand=make('button','Expand this pathway','btn btn-primary');expand.type='button';expand.dataset.branchExpand='1';expand.title='Generate new ideas under this pathway';expand.disabled=true;expand.hidden=true;
+ const branchToggle=side.querySelector('[data-map-toggle-branch]');
  const chat=make('button',undefined,'btn btn-outline-secondary map-concept-chat-toggle');chat.type='button';chat.dataset.conceptChatToggle='1';chat.setAttribute('aria-label','Chat about this concept');chat.setAttribute('aria-expanded','false');chat.setAttribute('aria-controls','map-concept-conversation');
  const icon=document.createElementNS('http://www.w3.org/2000/svg','svg');icon.setAttribute('viewBox','0 0 24 24');icon.setAttribute('aria-hidden','true');const path=document.createElementNS(icon.namespaceURI,'path');path.setAttribute('d','M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-6 4V6a2 2 0 0 1 2-2ZM7 9h10M7 13h7');icon.append(path);chat.append(icon);
- const currentLabel=make('p','','map-concept-current');actions.append(currentLabel,back,expand,chat);side.insertBefore(actions,content);const problem=side.querySelector('.map-request-error')||make('p','','map-request-error');problem.hidden=true;problem.setAttribute('role','alert');side.insertBefore(problem,content);
+ const currentLabel=make('p','','map-concept-current');actions.append(currentLabel,back,expand,branchToggle,chat);side.insertBefore(actions,content);const problem=side.querySelector('.map-request-error')||make('p','','map-request-error');problem.hidden=true;problem.setAttribute('role','alert');side.insertBefore(problem,content);
  const advanced=make('details',undefined,'map-concept-advanced');advanced.dataset.mapAdvanced='1';advanced.append(make('summary','More options · layers, evidence and priority'));
  for(const child of [...side.children])if(child!==content&&child!==actions&&child!==problem&&!child.classList.contains('map-inspector-close'))advanced.append(child);
  side.append(advanced);
@@ -1852,13 +1917,11 @@ document.addEventListener('submit', event => {
   if(!snapshot)return;const n=snapshot.nodes.find(n=>String(n.id)===selected),valid=!!n&&types.has(n.type),busy=snapshot.run.busy_since!=null||snapshot.requests.some(r=>r.status==='pending')||root.dataset.requestBusy==='1';
   currentLabel.textContent=n?window.AIcontrolMap.shortNote(n.title):'Concept details';currentLabel.title=n?.title||'';
   const capacity=root.dataset.connected!=='0'&&snapshot.budget?.remaining!==0;
-  expand.hidden=!valid||Number(snapshot.run.flow_version)<2;expand.disabled=!valid||!verified||busy||!capacity||snapshot.run.status!=='running'||!['exploring','verification_review'].includes(snapshot.run.phase);
   chat.disabled=!valid;form.elements.node_id.value=valid?selected:'';form.elements.run_id.value=snapshot.run.id;
   const phaseBlocked=['pending','running'].includes(snapshot.run.status)&&!['exploring','verification_review'].includes(snapshot.run.phase);
   send.disabled=!valid||busy||!capacity||!verified||phaseBlocked;
   help.textContent=!valid?'Select a concept first.':!verified?'Reconnect before asking another question.':!capacity?'Check the provider connection and remaining request budget.':busy||phaseBlocked?'Wait for the current research request.':'Uses one model request within the project budget. No web search; no automatic retry.';
  }
- expand.addEventListener('click',()=>{const grow=map.querySelector('[data-living-controls]');if(!grow||expand.disabled)return;grow.elements.action.value='research_explore';grow.elements.explore_mode.value='explore';for(const option of grow.querySelector('[data-living-nodes]').options)option.selected=option.value===selected;grow.dispatchEvent(new Event('change',{bubbles:true}));grow.requestSubmit();});
  search.addEventListener('input',renderList);question.addEventListener('input',()=>drafts.set(selected,question.value));form.addEventListener('submit',()=>{pendingDraft={id:selected,text:question.value};});
  map.addEventListener('research:concept-selected',event=>{const id=String(event.detail.nodeId);if(id!==selected){if(selected)drafts.set(selected,question.value);selected=id;question.value=drafts.get(id)||'';threadStamp='';}queueMicrotask(()=>{renderList();renderThread();updateControls();});});
  root.addEventListener('research:snapshot',event=>{snapshot=event.detail;verified=true;renderList();renderThread();updateControls();});

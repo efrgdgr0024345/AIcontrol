@@ -15,10 +15,10 @@ trait ExplorationFlow
             'park_reason'=>'TEXT','locked_at'=>'INTEGER','last_layer_change'=>'INTEGER','weight'=>'REAL NOT NULL DEFAULT 1.0',
             'knowledge_line_id'=>'TEXT','last_focused_at'=>'INTEGER','size_factor'=>'REAL','brightness_factor'=>'REAL']);
     }
-    private function livingIdle(int $id): array
+    private function livingIdle(int $id,bool $modelOnly=false): array
     {
-        $run=$this->writableLedger($id);
-        if((int)$run['flow_version']<2||$run['busy']!==null||!in_array($run['phase'],['exploring','verification_review'],true)
+        $run=$modelOnly?$this->run($id):$this->writableLedger($id);
+        if($run['status']!=='running'||(int)$run['flow_version']<2||(int)$run['rigour_version']!==1||$run['busy']!==null||!in_array($run['phase'],['exploring','verification_review'],true)
             ||$this->rows("SELECT id FROM research_requests WHERE status='pending' LIMIT 1")
             ||$this->rows("SELECT id FROM research_messages WHERE role='assistant' AND status='pending' LIMIT 1"))throw new RuntimeException('Wait for an idle living map before exploring or locking branches.');
         return $run;
@@ -69,6 +69,26 @@ trait ExplorationFlow
     {
         if(!in_array($mode,['explore','association','counter','edge_case','reframing'],true))throw new RuntimeException('Choose a valid model exploration action.');
         return ProviderGate::run($this->directory,fn()=> $this->stepWork($id,null,'',['ids'=>$ids,'mode'=>$mode,'interest_ids'=>$interestIds]));
+    }
+
+    public function expandPathway(int $id,int $node): array
+    {
+        return ProviderGate::run($this->directory,fn()=> $this->stepWork(
+            $id,null,'',['ids'=>[$node],'mode'=>'explore','interest_ids'=>[$node]],true
+        ));
+    }
+
+    private function resumePathway(int $id,array $run): void
+    {
+        if((int)$run['flow_version']<2||!in_array($run['status'],['interrupted','failed','incomplete','uncertain','complete'],true)||$run['busy']!==null){
+            throw new RuntimeException('Wait for an idle living map before exploring or locking branches.');
+        }
+        $this->idle();
+        // Stop freezes the ledger even before the first Evidence lock-in.
+        // Once Evidence exists, keep that version frozen during model-only growth.
+        $locked=$this->rows('SELECT id FROM research_nodes WHERE run_id=? AND locked_at IS NOT NULL LIMIT 1',[$id]);
+        $this->execute("UPDATE research_runs SET status='running',phase='exploring',finished_at=NULL,
+            stop_reason='',evidence_frozen=CASE WHEN ? THEN evidence_frozen ELSE 0 END WHERE id=?",[$locked?1:0,$id]);
     }
     /** Keep every saved line in scope, including parked branches and earlier runs of this project. */
     private function explorationHistory(int $project): array
@@ -121,7 +141,7 @@ trait ExplorationFlow
         $history=$this->explorationHistory((int)$job['run']['project_id']);$saved=0;$duplicates=0;
         foreach($ideas as $idea){
             if(self::repeatedIdea($idea,$history)){$duplicates++;continue;}
-            $node=$this->appendNode($id,$idea['parent_id']?:null,$job['explore']['mode']==='explore'?'model_idea':$job['explore']['mode'],'complete',$idea['title'],"Provisional model idea — unchecked.\n".$idea['idea']."\nUncertainty: ".$idea['uncertainty']."\nPossible test: ".$idea['test']);
+            $node=$this->insertNode($id,$idea['parent_id']?:null,$job['explore']['mode']==='explore'?'model_idea':$job['explore']['mode'],'complete',$idea['title'],"Provisional model idea — unchecked.\n".$idea['idea']."\nUncertainty: ".$idea['uncertainty']."\nPossible test: ".$idea['test']);
             $this->execute("UPDATE research_nodes SET origin='model_latent',provenance_tag='provisional_model',speculative=1,data_json=? WHERE id=?",[json_encode($idea,JSON_THROW_ON_ERROR),$node]);
             $history[]=['title'=>$idea['title'],'data_json'=>json_encode($idea,JSON_THROW_ON_ERROR),'content'=>$idea['idea']];$saved++;
         }

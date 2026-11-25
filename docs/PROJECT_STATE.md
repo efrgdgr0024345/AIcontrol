@@ -130,6 +130,33 @@ Local validation passed on PHP 8.4.24: generated UI/manifest and syntax, all
 Chromium suite and a final parked-interest auto-growth regression. The release
 must pass required planning-panel CI on its exact published SHA before readiness.
 
+## Pathway display and focused Start (2026-11-26)
+
+The map reader exposes **Collapse pathway** and **Expand pathway** whenever the
+selected node has map descendants, with the same labels for old and new runs.
+This hides or restores descendants on the canvas without moving their saved
+positions. The branch list remains available, and selecting a hidden descendant
+opens its ancestors. The map-wide flow-2 Recede/Restore controls still adjust
+emphasis.
+
+For a selected flow-2 idea, the compact play button and **Expand this pathway**
+each send one model-only request with the selected node as both the parent and
+the area of interest. An idle or stopped investigation continues on the same run.
+Stop remains separately available when the idle run also offers play. A stopped
+map at the project root still offers a new investigation. Older verification
+workflows keep their phase controls.
+
+An explicit continuation retains saved nodes and prior request accounting. It
+keeps an existing frozen Evidence ledger frozen and never restarts a previous
+Evidence plan or automatically retries an uncertain response. A model-only map
+stopped before Evidence lock-in can still lock Evidence after resuming. The same
+admission, spend and hourly limits apply to manual and automatic exploration.
+
+Regression coverage uses local PHP and synthetic provider replies to check
+canvas collapse/restore, stable coordinates, selected-node continuation while
+idle and stopped, the fresh root path, frozen-ledger integrity, and Stop with a
+late response. Chromium checks cover the compact controls on desktop and mobile.
+
 ## Compact map controls and automatic growth (2026-11-21 AWST)
 
 Map's top bar now has one 36px Start/Stop toggle and a separate Auto-grow/Pause

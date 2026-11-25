@@ -45,6 +45,11 @@ final class ResearchApi
             }
             elseif($action==='research_focus_node'){$node=self::input('node_id');if(!preg_match('/^[1-9][0-9]{0,9}$/D',$node))throw new \RuntimeException('Choose a saved node from this investigation.');$engine->recordMapFocus($id,(int)$node);}
             elseif($action==='research_explore'){$engine->explore($id,self::ids('node_ids')??[],self::input('explore_mode')?:'explore',self::ids('interest_ids')??[]);}
+            elseif($action==='research_expand_pathway'){
+                $node=self::input('node_id');
+                if(!preg_match('/^[1-9][0-9]{0,9}$/D',$node))throw new \RuntimeException('Choose a saved concept from this investigation.');
+                $engine->expandPathway($id,(int)$node);
+            }
             elseif($action==='research_concept_chat'){
                 $node=self::input('node_id');if(!preg_match('/^[1-9][0-9]{0,9}$/D',$node))throw new \RuntimeException('Choose a saved concept from this investigation.');
                 $engine->discussConcept($id,(int)$node,self::input('question'));

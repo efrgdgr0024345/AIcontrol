@@ -13,10 +13,11 @@
  const list=make('ul',undefined,'map-branch-list');list.dataset.branchList='1';const empty=make('p','Research ideas will appear here.','map-branch-empty');
  browser.append(heading,search,list,empty);map.append(browser);
  const actions=make('div',undefined,'map-concept-actions');const back=make('button','← Branches','btn btn-outline-secondary');back.type='button';back.dataset.branchBack='1';
- const expand=make('button','Expand this pathway','btn btn-primary');expand.type='button';expand.dataset.branchExpand='1';expand.disabled=true;
+ const expand=make('button','Expand this pathway','btn btn-primary');expand.type='button';expand.dataset.branchExpand='1';expand.title='Generate new ideas under this pathway';expand.disabled=true;expand.hidden=true;
+ const branchToggle=side.querySelector('[data-map-toggle-branch]');
  const chat=make('button',undefined,'btn btn-outline-secondary map-concept-chat-toggle');chat.type='button';chat.dataset.conceptChatToggle='1';chat.setAttribute('aria-label','Chat about this concept');chat.setAttribute('aria-expanded','false');chat.setAttribute('aria-controls','map-concept-conversation');
  const icon=document.createElementNS('http://www.w3.org/2000/svg','svg');icon.setAttribute('viewBox','0 0 24 24');icon.setAttribute('aria-hidden','true');const path=document.createElementNS(icon.namespaceURI,'path');path.setAttribute('d','M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-6 4V6a2 2 0 0 1 2-2ZM7 9h10M7 13h7');icon.append(path);chat.append(icon);
- const currentLabel=make('p','','map-concept-current');actions.append(currentLabel,back,expand,chat);side.insertBefore(actions,content);const problem=side.querySelector('.map-request-error')||make('p','','map-request-error');problem.hidden=true;problem.setAttribute('role','alert');side.insertBefore(problem,content);
+ const currentLabel=make('p','','map-concept-current');actions.append(currentLabel,back,expand,branchToggle,chat);side.insertBefore(actions,content);const problem=side.querySelector('.map-request-error')||make('p','','map-request-error');problem.hidden=true;problem.setAttribute('role','alert');side.insertBefore(problem,content);
  const advanced=make('details',undefined,'map-concept-advanced');advanced.dataset.mapAdvanced='1';advanced.append(make('summary','More options · layers, evidence and priority'));
  for(const child of [...side.children])if(child!==content&&child!==actions&&child!==problem&&!child.classList.contains('map-inspector-close'))advanced.append(child);
  side.append(advanced);
@@ -72,13 +73,11 @@
   if(!snapshot)return;const n=snapshot.nodes.find(n=>String(n.id)===selected),valid=!!n&&types.has(n.type),busy=snapshot.run.busy_since!=null||snapshot.requests.some(r=>r.status==='pending')||root.dataset.requestBusy==='1';
   currentLabel.textContent=n?window.AIcontrolMap.shortNote(n.title):'Concept details';currentLabel.title=n?.title||'';
   const capacity=root.dataset.connected!=='0'&&snapshot.budget?.remaining!==0;
-  expand.hidden=!valid||Number(snapshot.run.flow_version)<2;expand.disabled=!valid||!verified||busy||!capacity||snapshot.run.status!=='running'||!['exploring','verification_review'].includes(snapshot.run.phase);
   chat.disabled=!valid;form.elements.node_id.value=valid?selected:'';form.elements.run_id.value=snapshot.run.id;
   const phaseBlocked=['pending','running'].includes(snapshot.run.status)&&!['exploring','verification_review'].includes(snapshot.run.phase);
   send.disabled=!valid||busy||!capacity||!verified||phaseBlocked;
   help.textContent=!valid?'Select a concept first.':!verified?'Reconnect before asking another question.':!capacity?'Check the provider connection and remaining request budget.':busy||phaseBlocked?'Wait for the current research request.':'Uses one model request within the project budget. No web search; no automatic retry.';
  }
- expand.addEventListener('click',()=>{const grow=map.querySelector('[data-living-controls]');if(!grow||expand.disabled)return;grow.elements.action.value='research_explore';grow.elements.explore_mode.value='explore';for(const option of grow.querySelector('[data-living-nodes]').options)option.selected=option.value===selected;grow.dispatchEvent(new Event('change',{bubbles:true}));grow.requestSubmit();});
  search.addEventListener('input',renderList);question.addEventListener('input',()=>drafts.set(selected,question.value));form.addEventListener('submit',()=>{pendingDraft={id:selected,text:question.value};});
  map.addEventListener('research:concept-selected',event=>{const id=String(event.detail.nodeId);if(id!==selected){if(selected)drafts.set(selected,question.value);selected=id;question.value=drafts.get(id)||'';threadStamp='';}queueMicrotask(()=>{renderList();renderThread();updateControls();});});
  root.addEventListener('research:snapshot',event=>{snapshot=event.detail;verified=true;renderList();renderThread();updateControls();});

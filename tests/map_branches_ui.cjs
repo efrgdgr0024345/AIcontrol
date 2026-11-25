@@ -29,7 +29,24 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   await rows.nth(0).click();await page.getByRole('button',{name:'Expand this pathway',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('[data-branch-id]').length>2);
   const child=await list.locator(`[data-branch-id="${a}"]`).evaluate(button=>button.parentElement.querySelector(':scope > ul > li > button')?.dataset.branchId);if(!child)throw Error('Growth was appended outside its parent branch');
   let order=await rows.evaluateAll(buttons=>buttons.map(b=>b.dataset.branchId));if(order.indexOf(child)>order.indexOf(b))throw Error('New child appeared after an unrelated root');
-  await list.locator(`[data-branch-id="${child}"]`).click();await page.getByRole('button',{name:'Expand this pathway',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('[data-branch-id]').length>3);
+  const childStar=page.locator(`[data-map-node="${child}"]`);
+  const collapse=page.getByRole('button',{name:'Collapse pathway',exact:true});
+  const restore=page.getByRole('button',{name:'Expand pathway',exact:true});
+  await collapse.waitFor({state:'visible'});
+  if(await collapse.isDisabled()||!await childStar.count())throw Error('Non-leaf pathway toggle is unavailable');
+  const coordinates=await childStar.evaluate(n=>[n.style.left,n.style.top,n.dataset.worldZ]);
+  await collapse.click();await restore.waitFor({state:'visible'});
+  if(await restore.getAttribute('aria-expanded')!=='false'||await childStar.count()||!await list.locator(`[data-branch-id="${child}"]`).count())throw Error('Collapse did not hide the descendant in the canvas while retaining the saved idea');
+  // Reopening the selected parent reader must retain its collapsed state.
+  await page.locator('[data-branch-back]').click();await list.locator(`[data-branch-id="${a}"]`).click();
+  if(await restore.isDisabled()||await childStar.count())throw Error('Selected parent lost its collapsed state');
+  await restore.click();await collapse.waitFor({state:'visible'});
+  if(await collapse.getAttribute('aria-expanded')!=='true'||JSON.stringify(await childStar.evaluate(n=>[n.style.left,n.style.top,n.dataset.worldZ]))!==JSON.stringify(coordinates))throw Error('Expanding moved the saved descendant or left it collapsed');
+  await collapse.click();
+  await list.locator(`[data-branch-id="${child}"]`).click();
+  if(await page.locator('[data-map-toggle-branch]').isVisible())throw Error('Leaf offered a toggle with no descendants');
+  await page.getByRole('button',{name:'Expand this pathway',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('[data-branch-id]').length>3);
+  if(!await childStar.count())throw Error('Selecting a hidden descendant did not open its ancestry');
   const grandchild=await list.locator(`[data-branch-id="${child}"]`).evaluate(button=>button.parentElement.querySelector(':scope > ul > li > button')?.dataset.branchId);if(!grandchild)throw Error('Second-level growth did not nest');
   await page.locator('[data-branch-back]').click();const grandTitle=await list.locator(`[data-branch-id="${grandchild}"]`).getAttribute('aria-label');await page.getByLabel('Search branches',{exact:true}).fill(grandTitle);
   if(await rows.count()!==3||!await list.locator(`[data-branch-id="${a}"]`).count()||!await list.locator(`[data-branch-id="${child}"]`).count())throw Error('Search lost the matching idea’s ancestry');
@@ -45,6 +62,6 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   await page.setViewportSize({width:390,height:844});await audit();await list.locator(`[data-branch-id="${a}"]`).click();await audit();await page.screenshot({path:path.join(root,'test-artifacts','ui-branch-chat-mobile.png')});
   await page.getByLabel('Your question',{exact:true}).focus();await page.keyboard.press('Escape');if(!await page.locator('[data-map-inspector]').isHidden())throw Error('Escape did not return to branches');
   if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1))throw Error('Branch view overflows mobile');if(errors.length)throw Error(errors.join('\n'));
-  console.log('PASS: nested multi-family growth and ancestor search; map-background dismissal with drag preserved; spacious branch list, full reader, isolated chat/drafts/reload, CSRF/node boundaries, desktop/mobile axe and keyboard return (synthetic provider)');
+  console.log('PASS: visible pathway toggle, collapse/restore and stable positions; nested growth and search; map dismissal, chat isolation, desktop/mobile axe and keyboard return (synthetic provider)');
  }finally{if(browser)await browser.close();server.kill();await new Promise(r=>server.exitCode!==null?r():server.once('exit',r));fs.rmSync(tmp,{recursive:true,force:true});}
 })().catch(e=>{console.error(e.stack||e.message);process.exitCode=1;});
