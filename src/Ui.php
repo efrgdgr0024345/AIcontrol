@@ -1944,7 +1944,7 @@ document.addEventListener('submit', event => {
  button.addEventListener('click',()=>{const source=identify();if(source)run(source,false);});retry.addEventListener('click',()=>{const source=identify();if(source)run(source,true);});
  function draw(){queued=false;const source=identify();current=source?{...source,area}:null;button.hidden=!source;paint();}
  function paint(){const state=current?cache.get(current.key):null;box.hidden=!state;button.disabled=state?.status==='pending';button.textContent=state?.status==='pending'?'Explaining…':'Explain';retry.hidden=!state?.retry;if(!state)return;text.textContent=state.text||'';status.textContent=state.status==='pending'?'Streaming rewrite · unfinished until saved.':state.status==='ready'?(state.cached?'Saved rewrite.':'Rewrite saved.'):(state.error||'Unfinished rewrite. No automatic retry was made.');}
- async function run(source,retry){const old=cache.get(source.key);if(old?.status==='ready'||old?.status==='pending'){paint();return;}if(old?.retry&&!retry){paint();return;}const state={status:'pending',text:'',retry:false};cache.set(source.key,state);paint();
+ async function run(source,retry){const old=cache.get(source.key);if(old?.status==='ready'||old?.status==='pending'){paint();area.scrollIntoView({block:'nearest',behavior:'auto'});return;}if(old?.retry&&!retry){paint();return;}const state={status:'pending',text:'',retry:false};cache.set(source.key,state);paint();area.scrollIntoView({block:'nearest',behavior:'auto'});
   const form=new FormData();for(const [key,value]of Object.entries({action:'research_explain_output',csrf:document.querySelector('input[name=csrf]')?.value||'',project_id:project,node_id:source.node,retry:retry?'1':'0'}))form.set(key,value);
   let complete=false;
   try{
