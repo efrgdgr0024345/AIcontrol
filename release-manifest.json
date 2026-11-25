@@ -63,13 +63,13 @@
         "src/SystemsAgent.php": "9b230e0e7fd72c75fc6c3b4100abba6831baf03cab4a2b75a180a91e2e9cbb74",
         "src/SystemsView.php": "4b2aca9984a5501a0ad9fd467675f084f78eab962a77f568ca0c94dc46cabf37",
         "src/TermExplainer.php": "c685f5c1a65573e532b040fa820b8ee9b9e63769193b4c13653462362a017bdf",
-        "src/Ui.php": "9c7c92f712b7a9f58c7d3656f0e5f7d1368b372f9f211017abd1697fe60828d0",
+        "src/Ui.php": "9e19fd0c559bb2cb67dd2a77702313e97a4b8ceafdc0051f7d6e7ec46b8860b9",
         "src/UsageMeter.php": "71b6b2af9377430023dd20b42ac48cce17c98ae0cae987c6ca557a90c8b7e48a",
         "src/Vault.php": "5a6972747fd364624b837e32780a2117e0b72ef42a641823eb75e7164de6e438",
         "src/WorkspaceView.php": "4eff257da749e63bfd1549c8c697c95cea1955ad25aa1ea87ff6525fda74aecc"
     },
     "bootstrap": {
         "path": "loader.php",
-        "sha256": "1a7a6d9e1ae3ef9504bdd786b67b45d033b7d2317e669936d81482fbc5542bec"
+        "sha256": "fe54d8675085950c130d0de193b96b3eb299b8628230130a18ca331f19b890e6"
     }
 }
