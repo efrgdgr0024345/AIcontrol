@@ -62,7 +62,7 @@
         "src/Systems.php": "48eece9350c86b1e5f084836e430ae560a94feeadcdf2606f9d9c26f2a5d55bd",
         "src/SystemsAgent.php": "9b230e0e7fd72c75fc6c3b4100abba6831baf03cab4a2b75a180a91e2e9cbb74",
         "src/SystemsView.php": "4b2aca9984a5501a0ad9fd467675f084f78eab962a77f568ca0c94dc46cabf37",
-        "src/TermExplainer.php": "c685f5c1a65573e532b040fa820b8ee9b9e63769193b4c13653462362a017bdf",
+        "src/TermExplainer.php": "adfc3f391e324c64581fb85ba2e397abd8208b1e3f8d147823479b71e703db01",
         "src/Ui.php": "9e19fd0c559bb2cb67dd2a77702313e97a4b8ceafdc0051f7d6e7ec46b8860b9",
         "src/UsageMeter.php": "71b6b2af9377430023dd20b42ac48cce17c98ae0cae987c6ca557a90c8b7e48a",
         "src/Vault.php": "5a6972747fd364624b837e32780a2117e0b72ef42a641823eb75e7164de6e438",
