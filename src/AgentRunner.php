@@ -77,7 +77,7 @@ final class AgentRunner
                 return;
             }
             if ($status !== 200) {
-                $store->finishAgent($run['id'], 'failed', 'OpenAI returned HTTP ' . $status . '. Check the server-side provider connection and selected model.');
+                $store->finishAgent($run['id'], 'failed', Diagnostics::providerFailure($status, (array) json_decode($response, true)));
                 return;
             }
             $result = json_decode($response, true, 64, JSON_THROW_ON_ERROR);

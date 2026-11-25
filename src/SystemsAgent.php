@@ -48,7 +48,8 @@ final class SystemsAgent
             $ok=curl_exec($curl);$status=(int)curl_getinfo($curl,CURLINFO_RESPONSE_CODE);curl_close($curl);$data=json_decode($response,true);
             $this->systems->write('INSERT INTO system_messages(run_id,payload)VALUES(?,?)',[$this->activeRun,Diagnostics::clean(json_encode(['provider'=>Diagnostics::apiReturn($data),'http_status'=>$status],JSON_INVALID_UTF8_SUBSTITUTE))]);
             Diagnostics::record('systems.provider',['http_status'=>$status,'transport_ok'=>$ok!==false,'api_return'=>Diagnostics::apiReturn($data)]);
-            if($ok===false||$status!==200)throw new RuntimeException('Provider decision could not be verified (HTTP '.$status.'). No automatic retry.');
+            if($ok===false||$status===0||$status===408||$status>=500)throw new RuntimeException('Provider decision could not be verified (HTTP '.$status.'). No automatic retry.');
+            if($status!==200)throw new RuntimeException(Diagnostics::providerFailure($status,(array)$data));
             if(($data['status']??'')!=='completed')throw new RuntimeException('Provider returned an incomplete decision.');
             $text='';foreach($data['output']??[] as $item)foreach($item['content']??[] as $content)if(($content['type']??'')==='output_text')$text.=$content['text'];
             $decision=json_decode($text,true,16,JSON_THROW_ON_ERROR);if(!is_array($decision))throw new RuntimeException('Invalid agent decision.');return $decision;

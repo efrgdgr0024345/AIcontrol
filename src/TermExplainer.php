@@ -71,7 +71,7 @@ final class TermExplainer
     $result=$stream->result();$billing=UsageMeter::measure($result,self::MODEL);
     if(in_array($status,[400,401,403,404,422,429],true)&&is_array($result['error']??null)&&!array_key_exists('usage',$result)&&!array_key_exists('output',$result)){$billing['estimated_usd']=0;$billing['basis']='Provider rejected the request before generation; no token usage returned.';}
     $this->write('UPDATE research_term_usage SET status=?,finished_at=?,token_input=?,token_output=?,estimated_usd=?,reserved_usd=?,billing_json=? WHERE id=?',['received',time(),$billing['input_tokens'],$billing['output_tokens'],$billing['estimated_usd'],$billing['estimated_usd']===null?$reserve:0,json_encode($billing,JSON_THROW_ON_ERROR),$id]);$settled=true;
-    if($status!==200)throw new TermHelpError('The explanation provider declined the request. Check Admin diagnostics; no automatic retry was made.',502);
+    if($status!==200)throw new TermHelpError(Diagnostics::providerFailure($status,$result),502);
     if(($result['status']??'')!=='completed')throw new TermHelpError('The provider returned an incomplete explanation. No automatic retry was made.',502);
     $text='';foreach($result['output']??[] as $item)foreach($item['content']??[] as $part)if(($part['type']??'')==='output_text'&&is_string($part['text']??null))$text.=$part['text'];$text=trim($text);
     if($text===''||strlen($text)>($purpose==='ste100'?24000:1800)||!mb_check_encoding($text,'UTF-8'))throw new TermHelpError('No usable short explanation was returned. No automatic retry was made.',502);

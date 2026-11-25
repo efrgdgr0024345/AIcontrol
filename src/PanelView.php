@@ -215,7 +215,7 @@ final class PanelView
         $sha = getenv('AICONTROL_INSTALLED_SHA') ?: '';
         echo '<div class="connection-grid">';
         foreach ([
-            ['openai', 'OpenAI', 'spark', AgentRunner::configured() ? 'Configured · not verified' : 'Not configured', 'Bounded task responses with a result saved for review.', ['Capability' => 'Proposed solution and validation steps', 'Run limit' => '3 requests / hour · 1,000 output tokens', 'Model' => getenv('AICONTROL_OPENAI_MODEL') ?: 'gpt-4.1-mini']],
+            ['openai', 'OpenAI', 'spark', AgentRunner::configured() ? 'API key configured' : 'Not configured', 'Bounded task responses with a result saved for review.', ['Capability' => 'Proposed solution and validation steps', 'Run limit' => '3 requests / hour · 1,000 output tokens', 'Model' => getenv('AICONTROL_OPENAI_MODEL') ?: 'gpt-4.1-mini']],
             ['github', 'GitHub', 'github', $sha !== '' ? 'Release installed' : 'Not configured', 'Application source and checked release downloads.', ['Repository' => 'efrgdgr0024345/AIcontrol', 'Installed commit' => $sha !== '' ? $sha : 'Not available in this development view', 'Code publishing' => 'Not connected']],
             ['actions', 'GitHub Actions', 'task', $sha !== '' ? 'Checked at installation' : 'Not configured', 'Release checks for the exact commit selected by the installer.', ['Required check' => 'planning-panel', 'Project test jobs' => 'Not connected', 'Last check' => $sha !== '' ? 'Passed before this release was installed' : 'No installation evidence available']],
             ['hosting', 'Hosting', 'server', 'Panel running', 'The current PHP runtime serving your workspace.', ['PHP version' => PHP_VERSION, 'Access' => 'Managed by the loader', 'Production deployment' => 'Not connected']],
@@ -224,7 +224,7 @@ final class PanelView
             foreach ($facts as $key => $value) { echo '<dt>' . Ui::e($key) . '</dt><dd>' . Ui::e($value) . '</dd>'; }
             echo '</dl>';
             if ($id === 'openai') {
-                echo '<details><summary>Connection setup</summary><p>Open <a href="/loader.php?view=admin">Admin</a> and save a key named <code>openai_api_key</code>. A server <code>AICONTROL_OPENAI_API_KEY</code> overrides the stored key. No saved credential value is displayed here.</p><a href="https://github.com/efrgdgr0024345/AIcontrol/blob/main/docs/STANDALONE_LOADER.md#first-ai-task-connection" target="_blank" rel="noopener noreferrer">Read connection instructions</a></details>';
+                echo '<details><summary>Connection setup</summary><p>Open <a href="/loader.php?view=admin">Admin</a> and save a key named <code>openai_api_key</code>. A server <code>AICONTROL_OPENAI_API_KEY</code> overrides the stored key.</p><p>OpenAI API billing applies to the organization and project that issued this key. A configured key alone cannot confirm billing, quota or model access.</p><p><a href="https://platform.openai.com/settings/organization/billing/overview">OpenAI API billing</a> · <a href="/loader.php?view=admin#diagnostics-report">Admin diagnostics</a></p><a href="https://github.com/efrgdgr0024345/AIcontrol/blob/main/docs/STANDALONE_LOADER.md#first-ai-task-connection" target="_blank" rel="noopener noreferrer">Read connection instructions</a></details>';
             }
             if ($id === 'github') { echo '<a class="btn btn-outline-secondary" href="/loader.php?installer=1">' . Ui::icon('upload') . 'Open application updates</a>'; }
             echo '</div></section>';

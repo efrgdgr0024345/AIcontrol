@@ -113,7 +113,10 @@ final class BriefSuggestions
                 $result=$stream->result();$billing=UsageMeter::measure($result,self::MODEL);
                 $records[$index]=array_merge($records[$index],['token_input'=>$billing['input_tokens'],'token_output'=>$billing['output_tokens'],'estimated_usd'=>$billing['estimated_usd'],'reserved_usd'=>$billing['estimated_usd']===null?$reserve:0,'billing'=>$billing,'finished_at'=>time()]);
                 $records[$index]['status']='provider_complete';$this->save($records);
-                if($status!==200){$records[$index]['status']='failed';if(($result['error']['code']??'')==='model_not_found')throw new BriefSuggestionError('The writing-help model is unavailable. See Admin diagnostics. You can still create your project.',503);throw new BriefSuggestionError($status===429?'The provider is rate-limiting writing help. Try later or create your project now.':'Writing help could not connect to the provider. See Admin diagnostics; your draft is unchanged.',502);}
+                if($status!==200){
+                    $records[$index]['status']='failed';
+                    throw new BriefSuggestionError(Diagnostics::providerFailure($status,$result,$headers).' Your draft is unchanged.',($result['error']['code']??'')==='model_not_found'?503:502);
+                }
                 if($deltas===0){foreach($result['output']??[] as $item)foreach($item['content']??[] as $part)if(($part['type']??'')==='output_text')$text.=$part['text']??'';if($text!=='')$emit('delta',['text'=>$text]);}
                 if(($result['status']??'')!=='completed'){$records[$index]['status']='incomplete';throw new BriefSuggestionError('Writing help returned an incomplete suggestion. Your draft is unchanged.',502);}
                 $suggestions=array_values(array_filter(array_map(static fn(string $line):string=>trim(preg_replace('/^(?:[-*•]|\d+[.)])\s*/u','',$line)??''),preg_split('/\R/u',trim($text))?:[])));

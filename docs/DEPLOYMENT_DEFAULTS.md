@@ -198,3 +198,7 @@ ASD-STE100 writing principles (not certification), complete saved B up to 32 KB,
 4,000 output tokens/24 KB and 60 seconds. Separate ste100 workspace allowance:
 10 dispatches/US$0.05 per rolling hour including unverified reservations. Saved
 source-aware C is auxiliary; original research/Evidence remain unchanged.
+
+OpenAI API billing and project quota are managed in the OpenAI API platform.
+The Systems connection card shows whether an API key is configured. Runtime
+rejections appear on the affected request and in the private Admin diagnostic log.

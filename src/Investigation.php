@@ -408,9 +408,10 @@ final class Investigation
         $client=curl_init('https://api.openai.com/v1/responses');
         curl_setopt_array($client,[CURLOPT_HEADERFUNCTION=>static function($h,string $line)use(&$headers):int{if(preg_match('/^(x-request-id|retry-after|openai-processing-ms):\s*(.*)$/i',trim($line),$m))$headers[strtolower($m[1])]=substr($m[2],0,200);return strlen($line);},CURLOPT_POST=>true,CURLOPT_POSTFIELDS=>json_encode($body,JSON_THROW_ON_ERROR),CURLOPT_HTTPHEADER=>['Content-Type: application/json','Authorization: Bearer '.AgentRunner::apiKey()],CURLOPT_CONNECTTIMEOUT=>10,CURLOPT_TIMEOUT=>60,CURLOPT_FOLLOWLOCATION=>false,CURLOPT_PROTOCOLS=>CURLPROTO_HTTPS,CURLOPT_WRITEFUNCTION=>static fn($h,string $chunk):int=>$stream->push($chunk)]);
         $ok=curl_exec($client);$status=curl_getinfo($client,CURLINFO_RESPONSE_CODE);
-        Diagnostics::record('provider.response',array_merge(['http_status'=>$status,'elapsed_ms'=>round((microtime(true)-$started)*1000),'headers'=>$headers,'transport_ok'=>$ok!==false,'curl_errno'=>$client instanceof \CurlHandle?curl_errno($client):null,'curl_error'=>$client instanceof \CurlHandle?curl_error($client):null],$stream->diagnostics()));curl_close($client);
+        $diagnostics=$stream->diagnostics();
+        Diagnostics::record('provider.response',array_merge(['http_status'=>$status,'elapsed_ms'=>round((microtime(true)-$started)*1000),'headers'=>$headers,'transport_ok'=>$ok!==false,'curl_errno'=>$client instanceof \CurlHandle?curl_errno($client):null,'curl_error'=>$client instanceof \CurlHandle?curl_error($client):null],$diagnostics));curl_close($client);
         if ($ok===false || $status>=500 || in_array($status,[0,408],true)) { return ['status'=>'uncertain','reason'=>'Provider transport outcome unknown. No automatic retry.']; }
-        if ($status!==200) { return ['status'=>'failed','reason'=>'Provider returned HTTP '.$status.'. Check the connection and model.']; }
+        if ($status!==200) { return ['status'=>'failed','reason'=>Diagnostics::providerFailure($status,$diagnostics['api_return']['response']??[],$headers)]; }
         $result=$stream->result();$billing=UsageMeter::measure($result,$body['model']); $text='';$citations=[];$searched=false;$snippets=[];
         foreach($result['output']??[] as $item) {
             if (($item['type']??'')==='web_search_call' && ($item['status']??'')==='completed') { $searched=true;

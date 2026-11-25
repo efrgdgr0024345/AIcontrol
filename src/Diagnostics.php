@@ -59,6 +59,33 @@ final class Diagnostics
             } finally { fclose($h); }
         } catch (\Throwable) { /* Diagnostics must never interrupt the operation. */ }
     }
+    public static function providerFailure(int $status, array $response, array $headers = []): string
+    {
+        $code = $response['error']['code'] ?? $response['error']['type'] ?? null;
+        $category = match (true) {
+            in_array($code, ['insufficient_quota', 'billing_hard_limit_reached', 'billing_not_active'], true) => 'billing',
+            $status === 401 => 'authentication',
+            $code === 'model_not_found' => 'model_access',
+            $status === 403 => 'permission',
+            $status === 429 => 'rate_limit',
+            default => 'rejected',
+        };
+        $requestId = $headers['x-request-id'] ?? null;
+        self::record('openai.rejected', [
+            'category' => $category,
+            'http_status' => $status,
+            'provider_code' => is_string($code) && preg_match('/^[a-z][a-z0-9_]{0,79}$/D', $code) ? $code : null,
+            'provider_request_id' => is_string($requestId) && preg_match('/^req_[A-Za-z0-9_-]{1,100}$/D', $requestId) ? $requestId : null,
+        ]);
+        return match ($category) {
+            'billing' => 'OpenAI API quota or billing blocked this request. Check billing, credits and usage limits for the API organization and project that issued the key. ChatGPT subscriptions are billed separately.',
+            'authentication' => 'OpenAI rejected the API key. Check the server key or the saved key in Admin.',
+            'model_access' => 'The selected OpenAI model is unavailable to this API project. Check model access and the server model setting.',
+            'permission' => 'The OpenAI API key or project lacks permission for this request. Check key and project permissions.',
+            'rate_limit' => 'OpenAI rate-limited this request. Wait a moment before trying again.',
+            default => 'OpenAI rejected this request (HTTP ' . $status . ').',
+        } . ' See Admin diagnostics for details.';
+    }
     /** Keep response structure and operational facts; omit prose, prompts and opaque blobs. */
     public static function apiReturn(mixed $response): array
     {

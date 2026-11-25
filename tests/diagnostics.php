@@ -8,9 +8,18 @@ try {
     (new AIcontrol\Vault($dir))->change('escaped','note',"PRIVATE/value\nquoted\"note",false);
     Diagnostics::record('test.escaped',['message'=>"PRIVATE/value\nquoted\"note"]);
     Diagnostics::record('test.error',['message'=>'private-env-fixture PRIVATE-VAULT-FIXTURE Bearer abc sk-secret-fixture'],new RuntimeException('PRIVATE-VAULT-FIXTURE'));
+    $billing = Diagnostics::providerFailure(429, ['error'=>['code'=>'insufficient_quota','message'=>'PRIVATE PROVIDER MESSAGE']], ['x-request-id'=>'req_billing_fixture']);
+    $rate = Diagnostics::providerFailure(429, ['error'=>['code'=>'rate_limit_exceeded']]);
+    if (!str_contains($billing,'API quota or billing') || !str_contains($rate,'rate-limited') || str_contains($billing,'PRIVATE PROVIDER MESSAGE')) {
+        throw new RuntimeException('Provider rejection messages must distinguish quota from rate limiting and omit raw provider prose.');
+    }
     $report=Diagnostics::report();
     foreach (['private-env-fixture','PRIVATE-VAULT-FIXTURE','Bearer abc','sk-secret-fixture','PRIVATE/value','PRIVATE\\/value',$dir] as $secret) if(str_contains($report,$secret))throw new RuntimeException('Redaction failed');
     if (!str_contains($report,'test.error')||!str_contains($report,'request_id')||!str_contains($report,'RuntimeException'))throw new RuntimeException('Missing context');
+    foreach (['openai.rejected','insufficient_quota','rate_limit_exceeded','req_billing_fixture'] as $fact) {
+        if (!str_contains($report,$fact)) throw new RuntimeException('Missing provider rejection detail '.$fact);
+    }
+    if (str_contains($report,'PRIVATE PROVIDER MESSAGE')) throw new RuntimeException('Raw provider prose in rejection event');
     foreach(file($dir.'/diagnostics.jsonl') as $line)json_decode($line,true,32,JSON_THROW_ON_ERROR);
     if((fileperms($dir.'/diagnostics.jsonl')&0777)!==0600)throw new RuntimeException('Log permissions');
     for($i=0;$i<120;$i++)Diagnostics::record('test.rotation',['message'=>str_repeat('x',10000)]);

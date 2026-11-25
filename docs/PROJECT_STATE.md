@@ -1102,3 +1102,13 @@ Delayed synthetic HTTP/browser tests cover early rendering, branch/source
 isolation, reuse, unchanged originals and desktop/mobile/dark accessibility.
 See TERM_HELP.md for complete bounds. Exact-SHA CI and hosted observations must
 be distinguished from synthetic validation in the retained release reports.
+
+### OpenAI API rejection messages
+
+AIcontrol identifies explicit API billing or quota rejections separately from
+temporary rate limits, bad credentials, project permissions and model access.
+Systems labels a configured key and links to API billing and Admin diagnostics.
+The private diagnostic journal records the HTTP status, provider error code
+and provider request ID when available to the caller. The diagnostic fixture
+exercises synthetic quota and rate-limit responses. Live API billing and
+cPanel activation require independent verification.

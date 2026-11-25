@@ -89,7 +89,7 @@ final class NasaProvider
             $sent=false;$received=false;
             try{
                 $sent=true;$response=$this->request($body);$received=true;$billing=UsageMeter::measure($response,$body['model']);$this->store->execute('UPDATE nasa_ai_requests SET estimated_usd=?,reserved_usd=?,billing_json=? WHERE id=?',[$billing['estimated_usd'],$billing['estimated_usd']===null?$reserve:0,json_encode($billing,JSON_THROW_ON_ERROR),$request]);
-                if(($response['_http_status']??200)!==200)throw new RuntimeException('NASA AI provider rejected the request. See Admin diagnostics; no automatic retry.');
+                if(($response['_http_status']??200)!==200)throw new RuntimeException(Diagnostics::providerFailure((int)$response['_http_status'],$response));
                 if(($response['status']??'')!=='completed')throw new RuntimeException('NASA AI returned an incomplete response. No automatic retry.');
                 $text='';foreach($response['output']??[] as $item){if(!in_array($item['type']??'',['message','reasoning'],true))throw new RuntimeException('NASA AI drafts must not use external tools or unknown output operations.');foreach($item['content']??[] as $part)if(($part['type']??'')==='output_text')$text.=$part['text'];}
                 $result=json_decode($text,true,64,JSON_THROW_ON_ERROR);self::validate($result,$body['text']['format']['schema']);
