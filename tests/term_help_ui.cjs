@@ -16,10 +16,12 @@ const {spawn,spawnSync}=require('child_process');
  const setup=spawnSync(php,['bin/setup.php','--access-mode=local','--private-dir='+home,'--public-root='+root],{cwd:root,env,encoding:'utf8'});if(setup.status)throw Error(setup.stderr);
  const seed=spawnSync(php,['-r',String.raw`require 'src/Vault.php';require 'src/AgentRunner.php';require 'src/Research.php';$r=new AIcontrol\Research(getenv('AICONTROL_PRIVATE_DIR'));$p=$r->create('Learning fixture','Use counterfactual thinking and Bayesian inference to compare repair options.');$r->create('Other project','Unrelated private text.');$e=new AIcontrol\Investigation(getenv('AICONTROL_PRIVATE_DIR'));$run=$e->createRun($p);$e->appendNode($run,null,'model_idea','complete','Compare assumptions','Counterfactual analysis compares alternate cases. Bayesian inference updates beliefs with new observations.');$e->stop($run);`],{cwd:root,env,encoding:'utf8'});if(seed.status)throw Error(seed.stderr+seed.stdout);
  const freePort=()=>new Promise(resolve=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p));});});
+ const ready=async port=>{for(let i=0;i<100;i++){const connected=await new Promise(resolve=>{const s=net.connect(port,'127.0.0.1');s.once('connect',()=>{s.destroy();resolve(true);});s.once('error',()=>resolve(false));});if(connected)return;await new Promise(resolve=>setTimeout(resolve,50));}throw Error('Local fixture server did not start');};
  const port=await freePort(),url=`http://127.0.0.1:${port}/loader.php`,server=spawn(php,['-S',`127.0.0.1:${port}`,'tests/fixtures/term_help_router.php'],{cwd:root,env,stdio:'ignore'});let browser,demo;
  const calls=()=>{const file=path.join(home,'term-fixture-calls');return fs.existsSync(file)?fs.readFileSync(file,'utf8').trim().split('\n').length:0;};
  try{
   browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH||['/usr/bin/google-chrome','/usr/bin/chromium'].find(fs.existsSync),args:['--no-sandbox']});
+  await ready(port);
   const context=await browser.newContext({viewport:{width:1366,height:900}}),page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto(url+'?view=research&project=1&map=0');await page.locator('[data-project-menu] > summary').click();
   const brief=page.locator('.research-project-brief p[data-term-kind]'),term=brief.locator('.term-help-word').filter({hasText:/^counterfactual$/i});
@@ -43,6 +45,7 @@ const {spawn,spawnSync}=require('child_process');
   const bounds=await popup.boundingBox();assert(bounds.x>=0&&bounds.y>=0&&bounds.x+bounds.width<=390&&bounds.y+bounds.height<=844,'Mobile popup outside screen');assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);await audit();await page.screenshot({path:path.join(root,'test-artifacts','ui-term-help-mobile.png')});assert.equal(calls(),2);
   // Public-testing sessions have neither a highlight config nor a paid endpoint.
   const demoPort=await freePort();demo=spawn(php,['-S',`127.0.0.1:${demoPort}`,'tests/fixtures/term_help_router.php'],{cwd:root,env:{...env,AICONTROL_PIN_VERIFIED:'',AICONTROL_PUBLIC_TESTING:'1'},stdio:'ignore'});
+  await ready(demoPort);
   const demoPage=await context.newPage();await demoPage.goto(`http://127.0.0.1:${demoPort}/loader.php?view=research&project=1`);assert.equal(await demoPage.locator('[data-term-help-config]').count(),0);
   const demoCsrf=await demoPage.locator('input[name=csrf]').first().inputValue();response=await demoPage.request.post(`http://127.0.0.1:${demoPort}/loader.php`,{form:{...form,csrf:demoCsrf}});assert.equal(response.status(),403);assert.equal(calls(),2);
   assert.deepEqual(errors,[]);console.log('PASS: local phrase detection; zero calls on discovery/hover/focus/scroll; one click, saved/reload reuse; keyboard, safe text, map reader, auth/CSRF/project/demo boundaries, desktop/mobile/dark axe (synthetic provider)');
