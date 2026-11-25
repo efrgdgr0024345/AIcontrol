@@ -261,16 +261,24 @@ final class Panel
                 header('Content-Type: application/json; charset=utf-8');
                 header('Cache-Control: no-store');
                 if($config['access_mode']==='testing'){http_response_code(403);echo '{"error":"Owner access is required for quick explanations."}';return;}
-                session_write_close();ignore_user_abort(true);
+                session_write_close();ignore_user_abort(true);$streaming=false;
+                $emit=static function(string $event,array $data)use(&$streaming):void{
+                    if(!$streaming){header('Content-Type: text/event-stream; charset=utf-8');header('Cache-Control: no-store, no-transform');header('X-Accel-Buffering: no');ini_set('zlib.output_compression','0');$streaming=true;}
+                    echo 'event: '.$event."\n".'data: '.json_encode($data,JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE)."\n\n";
+                    if(ob_get_level()>0)ob_flush();flush();
+                };
+                $wantsStream=str_contains($_SERVER['HTTP_ACCEPT']??'','text/event-stream');
                 try {
                     $project=filter_var(self::input('project_id'),FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
                     $node=filter_var(self::input('node_id')?:'0',FILTER_VALIDATE_INT,['options'=>['min_range'=>0]]);
                     if($project===false||$node===false)throw new TermHelpError('Choose saved research text.');
-                    echo json_encode((new TermExplainer($directory))->explain($project,self::input('source_kind'),$node,self::input('term'),self::input('retry')==='1'),JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);
+                    $result=(new TermExplainer($directory))->explain($project,self::input('source_kind'),$node,self::input('term'),self::input('retry')==='1',$wantsStream?$emit:null);
+                    if(!$wantsStream)echo json_encode($result,JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);
                 } catch(Throwable $failure) {
                     Diagnostics::record('term_help.endpoint',[],$failure);
-                    http_response_code($failure instanceof TermHelpError?$failure->status:409);
-                    echo json_encode(['error'=>$failure instanceof TermHelpError?$failure->getMessage():'Another AI request may be finishing. Click again when it is idle; no automatic retry was made.','allow_retry'=>$failure instanceof TermHelpError&&$failure->retry],JSON_THROW_ON_ERROR);
+                    if(!$streaming)http_response_code($failure instanceof TermHelpError?$failure->status:409);
+                    $problem=['error'=>$failure instanceof TermHelpError?$failure->getMessage():'Another AI request may be finishing. Click again when it is idle; no automatic retry was made.','allow_retry'=>$failure instanceof TermHelpError&&$failure->retry];
+                    if($streaming)$emit('error',$problem);else echo json_encode($problem,JSON_THROW_ON_ERROR);
                 }
                 return;
             } elseif ($action === 'research_brief_usage') {

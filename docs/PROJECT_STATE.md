@@ -1081,3 +1081,10 @@ workspace smoke suite pass. Chromium checks two-second typing, one-second mouse
 and scroll bursts, retained peer cards/one replacement, refresh, stale responses,
 map start/Stop, no-JS creation and mobile accessibility. Provider responses remain
 synthetic in these tests; live diagnostics were read without buying another call.
+
+Term explanations now request Responses streaming and forward text deltas as SSE.
+The popup paints each delta before completion, labels partial text unfinished,
+and only caches a definition after server validation/persistence. Truncated streams
+retain partial text with an error and never retry automatically. Cached results
+remain immediate. A delayed synthetic provider regression asserts partial text is
+visible while final output is still unavailable.

@@ -185,3 +185,10 @@ are separate. Supported orphan-usage recovery uses matching private completion
 metadata, never a blind allowance reset. Create and start research opens the map
 and starts bounded model exploration, retaining the project if start is blocked.
 See BRIEF_WRITING_HELP.md for admission, no-JS and legacy save-only contracts.
+
+Term explanations now request Responses streaming and forward text deltas as SSE.
+The popup paints each delta before completion, labels partial text unfinished,
+and only caches a definition after server validation/persistence. Truncated streams
+retain partial text with an error and never retry automatically. Cached results
+remain immediate. A delayed synthetic provider regression asserts partial text is
+visible while final output is still unavailable.

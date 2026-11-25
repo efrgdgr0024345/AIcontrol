@@ -62,3 +62,10 @@ uses real local HTTP/SQLite with synthetic model replies to verify zero hover
 calls, one-click dispatch, reload cache reuse, literal output, auth/CSRF/demo
 boundaries, map keyboard behavior and desktop/mobile/dark accessibility.
 Fixtures are not evidence of a live model call or hosted activation.
+
+Term explanations now request Responses streaming and forward text deltas as SSE.
+The popup paints each delta before completion, labels partial text unfinished,
+and only caches a definition after server validation/persistence. Truncated streams
+retain partial text with an error and never retry automatically. Cached results
+remain immediate. A delayed synthetic provider regression asserts partial text is
+visible while final output is still unavailable.

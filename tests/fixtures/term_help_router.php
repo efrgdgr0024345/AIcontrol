@@ -8,7 +8,12 @@ namespace AIcontrol {
         if($body['model']!=='gpt-5.4-nano'||isset($body['tools'])||$body['max_output_tokens']!==160)throw new \RuntimeException('Unbounded term request');
         file_put_contents(getenv('AICONTROL_PRIVATE_DIR').'/term-fixture-calls',"1\n",FILE_APPEND);
         $response=['status'=>'completed','model'=>'gpt-5.4-nano','usage'=>['input_tokens'=>100,'output_tokens'=>50],'output'=>[['type'=>'message','content'=>[['type'=>'output_text','text'=>'A counterfactual describes a different possible situation. For example, compare a repair with and without shared tools. <img src=x onerror=alert(1)>']]]]];
-        ($GLOBALS['term_options'][CURLOPT_WRITEFUNCTION])($h,json_encode($response));return true;
+        $write=$GLOBALS['term_options'][CURLOPT_WRITEFUNCTION];
+        if($body['stream']??false){
+            $write($h,'data: '.json_encode(['type'=>'response.output_text.delta','delta'=>'A counterfactual describes a different possible situation.'])."\n\n");
+            usleep(1200000);
+            $write($h,'data: '.json_encode(['type'=>'response.completed','response'=>$response])."\n\n");
+        }else $write($h,json_encode($response));return true;
     }
     function curl_getinfo($h,$option){return 200;}
 }

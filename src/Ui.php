@@ -1882,7 +1882,7 @@ document.addEventListener('submit', event => {
  function position(button){const r=button.getBoundingClientRect(),width=Math.min(360,innerWidth-24);panel.style.width=width+'px';panel.style.left=Math.max(12,Math.min(r.left,innerWidth-width-12))+'px';const height=panel.getBoundingClientRect().height;panel.style.top=Math.max(12,r.bottom+8+height<innerHeight-12?r.bottom+8:r.top-height-8)+'px';}
  function show(button,c){const host=button.closest('[data-mindmap]')||document.body;if(panel.parentElement!==host){hide();host.append(panel);}panel.inert=false;panel.removeAttribute('aria-hidden');panel.classList.remove('map-underlay');clearTimeout(hideTimer);if(active&&active.button!==button)active.button.setAttribute('aria-expanded','false');active={button,c};heading.textContent=c.term;const saved=cache.get(c.key);retry.hidden=true;
   if(saved?.state==='ready'){body.textContent=saved.value.definition;note.textContent=(saved.value.cached?'Saved explanation':'Fast AI explanation')+' · '+saved.value.model+' · learning aid, not verified evidence.';}
-  else if(saved?.state==='pending'){body.textContent='Explaining this term in its research context…';note.textContent='One short nano-model request, saved for reuse. Limited to 30 requests / US$0.01 per rolling hour.';}
+  else if(saved?.state==='pending'){body.textContent=saved.partial||'Explaining this term in its research context…';note.textContent='Receiving text · unfinished until saved. One short nano-model request. Limited to 30 requests / US$0.01 per rolling hour.';}
   else if(saved?.state==='error'){body.textContent=saved.message;note.textContent='No automatic retry is made.';retry.hidden=!saved.retry;}
   else{body.textContent='Click the highlighted term to request a short explanation. Hovering makes no AI request.';note.textContent='A small excerpt is used, rather than the whole project.';}
   panel.hidden=false;if(panel.showPopover&&!popoverOpen())panel.showPopover();opened=true;button.setAttribute('aria-expanded','true');position(button);
@@ -1890,8 +1890,23 @@ document.addEventListener('submit', event => {
  async function request(button,c,explicitRetry=false){const old=cache.get(c.key);if(old?.state==='pending'||old?.state==='ready'){show(button,c);return;}if(old?.retry&&!explicitRetry){show(button,c);return;}
   cache.set(c.key,{state:'pending'});show(button,c);
   const form=new FormData();for(const [key,value]of Object.entries(c))if(key!=='key')form.set(key,value);form.set('action','research_define_term');form.set('csrf',document.querySelector('input[name=csrf]')?.value||'');if(explicitRetry)form.set('retry','1');
-  try{const response=await fetch(entry,{method:'POST',body:form,credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});if(!(response.headers.get('content-type')||'').includes('application/json'))throw Error('Sign in again before requesting an explanation.');const value=await response.json();if(!response.ok){cache.set(c.key,{state:'error',message:value.error||'Explanation unavailable.',retry:value.allow_retry===true});}else{if(typeof value.definition!=='string'||!value.definition)throw Error('No usable explanation was returned.');cache.set(c.key,{state:'ready',value});}}
-  catch(error){cache.set(c.key,{state:'error',message:error.message+' The result may be unverified.',retry:true});}
+  try{
+   const response=await fetch(entry,{method:'POST',body:form,credentials:'same-origin',cache:'no-store',headers:{Accept:'text/event-stream'}});
+   const type=response.headers.get('content-type')||'';
+   const complete=value=>{if(typeof value.definition!=='string'||!value.definition)throw Error('No usable explanation was returned.');cache.set(c.key,{state:'ready',value});};
+   if(type.includes('text/event-stream')&&response.ok){
+    const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='',event='',data=[],done=false,failed=false,partial='';
+    const dispatch=()=>{if(!data.length)return;const value=JSON.parse(data.join('\n'));data=[];
+     if(event==='delta'&&!done&&!failed){if(typeof value.text!=='string')throw Error('Invalid text stream.');partial+=value.text;if(partial.length>1800)throw Error('Explanation length exceeded.');cache.set(c.key,{state:'pending',partial});if(opened&&active?.c.key===c.key&&button.isConnected)show(button,c);}
+     if(event==='done'&&!failed){complete(value);done=true;}
+     if(event==='error'){failed=true;cache.set(c.key,{state:'error',message:(partial?partial+'\n\nUnfinished explanation. ':'')+(value.error||'Stream failed.'),retry:value.allow_retry===true});}
+    };
+    while(true){const chunk=await reader.read();buffer+=decoder.decode(chunk.value||new Uint8Array(),{stream:!chunk.done});if(buffer.length>16000)throw Error('Invalid explanation stream.');let end;while((end=buffer.indexOf('\n'))!==-1){const line=buffer.slice(0,end).replace(/\r$/,'');buffer=buffer.slice(end+1);if(!line){dispatch();event='';}else if(line.startsWith('event:'))event=line.slice(6).trim();else if(line.startsWith('data:'))data.push(line.slice(5).trimStart());}if(chunk.done)break;}
+    if(!done&&!failed)throw Error('The stream ended before the explanation was saved.');
+   }else if(type.includes('application/json')){const value=await response.json();if(!response.ok)cache.set(c.key,{state:'error',message:value.error||'Explanation unavailable.',retry:value.allow_retry===true});else complete(value);}
+   else throw Error('Sign in again before requesting an explanation.');
+  }
+  catch(error){cache.set(c.key,{state:'error',message:(cache.get(c.key)?.partial?cache.get(c.key).partial+'\n\nUnfinished explanation. ':'')+error.message+' The result may be unverified.',retry:true});}
   if(opened&&active?.c.key===c.key&&button.isConnected)show(button,c);
   if(cache.size>200)for(const [key,value]of cache){if(value.state!=='pending'&&key!==active?.c.key){cache.delete(key);break;}}
  }
