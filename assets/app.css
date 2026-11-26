@@ -831,6 +831,12 @@ body.research-map-open { overflow:hidden; }
 .system-terminal p { color:#c8d7e8; }
 .system-terminal-output { min-height:210px; max-height:420px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; background:#000; color:#d5f4dc; padding:14px; border-radius:6px; }
 .system-terminal-output:focus-visible { outline:2px solid #90cbff; outline-offset:3px; }
+.system-agent-activity { margin:16px 0; }
+.system-terminal .system-agent-updates { margin-bottom:12px; padding:12px 14px; border-inline-start:3px solid #83cbf2; background:#1c3042; color:#e7eff8; border-radius:5px; overflow-wrap:anywhere; }
+.system-agent-updates ol { margin:7px 0; padding-inline-start:22px; max-height:190px; overflow:auto; }
+.system-agent-updates :empty { display:none; }
+.system-terminal .system-agent-commands { min-height:110px; font-family:monospace; }
+.system-terminal .system-agent-auto { color:#d9ebf9; border-color:#93abc0; }
 
 .system-terminal .btn-outline-danger { color:#ffbec5; border-color:#c16b7a; background:#30131b; }
 

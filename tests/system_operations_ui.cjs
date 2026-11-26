@@ -22,7 +22,7 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
  (new \\AIcontrol\\Vault($dir))->change('openai_api_key','key','fixture-saved-openai-key',false);
  echo $e['username'];
  `],{cwd:root,env,encoding:'utf8'});if(seed.status)throw Error(seed.stderr);const username=seed.stdout;
- const port=await new Promise(r=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const n=s.address().port;s.close(()=>r(n));});}),url=`http://127.0.0.1:${port}/loader.php`;const server=spawn(php,['-S',`127.0.0.1:${port}`,'tests/fixtures/system_workflow_router.php'],{cwd:root,env,stdio:'ignore'});let browser;
+ const port=await new Promise(r=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const n=s.address().port;s.close(()=>r(n));});}),url=`http://127.0.0.1:${port}/loader.php`;const server=spawn(php,['-S',`127.0.0.1:${port}`,'tests/fixtures/system_workflow_router.php'],{cwd:root,env:{...env,PHP_CLI_SERVER_WORKERS:'2'},detached:true,stdio:'ignore'});let browser;
  try{browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH||['/usr/bin/google-chrome','/usr/bin/chromium'].find(fs.existsSync),args:['--no-sandbox']});const context=await browser.newContext({viewport:{width:1440,height:1000}}),page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(url+'?view=systems&system=1');
   await page.getByRole('heading',{name:'Connect a DigitalOcean VPS',exact:true}).waitFor();if(await page.getByRole('link',{name:'Set Systems password to connect',exact:true}).getAttribute('href')!=='#systems-protection')throw Error('Locked connection entry does not point to protection');if(await page.locator('[data-system-risk-form]').count())throw Error('Locked connection entry exposes enrollment');
   if((await page.content()).includes(username))throw Error('Locked page contains protected connection username');if(await page.locator('.system-action-card').count()!==8)throw Error('Guided action catalog missing');for(const b of await page.locator('.system-action-card button').all())if(!await b.isDisabled())throw Error('Locked action is enabled');
@@ -98,11 +98,17 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   await page.getByRole('button',{name:'Start system task',exact:true}).click();
   const agent=page.locator('[data-system-run]');
   await agent.waitFor();if(await terminal.getAttribute('data-system-terminal')!==terminalId)throw Error('Starting an agent task hid the console');
-  await agent.locator('[data-system-action=system_step] button').click();
-  await agent.getByText(/agent shell fixture/).first().waitFor();
-  await agent.locator('[data-system-action=system_step] button').click();
+  if(!await terminal.locator('[data-system-run]').count()||!await command.isDisabled())throw Error('Agent does not own the open console');
+  await page.evaluate(()=>window.agentConsoleStayedOpen=true);
+  await agent.getByRole('button',{name:'Run automatic steps',exact:true}).click();
+  const agentOutput=agent.locator('[data-agent-output]'),agentNotes=agent.locator('[data-agent-updates]');
+  await agentOutput.filter({hasText:'[waiting for VPS output]'}).waitFor();
+  await agentNotes.getByText('I will check whether the marker file exists.',{exact:true}).waitFor();
+  await agentNotes.getByText('The marker file is absent. I will verify stdout directly.',{exact:true}).waitFor();
+  if(!await page.evaluate(()=>window.agentConsoleStayedOpen))throw Error('Agent reloaded the page between steps');
   await agent.getByText('Verified the fixture shell output.',{exact:false}).first().waitFor();
-  if(fs.readFileSync(providerCalls,'utf8')!=='choice\nstep\nstep\n'||(await page.content()).includes('fixture-saved-openai-key'))throw Error('Saved-key agent did not complete without exposing the key');
+  if(!(await agentOutput.innerText()).includes('[complete · exit 1]')||!(await agentOutput.innerText()).includes('agent shell fixture'))throw Error('Agent console lost command outcomes');
+  if(fs.readFileSync(providerCalls,'utf8')!=='choice\nstep\nstep\nstep\n'||(await page.content()).includes('fixture-saved-openai-key'))throw Error('Saved-key agent did not complete without exposing the key');
   await command.fill('é'.repeat(2001));
   await page.getByRole('button',{name:'Run command',exact:true}).click();
   await terminal.locator('[data-terminal-output]').filter({hasText:/\[SSH error\].*Admin diagnostics reference [a-f0-9]{16}/}).waitFor();
@@ -110,5 +116,5 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   const audit=async()=>{await page.evaluate(require('axe-core').source);const issues=await page.evaluate(async()=>(await axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa','wcag22aa']}})).violations.map(v=>({id:v.id,targets:v.nodes.map(n=>n.target)})));if(issues.length)throw Error(JSON.stringify(issues));};await audit();fs.mkdirSync(path.join(root,'test-artifacts'),{recursive:true});await page.screenshot({path:path.join(root,'test-artifacts/ui-system-actions-desktop.png'),fullPage:true});
   await page.setViewportSize({width:390,height:844});await audit();if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1))throw Error('Operations overflow mobile');await page.getByRole('button',{name:'Lock Systems now',exact:true}).click();await page.getByRole('button',{name:'Unlock Systems',exact:true}).waitFor();await page.getByRole('heading',{name:'Connect a DigitalOcean VPS',exact:true}).waitFor();await page.getByRole('link',{name:'Unlock Systems to connect',exact:true}).waitFor();const locked=await page.content();if(locked.includes(username)||locked.includes('synthetic-protected-value'))throw Error('Lock retained plaintext');if(!locked.includes('Web service on this VPS.'))throw Error('Readable notes hidden while locked');await audit();await page.screenshot({path:path.join(root,'test-artifacts/ui-system-actions-locked-mobile.png'),fullPage:true});
   if(errors.length)throw Error(errors.join('\n'));console.log('PASS: website SSH console, saved-key AI choice, reviewed VPN with preserved console and no handshake claim, saved-key shell agent, masked notes, protected reveal and desktop/mobile axe (synthetic transports)');
- }finally{if(browser)await browser.close();server.kill();await new Promise(r=>server.exitCode!==null?r():server.once('exit',r));fs.rmSync(tmp,{recursive:true,force:true});}
+ }finally{if(browser)await browser.close();if(server.exitCode===null&&server.signalCode===null){process.kill(-server.pid);await new Promise(r=>server.once('exit',r));}fs.rmSync(tmp,{recursive:true,force:true});}
 })().catch(e=>{console.error(e.stack||e.message);process.exitCode=1;});

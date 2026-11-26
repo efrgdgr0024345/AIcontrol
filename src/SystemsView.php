@@ -15,7 +15,7 @@ final class SystemsView
     private static function controls(array $system,array $data,string $csrf): void
     {
         echo '<section class="card mb-3 systems-section" data-system-control><div class="card-body"><h2>'.Ui::e($system['name']).'</h2>';
-        SystemTerminalView::render($system,$data['terminal']??null,$csrf,$data['ssh_blocked']??false,$data['guided_transcript']??'');
+        SystemTerminalView::render($system,$data['terminal']??null,$csrf,$data['ssh_blocked']??false,$data['guided_transcript']??'',$data['run']??null,$data['agent_activity']??null);
         SystemOperationsView::actions($system,$data,$csrf,true);
         echo '</div></section>';
     }
@@ -71,12 +71,14 @@ final class SystemsView
         if($data['runs']){echo '<section class="card mb-3 systems-section"><div class="card-body"><h2>System task history</h2><ul class="systems-list">';foreach($data['runs'] as $r)echo '<li><a href="/loader.php?view=systems&amp;system='.$id.'&amp;system_run='.(int)$r['id'].'">#'.(int)$r['id'].' · '.Ui::e($r['task']).'</a> · '.Ui::e($r['status']).'</li>';echo '</ul></div></section>';}
         $r=$data['run'];if(!$r)return;
         $manual=$r['task']==='Manual SSH command console';
-        echo '<section class="card systems-section"><div class="card-body" data-system-run="'.(int)$r['id'].'" data-system-status="'.Ui::e($r['status']).'"><h2>Task #'.(int)$r['id'].'</h2><p>'.Ui::e($r['task']).'</p><p role="status">'.Ui::e($r['status']).' · '.($manual?'manual command log':(int)$r['rounds'].' / 8 decisions').'</p>';
-        foreach(['system_step'=>'Run next agent step','system_stop'=>'Stop system task'] as $action=>$label)if(in_array($r['status'],['ready','working'],true))echo '<form method="post" action="/loader.php?view=systems" data-system-action="'.$action.'">'.$csrf.'<input type="hidden" name="action" value="'.$action.'"><input type="hidden" name="system_id" value="'.$id.'"><input type="hidden" name="run_id" value="'.(int)$r['id'].'"><button class="btn '.($action==='system_stop'?'btn-outline-danger':'btn-primary').'"'.($action==='system_step'&&$r['status']!=='ready'?' disabled':'').'>'.$label.'</button></form>';
-        if($r['status']==='ready')echo '<button type="button" class="btn btn-outline-secondary mt-2" data-system-auto>Run automatic steps</button>';
-        if($r['status']==='working')echo '<p>Progress is unverified after this page reload. Stop the task before starting another; no command will be retried automatically.</p>';
-        if($r['error'])echo '<p class="alert alert-warning">'.Ui::e($r['error']).'</p>';
-        if($r['result'])echo '<pre class="systems-code">'.Ui::e($r['result']).'</pre>';
+        $showActivity=$connected&&isset($data['agent_activity']);
+        $reportAttributes=$showActivity?'':' data-system-run="'.(int)$r['id'].'" data-system-status="'.Ui::e($r['status']).'"';
+        echo '<section class="card systems-section"><div class="card-body"'.$reportAttributes.'><h2>Task #'.(int)$r['id'].'</h2>';
+        if(!$showActivity){
+            echo '<p>'.Ui::e($r['task']).'</p><p role="status">'.Ui::e($r['status']).' · '.($manual?'manual command log':(int)$r['rounds'].' / 8 decisions').'</p>';
+            if($r['error'])echo '<p class="alert alert-warning">'.Ui::e($r['error']).'</p>';
+            if($r['result'])echo '<pre class="systems-code">'.Ui::e($r['result']).'</pre>';
+        }
         $report=['format'=>'AIcontrol systems execution v1','generated_utc'=>gmdate('c'),'system'=>['id'=>$id,'name'=>$s['name'],'host'=>$s['host'],'port'=>$s['port'],'username'=>$s['username'],'access'=>$s['access'],'fingerprint'=>$s['fingerprint']],'run'=>$r,'commands'=>$data['commands'],'agent_decisions_and_provider_metadata'=>$data['messages']];
         echo '<label class="form-label" for="system-report">Commands, stdout, stderr, exit codes and timing</label><textarea id="system-report" class="form-control systems-code" readonly rows="14">'.Ui::e(json_encode($report,JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES|JSON_INVALID_UTF8_SUBSTITUTE)).'</textarea><button class="btn btn-outline-secondary mt-2" type="button" data-copy-report="system-report">Copy diagnostic report</button><span role="status" data-copy-report-status></span><button class="btn btn-outline-secondary mt-2" type="button" data-system-download>Download report JSON</button><p>Outputs are capped at 16 KB per stream per command; truncation and timeouts are recorded. Review reports for private server content before sharing. Stop ends local SSH and prevents further commands; an interrupted remote command can have an uncertain outcome.</p><noscript><p>Setup, connection checks, manual steps, Stop and the report remain available without JavaScript.</p></noscript></div></section>';
     }

@@ -200,6 +200,21 @@ and OpenAI. Unit checks reject unsupported choices and extra command fields
 before SSH. The live owner PIN sign-in confirmed the site was running
 `a611677`. The separate Systems unlock prevented live shell and action tests.
 
+## Live Linux agent activity in the SSH console
+
+Start a Linux agent task and choose **Run automatic steps** to review results
+and advance in the open console. The task stops at a reported outcome, a
+failure, Stop, or eight decisions. A confirmed failing command can inform the
+next decision. Each update describes the observation or the next check in
+plain language. Commands, returned output excerpts and exit codes stay in the
+monospace transcript. Manual entry pauses while the task is active. Automatic
+advancement requires the visible page and pauses on an unverified response.
+History and the diagnostic report retain the recorded command results.
+
+The browser fixture verifies a command shown while waiting on SSH, an exit 1
+used in the next model decision, the follow-up output and a final summary.
+It uses separate local PHP workers and synthetic SSH and model replies.
+
 ## Guided command transcripts in the SSH console
 
 Verified server pages put the console above the setup, protection and server

@@ -101,6 +101,13 @@ required setup details. During the run, the same SSH console shows the current
 command and the output returned by the VPS. Use the reference on a failed
 request to find the matching event in Admin diagnostics.
 
+For a multi-step task, submit **Start system task** and choose **Run automatic
+steps** in **Agent activity** inside the SSH console. The agent uses each
+confirmed command result to choose its next step. **Agent updates** show
+observations and next checks. The command transcript shows recorded commands
+and VPS output. Use **Stop system task** to end the run. The console limits
+automatic work to eight decisions and pauses it when the page is hidden.
+
 Each **Learn more** section explains the planned steps. After a recorded run,
 it also lists available command lines, exit statuses and short explanations.
 The console shows bounded, redacted output excerpts. Learn more lists commands,

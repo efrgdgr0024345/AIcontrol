@@ -129,6 +129,9 @@ choice among the actions available to that server. AI supplies the action
 and its reason. Existing review and approval are required for changes.
 Command request errors and guided action failures show an Admin diagnostic
 reference.
+Linux agent tasks display activity in the same console. Automatic steps
+run sequentially while the page is visible, with up to eight decisions
+per task. Operator updates use plain text separate from command output.
 Unused first commands expire after 24 hours. Saved discoveries can resume with
 the same public key and bound receipt. Setup and SSH verification failures
 include a reference tied to a private Admin diagnostic event.

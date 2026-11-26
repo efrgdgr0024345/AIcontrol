@@ -231,9 +231,16 @@ final class Panel
                     elseif($action==='system_revoke')$systems->revoke($id);
                     elseif($action==='system_delete'){$systems->purge($id,self::input('confirmation'));$id=0;}
                     elseif($action==='system_start')$runId=(new SystemsAgent($systems))->start($id,self::input('task'),self::input('project_id')===''?null:(int)self::input('project_id'));
-                    elseif(in_array($action,['system_step','system_stop'],true)){
-                        if((int)$systems->run($runId)['system_id']!==$id)throw new RuntimeException('Task does not belong to this system.');
-                        if($action==='system_stop')$systems->stop($runId);else (new SystemsAgent($systems))->step($runId);
+                    elseif(in_array($action,['system_step','system_stop','system_task_activity'],true)){
+                        $run=$systems->run($runId);
+                        if((int)$run['system_id']!==$id)throw new RuntimeException('Task does not belong to this system.');
+                        $agent=new SystemsAgent($systems);
+                        if($action==='system_task_activity'){
+                            header('Content-Type: application/json; charset=utf-8');header('Cache-Control: no-store');
+                            echo json_encode($agent->activity($run),JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);
+                            return;
+                        }
+                        if($action==='system_stop')$systems->stop($runId);else $agent->step($runId);
                     }else throw new RuntimeException('System operation unavailable.');
                     if($json){header('Content-Type: application/json');echo json_encode(['run'=>$runId&&!str_starts_with($action,'system_guard_')?$systems->run($runId):null,'terminal_result'=>$terminalResult],JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);return;}
                     header('Location: '.self::entry().'?view=systems&system='.$id.($runId?'&system_run='.$runId:'').($enrollmentId?'&enrollment='.$enrollmentId:'').($terminalId?'&terminal='.$terminalId.'#ssh-console':''),true,303);return;
@@ -434,6 +441,10 @@ final class Panel
                     $notebook=new SystemNotebook($systemStore);
                     $data['systems']['notebook']=$notebook->view($selectedSystem);
                     if($data['systems']['guard']['unlocked']){
+                        $run=$data['systems']['run']??null;
+                        if($run&&!in_array($run['task'],['Manual SSH command console','AI-guided action selection'],true)){
+                            $data['systems']['agent_activity']=(new SystemsAgent($systemStore))->activity($run);
+                        }
                         $books=new SystemPlaybooks($systemStore);
                         $history=$books->history($selectedSystem);
                         $data['systems']['playbooks']=$history;

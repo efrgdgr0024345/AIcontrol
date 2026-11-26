@@ -7,6 +7,7 @@ namespace AIcontrol {
     {
         $directory=getenv('AICONTROL_PRIVATE_DIR');
         $output='';
+        $delay=0;
         $exit=0;
         if($argv[0]==='/usr/bin/ssh-keyscan'){
             $output='[192.0.2.31]:2222 '.trim(file_get_contents($directory.'/fixture-host-key'))."\n";
@@ -39,6 +40,9 @@ namespace AIcontrol {
                 $output="Linux verification fixture\n";
             }elseif(str_contains($command,'manual shell fixture')){
                 $output="manual shell fixture\n";
+            }elseif(str_contains($command,'test -f .fixture-missing')){
+                $delay=2400000;
+                $exit=1;
             }elseif(str_contains($command,'agent shell fixture')){
                 $output="agent shell fixture\n";
             }elseif(!str_contains($command,'{ ls'."\n")){
@@ -47,7 +51,7 @@ namespace AIcontrol {
         }else{
             throw new \RuntimeException('Unexpected process in Systems fixture');
         }
-        return \proc_open([PHP_BINARY,'-r','echo $argv[1]; exit((int)$argv[2]);',$output,(string)$exit],$descriptors,$pipes,$cwd,$env,$options);
+        return \proc_open([PHP_BINARY,'-r','usleep((int)$argv[3]); echo $argv[1]; exit((int)$argv[2]);',$output,(string)$exit,(string)$delay],$descriptors,$pipes,$cwd,$env,$options);
     }
 
     function curl_init(string $url): object
@@ -82,8 +86,10 @@ namespace AIcontrol {
         }else{
             if($input['task']!=='Print a disposable shell test marker')throw new \RuntimeException('Unexpected fixture task');
             $decision=match($input['step']){
-                0=>['tool'=>'shell','command'=>"printf 'agent shell fixture'"],
-                1=>str_contains($input['executed_commands'][0]['stdout']??'','agent shell fixture')
+                0=>['tool'=>'shell','command'=>'test -f .fixture-missing','update'=>'I will check whether the marker file exists.'],
+                1=>($input['executed_commands'][0]['exit_code']??null)===1
+                    ?['tool'=>'shell','command'=>"printf 'agent shell fixture'",'update'=>'The marker file is absent. I will verify stdout directly.']:throw new \RuntimeException('Missing file check evidence'),
+                2=>str_contains($input['executed_commands'][1]['stdout']??'','agent shell fixture')
                     ?['tool'=>'finish','summary'=>'Verified the fixture shell output.']:throw new \RuntimeException('Missing shell evidence'),
                 default=>throw new \RuntimeException('Unexpected provider step'),
             };
