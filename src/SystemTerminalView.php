@@ -18,18 +18,19 @@ final class SystemTerminalView
         $connection=$system['username'].'@'.$system['host'];
         $risk=$system['risk_level']==='legacy'?$system['access']:SystemRisk::level($system['risk_level'])['label'];
 
-        echo '<section id="ssh-console" class="system-terminal"'.($terminal?' data-system-terminal="'.Ui::e($terminal['id']).'"':'').'><h3>SSH command line</h3>';
-        echo '<p>'.($terminal?'Connected to ':'Verified server ').'<strong>'.Ui::e($connection).'</strong> · '.Ui::e($risk).'</p>';
-        echo '<div class="system-terminal-frame"><div class="system-terminal-output" tabindex="0" role="log" aria-label="SSH terminal commands and output" data-terminal-output>';
+        echo '<section id="ssh-console" class="system-terminal"'.($terminal?' data-system-terminal="'.Ui::e($terminal['id']).'"':'').'>';
+        echo '<div class="system-terminal-frame"><div class="terminal-bar"><h3>SSH terminal</h3><span class="terminal-host">'.Ui::e($connection).'</span>';
+        echo '<span class="terminal-connection" data-terminal-connection>'.($terminal?'Connected':'Verified').' · '.Ui::e($risk).'</span></div>';
+        echo '<div class="terminal-screen" data-terminal-screen><div class="system-terminal-output" tabindex="0" role="log" aria-label="SSH terminal commands and output" data-terminal-output>';
         foreach($data['transcript']??[] as $entry)self::entry($entry);
         echo '</div>';
-        if($terminal)self::prompt($terminal,(int)$system['id'],$csrf,$blocked||$agentActive);
-        echo '</div>';
+        if($terminal)self::prompt($terminal,$system,$csrf,$blocked||$agentActive);
+        echo '</div></div>';
 
         echo '<p role="status" data-guided-progress></p>';
         if($terminal){
             $entryStatus=$blocked?'Command entry is paused while a guided action owns the connection.':($agentActive?'Command entry is paused while the agent task is active.':'');
-            echo '<div class="system-terminal-footer"><p data-terminal-directory>Directory: '.Ui::e($terminal['cwd']??'server home').'</p><form method="post" action="/loader.php?view=systems" data-terminal-disconnect>'.$csrf;
+            echo '<div class="system-terminal-footer"><form method="post" action="/loader.php?view=systems" data-terminal-disconnect>'.$csrf;
             echo '<input type="hidden" name="action" value="system_console_disconnect"><input type="hidden" name="system_id" value="'.(int)$system['id'].'"><input type="hidden" name="terminal_id" value="'.Ui::e($terminal['id']).'">';
             echo '<button class="btn btn-outline-danger btn-sm">Disconnect console / stop command</button></form></div>';
             echo '<p role="status" data-terminal-status>'.Ui::e($entryStatus).'</p>';
@@ -47,18 +48,31 @@ final class SystemTerminalView
     private static function entry(array $entry):void
     {
         echo '<div class="terminal-entry" data-terminal-entry="'.Ui::e($entry['key']).'" data-terminal-time="'.Ui::e((string)$entry['at']).'" data-source="'.Ui::e($entry['source']).'">';
-        echo '<span class="terminal-source">'.Ui::e(self::SOURCES[$entry['source']]).'</span>';
-        echo '<div class="terminal-text">'.Ui::e($entry['text']).'</div></div>';
+        $source=self::SOURCES[$entry['source']];
+        if(isset($entry['command'])){
+            echo '<div class="terminal-line"><span class="terminal-text"><span class="terminal-symbol" aria-hidden="true">$</span> <span data-terminal-command>'.Ui::e($entry['command']).'</span></span>';
+            echo '<span class="terminal-source'.($entry['failed']?' terminal-exit-error':'').'">'.Ui::e($source.' · '.$entry['status']).'</span></div>';
+            if($entry['output']!=='')echo '<div class="terminal-text terminal-result">'.Ui::e($entry['output']).'</div>';
+            if($entry['hint']!=='')echo '<p class="terminal-hint">'.Ui::e($entry['hint']).'</p>';
+        }else{
+            echo '<div class="terminal-line terminal-message"><span class="terminal-text">'.Ui::e($entry['text']).'</span><span class="terminal-source">'.Ui::e($source).'</span></div>';
+        }
+        echo '</div>';
     }
 
-    private static function prompt(array $terminal,int $system,string $csrf,bool $blocked):void
+    private static function prompt(array $terminal,array $system,string $csrf,bool $blocked):void
     {
         $disabled=$blocked?' disabled':'';
-        echo '<form method="post" action="/loader.php?view=systems" class="terminal-prompt" data-terminal-form>'.$csrf;
-        echo '<input type="hidden" name="action" value="system_console_command"><input type="hidden" name="system_id" value="'.$system.'"><input type="hidden" name="terminal_id" value="'.Ui::e($terminal['id']).'">';
-        echo '<span aria-hidden="true">$</span><label class="visually-hidden" for="terminal-command">Shell command</label>';
-        echo '<input class="form-control" id="terminal-command" name="command" autocomplete="off" spellcheck="false" maxlength="4000" required data-terminal-input'.$disabled.'>';
-        echo '<button class="btn btn-sm terminal-run"'.$disabled.'>Run command</button></form>';
+        $home=$system['home_dir']??'';
+        $cwd=$terminal['cwd']??'';
+        $short=$cwd===''||$cwd===$home?'~':($home!==''&&str_starts_with($cwd,$home.'/')?'~'.substr($cwd,strlen($home)):$cwd);
+        $description='Working directory: '.($cwd===''?'server home':$cwd);
+        echo '<form method="post" action="/loader.php?view=systems" class="terminal-prompt" data-terminal-form data-terminal-home="'.Ui::e($home).'">'.$csrf;
+        echo '<input type="hidden" name="action" value="system_console_command"><input type="hidden" name="system_id" value="'.(int)$system['id'].'"><input type="hidden" name="terminal_id" value="'.Ui::e($terminal['id']).'">';
+        echo '<span id="terminal-cwd" class="terminal-location" title="'.Ui::e($description).'" data-terminal-directory>'.Ui::e($short).'</span>';
+        echo '<span class="terminal-symbol" aria-hidden="true">$</span><label class="visually-hidden" for="terminal-command">Shell command</label>';
+        echo '<input id="terminal-command" name="command" aria-describedby="terminal-cwd" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="4000" required data-terminal-input'.$disabled.'>';
+        echo '<button class="terminal-run" aria-label="Run command" title="Run command (Enter)"'.$disabled.'>Enter ↵</button></form>';
     }
 
     private static function agentActivity(array $run,array $activity,string $csrf,bool $blocked):void

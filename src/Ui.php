@@ -2180,19 +2180,49 @@ document.addEventListener('submit', event => {
   const terminal=document.querySelector('#ssh-console');
   if(!terminal)return;
   const output=terminal.querySelector('[data-terminal-output]');
+  const screen=terminal.querySelector('[data-terminal-screen]');
+  const connection=terminal.querySelector('[data-terminal-connection]');
   const sources={ssh:'SSH',manual:'You',agent:'Agent',guided:'Guided action'};
   const rows=new Map([...output.children].map(node=>[node.dataset.terminalEntry,node]));
+  const rendered=new WeakMap();
   const clean=text=>String(text||'').replace(/\x1b\[[0-?]*[ -\/]*[@-~]|[\x00-\x08\x0b-\x1f\x7f]/g,'');
-  const scroll=()=>{output.scrollTop=output.scrollHeight;};
+  const scroll=()=>{screen.scrollTop=screen.scrollHeight;};
   const order=(a,b)=>Number(a.dataset.terminalTime)-Number(b.dataset.terminalTime)
     ||a.dataset.terminalEntry.localeCompare(b.dataset.terminalEntry,'en',{numeric:true});
+  function element(tag,className,text=''){
+    const node=document.createElement(tag);node.className=className;node.textContent=text;
+    return node;
+  }
+  function render(row,entry){
+    const signature=JSON.stringify(entry);
+    if(rendered.get(row)===signature)return;
+    rendered.set(row,signature);
+    const line=element('div','terminal-line');
+    const label=element('span','terminal-source',sources[entry.source]);
+    if(typeof entry.command==='string'){
+      const text=element('span','terminal-text');
+      const symbol=element('span','terminal-symbol','$');symbol.setAttribute('aria-hidden','true');
+      const command=document.createElement('span');command.dataset.terminalCommand='';command.textContent=entry.command;
+      text.append(symbol,' ',command);
+      label.textContent+=' · '+entry.status;
+      if(entry.failed)label.classList.add('terminal-exit-error');
+      line.append(text,label);
+      row.replaceChildren(line);
+      if(entry.output)row.append(element('div','terminal-text terminal-result',entry.output));
+      if(entry.hint)row.append(element('p','terminal-hint',entry.hint));
+    }else{
+      line.classList.add('terminal-message');
+      line.append(element('span','terminal-text',entry.text),label);
+      row.replaceChildren(line);
+    }
+  }
   const put=(entries,force=false)=>{
-    const follow=force||output.scrollHeight-output.clientHeight-output.scrollTop<32;
+    const follow=force||screen.scrollHeight-screen.clientHeight-screen.scrollTop<32;
     for(const entry of entries){
       if(!Object.hasOwn(sources,entry.source)||typeof entry.text!=='string')continue;
       let row=rows.get(entry.key);
       if(row){
-        if(row.lastElementChild.textContent!==entry.text)row.lastElementChild.textContent=entry.text;
+        render(row,entry);
         continue;
       }
       row=document.createElement('div');
@@ -2200,9 +2230,7 @@ document.addEventListener('submit', event => {
       row.dataset.terminalEntry=entry.key;
       row.dataset.terminalTime=entry.at;
       row.dataset.source=entry.source;
-      const label=document.createElement('span');label.className='terminal-source';label.textContent=sources[entry.source];
-      const body=document.createElement('div');body.className='terminal-text';body.textContent=entry.text;
-      row.append(label,body);
+      render(row,entry);
       const next=[...output.children].find(existing=>order(existing,row)>0);
       output.insertBefore(row,next||null);rows.set(entry.key,row);
     }
@@ -2249,27 +2277,32 @@ document.addEventListener('submit', event => {
   const form=terminal.querySelector('[data-terminal-form]');
   if(!form)return;
   const input=form.querySelector('[data-terminal-input]'),status=terminal.querySelector('[data-terminal-status]');
+  const directory=form.querySelector('[data-terminal-directory]'),home=form.dataset.terminalHome;
   const disconnect=terminal.querySelector('[data-terminal-disconnect]');
   let pending=false,generation=0,connected=true;
-  const history=Array.from(output.querySelectorAll('[data-source=manual] .terminal-text'),row=>row.textContent.split('\n')[0].slice(2));let index=history.length,draft='';
+  const history=Array.from(output.querySelectorAll('[data-source=manual] [data-terminal-command]'),row=>row.textContent);let index=history.length,draft='';
   form.addEventListener('submit',async event=>{
     event.preventDefault();if(pending||!connected||input.disabled)return;
     const command=input.value.trim();if(!command)return;
     if(command==='clear'){output.replaceChildren();rows.clear();input.value='';return;}
     pending=true;const serial=generation;form.querySelector('button').disabled=true;
     status.textContent='Command running over SSH…';history.push(command);index=history.length;draft='';
-    put([{key:'pending-manual',at:Date.now()/1000,source:'manual',text:'$ '+clean(command)+'\n[waiting for VPS output]'}],true);
+    put([{key:'pending-manual',at:Date.now()/1000,source:'manual',text:'',command:clean(command),status:'waiting for VPS output'}],true);
     try {
       const data=await request(form);if(serial!==generation)return;
       const result=data.terminal_result;if(!result?.entry)throw Error('The SSH result could not be verified. Reconnect before continuing.');
       remove('pending-manual');put([result.entry],true);
-      terminal.querySelector('[data-terminal-directory]').textContent='Directory: '+(result.cwd||'server home');
+      const cwd=clean(result.cwd);
+      directory.textContent=!cwd||cwd===home?'~':(home&&cwd.startsWith(home+'/')?'~'+cwd.slice(home.length):cwd);
+      directory.title='Working directory: '+(cwd||'server home');
       connected=result.connected;
-      status.textContent=connected?(result.cwd_verified?'Command finished.':'Command finished. The previous confirmed directory was retained.'):'SSH outcome uncertain. The console is disconnected. Review the result before reconnecting.';
+      if(!connected)connection.textContent='Disconnected';
+      status.textContent=connected?(result.cwd_verified?'':'The previous confirmed directory was retained.'):'SSH outcome uncertain. The console is disconnected. Review the result before reconnecting.';
       input.value='';
     }catch(error){
       if(serial===generation){
         connected=false;remove('pending-manual');
+        connection.textContent='Disconnected';
         put([{key:'manual-error',at:Date.now()/1000,source:'ssh',text:'[SSH error] '+error.message}],true);
         status.textContent=error.message+' Reopen the console before another command.';
       }
@@ -2279,6 +2312,7 @@ document.addEventListener('submit', event => {
     event.preventDefault();generation++;connected=false;input.disabled=true;form.querySelector('button').disabled=true;status.textContent='Disconnecting SSH console…';
     try{
       await request(disconnect);
+      connection.textContent='Disconnected';
       if(pending)put([{key:'ssh-disconnect',at:Date.now()/1000,source:'ssh',text:'Connection closed while a command was pending. Check its result before retrying.'}],true);
       status.textContent='Console disconnected.';disconnect.querySelector('button').disabled=true;
     }
@@ -3317,22 +3351,36 @@ body.research-map-open { overflow:hidden; }
 .system-terminal { padding:18px; border:1px solid #465971; border-radius:10px; background:#101923; color:#e7eff8; }
 .system-terminal h3,.system-terminal h4,.system-terminal .form-label,.system-terminal summary,.system-terminal code { color:#e7eff8; }
 .system-terminal p { color:#c8d7e8; }
-.system-terminal-frame { margin:14px 0 10px; border:1px solid #536780; border-radius:8px; overflow:hidden; background:#080e15; }
-.system-terminal-output { min-height:250px; max-height:52vh; overflow:auto; color:#deebf5; padding:16px; font:0.9rem/1.55 monospace; }
-.system-terminal-output:focus-visible { outline:2px solid #90cbff; outline-offset:3px; }
-.terminal-entry { margin-bottom:14px; }
-.terminal-entry:last-child { margin-bottom:0; }
-.terminal-source { display:block; margin-bottom:3px; font:bold .78rem/1.3 system-ui,sans-serif; color:#c5d4e1; }
-.terminal-entry[data-source=manual] .terminal-source,.terminal-prompt>span { color:#87e7ac; }
-.terminal-entry[data-source=agent] .terminal-source { color:#7bdcfa; }
-.terminal-entry[data-source=guided] .terminal-source { color:#ffd479; }
-.terminal-text { white-space:pre-wrap; overflow-wrap:anywhere; }
-.terminal-prompt { display:flex; flex-wrap:wrap; align-items:center; gap:8px; border-top:1px solid #536780; padding:8px 12px; margin:0; }
-.terminal-prompt>span { font:bold 1rem monospace; }
-.terminal-prompt .form-control { flex:1; min-width:6ch; border-color:#536780; background:#121d29; color:#eaf5ff; font:inherit; font-family:monospace; }
-.terminal-prompt .terminal-run { border-color:#7f9db4; color:#e6f4ff; background:#203548; }
+.system-terminal-frame { border:1px solid #495563; border-radius:7px; overflow:hidden; background:#0c1015; }
+.terminal-bar { display:flex; align-items:baseline; flex-wrap:wrap; gap:4px 12px; padding:9px 14px; border-bottom:1px solid #363f4b; background:#181f28; }
+.terminal-bar h3 { margin:0; font-size:.9rem; }
+.terminal-host { color:#bac9d8; font:.8rem/1.4 ui-monospace,monospace; overflow-wrap:anywhere; }
+.terminal-connection { color:#9fdcb2; font-size:.75rem; margin-inline-start:auto; }
+.terminal-screen { min-height:18rem; max-height:clamp(18rem,54vh,33rem); overflow:auto; padding:13px 14px; color:#dce5ed; font:.875rem/1.5 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace; }
+.system-terminal-output:focus-visible { outline:2px solid #90cbff; outline-offset:2px; }
+.terminal-entry { margin:0 0 .4em; --terminal-accent:#bac9d8; }
+.terminal-entry[data-source=manual],.terminal-prompt { --terminal-accent:#9fdcb2; }
+.terminal-entry[data-source=agent] { --terminal-accent:#8fd8f0; }
+.terminal-entry[data-source=guided] { --terminal-accent:#efd095; }
+.terminal-line { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:0 1.5ch; }
+.terminal-symbol,.terminal-location,.terminal-source { color:var(--terminal-accent); }
+.terminal-symbol { font-weight:700; }
+.terminal-source { font-size:.73rem; opacity:.9; margin-inline-start:auto; }
+.terminal-source.terminal-exit-error { color:#ff9da9; }
+.terminal-text { min-width:0; white-space:pre-wrap; overflow-wrap:anywhere; }
+.terminal-result { padding-inline-start:2ch; }
+.terminal-message .terminal-text,.system-terminal .terminal-hint { color:#aebdcb; }
+.system-terminal .terminal-hint { padding-inline-start:2ch; margin:0; }
+.terminal-prompt { display:flex; align-items:baseline; gap:1ch; margin:0; padding-block:3px; }
+.terminal-location { max-width:36%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+.terminal-prompt input { flex:1; min-width:3ch; min-height:1.55em; padding:0; border:0; border-radius:0; background:transparent; color:#edf5fb; caret-color:#a9edba; font:inherit; }
+.terminal-prompt input:focus { outline:0; }
+.terminal-prompt:focus-within { box-shadow:inset 0 -1px #607282; }
+.terminal-run { padding:2px .55em; border:1px solid #475769; border-radius:4px; background:#141d27; color:#c9d7e3; font:inherit; font-size:.73rem; }
+.terminal-run:not(:disabled):is(:hover,:focus-visible) { background:#223448; color:#fff; }
+.terminal-run:disabled { opacity:.5; }
 .system-terminal-footer { display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; justify-content:space-between; margin:10px 0; }
-.system-terminal-footer p { margin:0; overflow-wrap:anywhere; }
+.system-terminal [data-terminal-status]:empty,.system-terminal [data-guided-progress]:empty { display:none; }
 .terminal-agent-form { max-width:none; margin-bottom:0; }
 .terminal-agent-buttons { display:flex; flex-wrap:wrap; gap:8px; }
 .system-agent-activity { margin:16px 0; }

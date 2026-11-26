@@ -122,6 +122,8 @@ when present, and the selected server's observed welcome and system details.
 Manual commands, Linux agent commands and guided actions share one scrollback
 with source labels and colors. The agent direction field and plain-language
 reply sit below the scrollback and command prompt.
+The prompt shows the retained directory. A successful plain `ls` with no
+visible results displays a short hint to use `ls -la` for hidden entries.
 Guided operations report the current command and bounded, redacted stdout and
 stderr in that console. An active or uncertain guided action blocks manual
 command entry until reconciliation releases the operation lock.

@@ -4,19 +4,49 @@
   const terminal=document.querySelector('#ssh-console');
   if(!terminal)return;
   const output=terminal.querySelector('[data-terminal-output]');
+  const screen=terminal.querySelector('[data-terminal-screen]');
+  const connection=terminal.querySelector('[data-terminal-connection]');
   const sources={ssh:'SSH',manual:'You',agent:'Agent',guided:'Guided action'};
   const rows=new Map([...output.children].map(node=>[node.dataset.terminalEntry,node]));
+  const rendered=new WeakMap();
   const clean=text=>String(text||'').replace(/\x1b\[[0-?]*[ -\/]*[@-~]|[\x00-\x08\x0b-\x1f\x7f]/g,'');
-  const scroll=()=>{output.scrollTop=output.scrollHeight;};
+  const scroll=()=>{screen.scrollTop=screen.scrollHeight;};
   const order=(a,b)=>Number(a.dataset.terminalTime)-Number(b.dataset.terminalTime)
     ||a.dataset.terminalEntry.localeCompare(b.dataset.terminalEntry,'en',{numeric:true});
+  function element(tag,className,text=''){
+    const node=document.createElement(tag);node.className=className;node.textContent=text;
+    return node;
+  }
+  function render(row,entry){
+    const signature=JSON.stringify(entry);
+    if(rendered.get(row)===signature)return;
+    rendered.set(row,signature);
+    const line=element('div','terminal-line');
+    const label=element('span','terminal-source',sources[entry.source]);
+    if(typeof entry.command==='string'){
+      const text=element('span','terminal-text');
+      const symbol=element('span','terminal-symbol','$');symbol.setAttribute('aria-hidden','true');
+      const command=document.createElement('span');command.dataset.terminalCommand='';command.textContent=entry.command;
+      text.append(symbol,' ',command);
+      label.textContent+=' · '+entry.status;
+      if(entry.failed)label.classList.add('terminal-exit-error');
+      line.append(text,label);
+      row.replaceChildren(line);
+      if(entry.output)row.append(element('div','terminal-text terminal-result',entry.output));
+      if(entry.hint)row.append(element('p','terminal-hint',entry.hint));
+    }else{
+      line.classList.add('terminal-message');
+      line.append(element('span','terminal-text',entry.text),label);
+      row.replaceChildren(line);
+    }
+  }
   const put=(entries,force=false)=>{
-    const follow=force||output.scrollHeight-output.clientHeight-output.scrollTop<32;
+    const follow=force||screen.scrollHeight-screen.clientHeight-screen.scrollTop<32;
     for(const entry of entries){
       if(!Object.hasOwn(sources,entry.source)||typeof entry.text!=='string')continue;
       let row=rows.get(entry.key);
       if(row){
-        if(row.lastElementChild.textContent!==entry.text)row.lastElementChild.textContent=entry.text;
+        render(row,entry);
         continue;
       }
       row=document.createElement('div');
@@ -24,9 +54,7 @@
       row.dataset.terminalEntry=entry.key;
       row.dataset.terminalTime=entry.at;
       row.dataset.source=entry.source;
-      const label=document.createElement('span');label.className='terminal-source';label.textContent=sources[entry.source];
-      const body=document.createElement('div');body.className='terminal-text';body.textContent=entry.text;
-      row.append(label,body);
+      render(row,entry);
       const next=[...output.children].find(existing=>order(existing,row)>0);
       output.insertBefore(row,next||null);rows.set(entry.key,row);
     }
@@ -73,27 +101,32 @@
   const form=terminal.querySelector('[data-terminal-form]');
   if(!form)return;
   const input=form.querySelector('[data-terminal-input]'),status=terminal.querySelector('[data-terminal-status]');
+  const directory=form.querySelector('[data-terminal-directory]'),home=form.dataset.terminalHome;
   const disconnect=terminal.querySelector('[data-terminal-disconnect]');
   let pending=false,generation=0,connected=true;
-  const history=Array.from(output.querySelectorAll('[data-source=manual] .terminal-text'),row=>row.textContent.split('\n')[0].slice(2));let index=history.length,draft='';
+  const history=Array.from(output.querySelectorAll('[data-source=manual] [data-terminal-command]'),row=>row.textContent);let index=history.length,draft='';
   form.addEventListener('submit',async event=>{
     event.preventDefault();if(pending||!connected||input.disabled)return;
     const command=input.value.trim();if(!command)return;
     if(command==='clear'){output.replaceChildren();rows.clear();input.value='';return;}
     pending=true;const serial=generation;form.querySelector('button').disabled=true;
     status.textContent='Command running over SSH…';history.push(command);index=history.length;draft='';
-    put([{key:'pending-manual',at:Date.now()/1000,source:'manual',text:'$ '+clean(command)+'\n[waiting for VPS output]'}],true);
+    put([{key:'pending-manual',at:Date.now()/1000,source:'manual',text:'',command:clean(command),status:'waiting for VPS output'}],true);
     try {
       const data=await request(form);if(serial!==generation)return;
       const result=data.terminal_result;if(!result?.entry)throw Error('The SSH result could not be verified. Reconnect before continuing.');
       remove('pending-manual');put([result.entry],true);
-      terminal.querySelector('[data-terminal-directory]').textContent='Directory: '+(result.cwd||'server home');
+      const cwd=clean(result.cwd);
+      directory.textContent=!cwd||cwd===home?'~':(home&&cwd.startsWith(home+'/')?'~'+cwd.slice(home.length):cwd);
+      directory.title='Working directory: '+(cwd||'server home');
       connected=result.connected;
-      status.textContent=connected?(result.cwd_verified?'Command finished.':'Command finished. The previous confirmed directory was retained.'):'SSH outcome uncertain. The console is disconnected. Review the result before reconnecting.';
+      if(!connected)connection.textContent='Disconnected';
+      status.textContent=connected?(result.cwd_verified?'':'The previous confirmed directory was retained.'):'SSH outcome uncertain. The console is disconnected. Review the result before reconnecting.';
       input.value='';
     }catch(error){
       if(serial===generation){
         connected=false;remove('pending-manual');
+        connection.textContent='Disconnected';
         put([{key:'manual-error',at:Date.now()/1000,source:'ssh',text:'[SSH error] '+error.message}],true);
         status.textContent=error.message+' Reopen the console before another command.';
       }
@@ -103,6 +136,7 @@
     event.preventDefault();generation++;connected=false;input.disabled=true;form.querySelector('button').disabled=true;status.textContent='Disconnecting SSH console…';
     try{
       await request(disconnect);
+      connection.textContent='Disconnected';
       if(pending)put([{key:'ssh-disconnect',at:Date.now()/1000,source:'ssh',text:'Connection closed while a command was pending. Check its result before retrying.'}],true);
       status.textContent='Console disconnected.';disconnect.querySelector('button').disabled=true;
     }

@@ -54,6 +54,14 @@ final class SystemConsoleTranscript
         return ['key'=>$key,'at'=>$at,'source'=>$source,'text'=>$text];
     }
 
+    public static function invocation(string $key,float $at,string $source,string $command,string $stdout,string $stderr,string $status,bool $failed,string $hint=''):array
+    {
+        $streams=$stderr===''?$stdout:($stdout===''?'':rtrim($stdout,"\n")."\n")."[stderr]\n".$stderr;
+        $body=rtrim($streams,"\n");
+        $text='$ '.$command.($body===''?'':"\n".$body).($hint===''?'':"\n".$hint)."\n[".$status.']';
+        return self::entry($key,$at,$source,$text)+['command'=>$command,'output'=>$body,'status'=>$status,'failed'=>$failed,'hint'=>$hint];
+    }
+
     public static function commands(array $rows,bool $manual,SystemNotebook $notebook,int $system):array
     {
         $streams=$notebook->redact($system,array_map(static fn(array $row):array=>[$row['command'],$row['stdout'],$row['stderr']],$rows));
@@ -62,15 +70,16 @@ final class SystemConsoleTranscript
             [$command,$stdout,$stderr]=$streams[$i];
             $stdout=self::text($stdout,$manual?16384:4096);
             $stderr=self::text($stderr,$manual?16384:4096);
-            $lines=['$ '.self::text($command,4000)];
-            if($stdout!=='')$lines[]=$stdout;
-            if($stderr!=='')$lines[]="[stderr]\n".$stderr;
-            if($stdout===''&&$stderr===''&&$row['status']==='complete')$lines[]='No output returned.';
-            $status=$row['status']==='running'?'waiting for VPS output':str_replace('_',' ',$row['status']);
-            if($row['exit_code']!==null)$status.=' · exit '.$row['exit_code'];
+            $complete=$row['status']==='complete';
+            $status=$complete&&$row['exit_code']!==null?'exit '.$row['exit_code']:
+                ($row['status']==='running'?'waiting for VPS output':str_replace('_',' ',$row['status']));
             if($row['truncated'])$status.=' · output truncated';
-            $lines[]='['.$status.']';
-            $entries[]=self::entry('command-'.$row['id'],(float)$row['created_at'],$manual?'manual':'agent',implode("\n",$lines));
+            $emptyListing=$manual&&$row['command']==='ls'&&$complete&&$row['exit_code']===0
+                &&$row['stdout']===''&&$row['stderr']===''&&!$row['truncated'];
+            $hint=$emptyListing?'No visible entries. Run ls -la to include hidden files.':'';
+            $entries[]=self::invocation('command-'.$row['id'],(float)$row['created_at'],$manual?'manual':'agent',
+                self::text($command,4000),$stdout,$stderr,$status,
+                $row['status']==='outcome_uncertain'||($row['exit_code']!==null&&$row['exit_code']!==0),$hint);
         }
         return $entries;
     }

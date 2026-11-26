@@ -41,6 +41,8 @@ namespace AIcontrol {
                 if(preg_match('/AICTRL_WELCOME_[a-f0-9]{24}/',$command,$welcome))$output="Welcome to the fixture VPS\n\n".$welcome[0]."\n".$output;
             }elseif(str_contains($command,'manual shell fixture')){
                 $output="manual shell fixture\n";
+            }elseif(str_contains($command,'{ ls -la'."\n")){
+                $output="total 4\n-rw-r--r-- 1 fixture fixture 20 Nov 26 12:00 .profile\n";
             }elseif(str_contains($command,'wg show all latest-handshakes')){
                 $delay=2400000;
                 $exit=1;
@@ -48,6 +50,10 @@ namespace AIcontrol {
                 $output="aicontrol0 UP 10.78.0.1/24\n";
             }elseif(!str_contains($command,'{ ls'."\n")){
                 $exit=127;
+            }
+            if(preg_match('/AICTRL_CWD_[a-f0-9]{32}:/',$command,$marker)){
+                $username=$argv[array_search('-l',$argv,true)+1];
+                $output.="\n".$marker[0].base64_encode('/var/lib/aicontrol/homes/'.$username)."\n";
             }
         }else{
             throw new \RuntimeException('Unexpected process in Systems fixture');

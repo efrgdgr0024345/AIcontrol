@@ -39,38 +39,48 @@ final class SystemActionTranscript
             }
         }
         $prefix='action-'.$operation['id'].'-';
-        $entries=[SystemConsoleTranscript::entry($prefix.'review',(float)($data['prepared_at']??$operation['created_at']),'guided',
-            self::text($operation,$notebook,array_merge($lines,self::commands($steps,$status))))];
+        $prepared=(float)($data['prepared_at']??$operation['created_at']);
+        $system=(int)$operation['system_id'];
+        $entries=[SystemConsoleTranscript::entry($prefix.'review',$prepared,'guided',
+            self::text($system,$notebook,implode("\n",$lines)))];
+        $entries=array_merge($entries,self::commands($prefix.'review-',$prepared,$steps,$system,$notebook,false));
         if($approved){
-            $execution=[$title.' · '.$status];
-            if(is_array($result['steps']??null))$execution=array_merge($execution,self::commands($result['steps'],$status));
+            $entries[]=SystemConsoleTranscript::entry($prefix.'run',(float)$approved,'guided',$title.' · '.$status);
+            if(is_array($result['steps']??null)){
+                $entries=array_merge($entries,self::commands($prefix.'run-',(float)$approved,$result['steps'],$system,$notebook,$status==='running'));
+            }
             $summary=$result['summary']??null;
-            if(is_string($summary)&&$summary!=='')$execution[]=$summary;
-            $entries[]=SystemConsoleTranscript::entry($prefix.'run',(float)$approved,'guided',self::text($operation,$notebook,$execution));
+            if(is_string($summary)&&$summary!==''){
+                $entries[]=SystemConsoleTranscript::entry($prefix.'run-summary',(float)$approved,'guided',self::text($system,$notebook,$summary));
+            }
         }
         return $entries;
     }
 
-    private static function commands(array $steps,string $status):array
+    private static function commands(string $prefix,float $at,array $steps,int $system,SystemNotebook $notebook,bool $running):array
     {
-        $lines=[];
-        foreach(array_slice($steps,-30) as $step){
-            $argv=$step['command']??null;
+        $entries=[];
+        $steps=array_slice(array_values($steps),-30,null,true);
+        $redacted=$notebook->redact($system,$steps);
+        foreach($steps as $i=>$step){
+            $argv=$redacted[$i]['command']??null;
             if(!is_array($argv)||!$argv||count($argv)>40||array_filter($argv,static fn($value)=>!is_string($value)))continue;
-            $line='$ '.implode(' ',$argv);
-            $stdout=$step['stdout']??null;
-            $stderr=$step['stderr']??null;
-            if(is_string($stdout)&&$stdout!=='')$line.="\n".$stdout;
-            if(is_string($stderr)&&$stderr!=='')$line.="\n[stderr]\n".$stderr;
+            $stdout=$redacted[$i]['stdout']??null;
+            $stderr=$redacted[$i]['stderr']??null;
             $exit=$step['exit_code']??null;
-            $outcome=is_int($exit)?'exit '.$exit:($status==='running'?'awaiting output':'exit unconfirmed');
-            $lines[]=$line."\n[".$outcome.(!empty($step['truncated'])?' · output truncated':'').']';
+            $outcome=is_int($exit)?'exit '.$exit:($running?'awaiting output':'exit unconfirmed');
+            if(!empty($step['truncated']))$outcome.=' · output truncated';
+            $entries[]=SystemConsoleTranscript::invocation($prefix.'step-'.$i,$at,'guided',
+                SystemConsoleTranscript::text(implode(' ',$argv),2000),
+                SystemConsoleTranscript::text(is_string($stdout)?$stdout:null,2048),
+                SystemConsoleTranscript::text(is_string($stderr)?$stderr:null,2048),
+                $outcome,($exit===null&&!$running)||(is_int($exit)&&$exit!==0));
         }
-        return $lines;
+        return $entries;
     }
 
-    private static function text(array $operation,SystemNotebook $notebook,array $lines):string
+    private static function text(int $system,SystemNotebook $notebook,string $text):string
     {
-        return SystemConsoleTranscript::text($notebook->redact((int)$operation['system_id'],implode("\n\n",$lines)),24000);
+        return SystemConsoleTranscript::text($notebook->redact($system,$text),4096);
     }
 }

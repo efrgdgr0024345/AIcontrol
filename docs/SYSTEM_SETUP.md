@@ -91,6 +91,9 @@ Up/Down history, clear, and last-confirmed working-directory persistence. Each
 command runs in a fresh noninteractive shell. Full-screen editors, password
 prompts, persistent environment variables and a PTY session are not provided by
 this PHP command console. Use noninteractive sudo -n where Administrator applies.
+The prompt shows the current directory. On an account with shell access,
+plain `ls` lists visible names in that directory. A successful empty listing
+offers `ls -la` to include names beginning with a dot.
 
 Read-only console input is mapped to the named diagnostic allowlist. Account and
 Administrator allow normal shell commands within the chosen Linux permissions.

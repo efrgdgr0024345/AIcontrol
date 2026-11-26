@@ -184,6 +184,22 @@ The new five-round/Stop/failure test uses synthetic provider replies and actual
 local research actions; no billed call or live-host installation is claimed.
 Required planning-panel CI is verified on the published commit before readiness.
 
+## Shell prompt and empty directory listings
+
+The SSH view uses a single monospace viewport for scrollback and the command
+prompt. The prompt includes the last confirmed working directory. Inline
+command decorations show its source, exit status and any output clipping.
+An empty successful manual `ls` explains that the directory has no visible
+entries and suggests `ls -la`. Plain `ls` retains Linux semantics. Other
+successful commands can return quietly, and failed commands show stderr and
+the exit status.
+
+Xterm.js provided the terminal viewport reference. VS Code's open-source
+terminal shell integration provided the command-decoration reference. The
+local OpenSSH integration covers a hidden-only directory, an explicit hidden
+listing, a visible file and an error. The browser fixtures cover the prompt,
+history, shared scrollback, reloading the empty listing and accessibility.
+
 ## Shared SSH terminal transcript
 
 The server page uses one terminal transcript for manual commands, guided action
