@@ -184,6 +184,22 @@ The new five-round/Stop/failure test uses synthetic provider replies and actual
 local research actions; no billed call or live-host installation is claimed.
 Required planning-panel CI is verified on the published commit before readiness.
 
+## Guided command transcripts in the SSH console
+
+Verified server pages put the console above the setup, protection and server
+list sections. The action buttons are directly below the console. Mutating
+actions keep the existing review and approval. Once dispatched, the console
+shows the active recipe's command, returned output excerpts and exit status
+while manual input is paused. Polling updates the same operation, including
+after reopening the server directly. Completion restores the manual transcript
+and entry, with the guided result still visible on that operation.
+
+The browser fixture verifies the review, running stdout/stderr, masked
+protected value, server reload and completed VPN transcript. Python tests
+verify pending command records and clipped output. Local SSH transport and
+desktop/mobile accessibility checks also ran. Live VPS activation and a VPN
+handshake were outside these checks.
+
 ## Guided controls and setup checks beside the SSH console
 
 Shell output distinguishes an empty command result from an omitted result in

@@ -34,6 +34,7 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   await page.getByRole('button',{name:'Connect and open command line',exact:true}).click();
   const terminal=page.locator('[data-system-terminal]');
   await terminal.waitFor();const terminalId=await terminal.getAttribute('data-system-terminal');
+  if(!await page.locator('[data-system-control]').evaluate(section=>document.querySelector('[data-system-privacy]').compareDocumentPosition(section)&Node.DOCUMENT_POSITION_PRECEDING))throw Error('Verified console is below the setup controls');
   const command=page.getByLabel('Shell command',{exact:true});
   await command.fill("printf 'manual shell fixture'");
   await page.getByRole('button',{name:'Run command',exact:true}).click();
@@ -46,6 +47,8 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   await checkSetup.click();
   const vpnCard=page.locator('[data-recipe=vpn]');
   await vpnCard.getByText('No matching setup detected at the last check.',{exact:true}).waitFor();
+  const guided=terminal.locator('[data-guided-output]');
+  await guided.filter({hasText:'ip -j -details link show dev aicontrol0'}).waitFor();
   if(await vpn.isDisabled()||!await page.getByRole('button',{name:'Review Install Codex',exact:true}).isDisabled())throw Error('Setup check disabled the wrong items');
 
   await vpn.click();
@@ -58,6 +61,15 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   await page.getByRole('button',{name:'Apply this reviewed action',exact:true}).click();
   await operation.locator('[data-playbook-status]').filter({hasText:'running'}).waitFor();
   if(await terminal.getAttribute('data-system-terminal')!==terminalId||!await command.isDisabled())throw Error('Active VPN work hid the console or allowed a competing command');
+  const operationId=await operation.getAttribute('data-playbook');
+  // A fresh visit to the server should resume the same live transcript.
+  await page.goto(url+'?view=systems&system=1');
+  await operation.waitFor();if(await operation.getAttribute('data-playbook')!==operationId||!await command.isDisabled())throw Error('Server page lost the running guided action');
+  await page.evaluate(()=>window.liveTranscriptNavigationMarker=true);
+  await guided.filter({hasText:'Fixture package lists refreshed.'}).waitFor();
+  const runningText=await guided.innerText();
+  if(!runningText.includes('$ apt-get update')||!runningText.includes('[stderr]')||!runningText.includes('awaiting output')||runningText.includes('synthetic-protected-value')||!await page.evaluate(()=>window.liveTranscriptNavigationMarker))throw Error('Running transcript lost output or redaction, or reloaded the page');
+  if(await terminal.locator('[data-terminal-output]').isVisible())throw Error('Manual output still owns the visible terminal while the guided action runs');
   const csrf=await terminal.locator('input[name=csrf]').first().inputValue();
   const blocked=await page.request.post(url+'?view=systems&systems_api=1',{form:{action:'system_console_command',csrf,system_id:'1',terminal_id:terminalId,command:"printf 'manual shell fixture'"}});
   if(blocked.status()!==422||(await blocked.json()).error.includes('guided server operation')===false)throw Error('VPN did not block competing SSH on the server');
@@ -66,6 +78,8 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   await operation.getByText('Fixture WireGuard interface configured.',{exact:true}).waitFor();
   await operation.getByText('Handshake is not yet verified.',{exact:false}).waitFor();
   await operation.getByText('systemctl enable --now wg-quick@aicontrol0',{exact:true}).waitFor();
+  await guided.filter({hasText:'Fixture WireGuard service enabled.'}).waitFor();
+  if(new URL(page.url()).searchParams.get('operation')!==operationId||!await terminal.locator('[data-terminal-output]').isVisible())throw Error('Completed transcript was lost or manual output did not return');
   if(await terminal.getAttribute('data-system-terminal')!==terminalId||await command.isDisabled())throw Error('Completed VPN work did not restore shell entry');
   const providerCalls=path.join(home,'fixture-provider-calls');
   if(fs.existsSync(providerCalls))throw Error('The reviewed VPN used a model call');

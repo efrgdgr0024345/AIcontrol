@@ -39,14 +39,33 @@ def call(argv,limit=12,check=False):
  if check and r.returncode:raise RuntimeError('Command failed: '+argv[0])
  return r
 
+def output_excerpt(text,limit):
+ # Strip private-key blocks before clipping, and avoid exposing a split first line.
+ text=re.sub(r'-----BEGIN [^-\n]*PRIVATE KEY-----.*?(?:-----END [^-\n]*PRIVATE KEY-----|\Z)','[redacted]',text,flags=re.S)
+ if len(text)<=limit:return text
+ if not limit:return ''
+ return text[-limit:].partition('\n')[2] if text[-limit-1]!='\n' else text[-limit:]
+
+def command_result(argv,result):
+ return {'command':argv,'exit_code':result.returncode,'stdout':output_excerpt(result.stdout,600),'stderr':output_excerpt(result.stderr,400),'truncated':len(result.stdout)>600 or len(result.stderr)>400}
+
 def inventory():
+ steps=[]
+ def observe(argv,limit=12):
+  result=call(argv,limit)
+  if MODE=='inventory':
+   entry=command_result(argv,result)
+   entry.update(stdout=output_excerpt(entry['stdout'],200),stderr=output_excerpt(entry['stderr'],100),
+                truncated=entry['truncated'] or len(entry['stdout'])>200 or len(entry['stderr'])>100)
+   steps.append(entry)
+  return result
  release={}
  for line in pathlib.Path('/etc/os-release').read_text().splitlines():
   if '=' in line:
    k,v=line.split('=',1);release[k]=v.strip('"')
  ports=[]
  try:
-  for line in call(['ss','-H','-lntu']).stdout.splitlines():
+  for line in observe(['ss','-H','-lntu']).stdout.splitlines():
    parts=line.split()
    if len(parts)<5:continue
    address,port=parts[4].rsplit(':',1);address=address.strip('[]')
@@ -55,28 +74,30 @@ def inventory():
  except (FileNotFoundError,ValueError):pass
  conn=os.environ.get('AICONTROL_SSH_CONNECTION',os.environ.get('SSH_CONNECTION','')).split()
  ssh_port=int(conn[3]) if len(conn)==4 and conn[3].isdigit() else None
- ufw=call(['ufw','status']).stdout if shutil.which('ufw') else 'not installed'
+ ufw=observe(['ufw','status']).stdout if shutil.which('ufw') else 'not installed'
  existing='Status: active' in ufw
- if shutil.which('ufw'):existing=existing or bool(re.search(r'^ufw ',call(['ufw','show','added']).stdout,re.M))
+ if shutil.which('ufw'):existing=existing or bool(re.search(r'^ufw ',observe(['ufw','show','added']).stdout,re.M))
  for command in (['nft','list','ruleset'],['iptables-save'],['ip6tables-save']):
   if shutil.which(command[0]):
-   r=call(command)
+   r=observe(command)
    if r.returncode==0 and (('table ' in r.stdout) or re.search(r'^-A ',r.stdout,re.M)):existing=True
  failed=None
  if shutil.which('systemctl'):
   try:
-   r=call(['systemctl','--no-pager','--plain','--no-legend','--failed','--type=service'],2)
+   r=observe(['systemctl','--no-pager','--plain','--no-legend','--failed','--type=service'],2)
    if r.returncode==0:failed=len([line for line in r.stdout.splitlines() if line.strip()])
   except (OSError,subprocess.TimeoutExpired):pass
  mem=re.search(r'^MemTotal:\s+(\d+)',pathlib.Path('/proc/meminfo').read_text(),re.M)
- return {'format':'AIcontrol VPS inventory v1','os':release.get('PRETTY_NAME','Linux'),'distribution':release.get('ID',''),'version':release.get('VERSION_ID',''),'architecture':os.uname().machine,'kernel':os.uname().release,'cpu_count':os.cpu_count(),'load_average':list(os.getloadavg()),'failed_service_count':failed,'memory_kib':int(mem[1]) if mem else None,'disk_free_bytes':shutil.disk_usage('/').free,'ssh_port':ssh_port,'ports':list({(p['protocol'],p['port']):p for p in ports}.values()),'existing_firewall':existing,'ufw':ufw[:4000],'root':os.geteuid()==0,'apt_available':bool(shutil.which('apt-get')),'systemd':pathlib.Path('/proc/1/comm').read_text().strip()=='systemd','reboot_required':pathlib.Path('/var/run/reboot-required').exists(),'wireguard_configured':pathlib.Path('/etc/wireguard/aicontrol0.conf').exists(),'backup_tools':[name for name in ('restic','borg','rsnapshot') if shutil.which(name)],'backup_file_count':len(list(pathlib.Path('/var/backups').iterdir())) if os.access('/var/backups',os.R_OK) else None,'observed_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime())}
+ info={'format':'AIcontrol VPS inventory v1','os':release.get('PRETTY_NAME','Linux'),'distribution':release.get('ID',''),'version':release.get('VERSION_ID',''),'architecture':os.uname().machine,'kernel':os.uname().release,'cpu_count':os.cpu_count(),'load_average':list(os.getloadavg()),'failed_service_count':failed,'memory_kib':int(mem[1]) if mem else None,'disk_free_bytes':shutil.disk_usage('/').free,'ssh_port':ssh_port,'ports':list({(p['protocol'],p['port']):p for p in ports}.values()),'existing_firewall':existing,'ufw':ufw[:4000],'root':os.geteuid()==0,'apt_available':bool(shutil.which('apt-get')),'systemd':pathlib.Path('/proc/1/comm').read_text().strip()=='systemd','reboot_required':pathlib.Path('/var/run/reboot-required').exists(),'wireguard_configured':pathlib.Path('/etc/wireguard/aicontrol0.conf').exists(),'backup_tools':[name for name in ('restic','borg','rsnapshot') if shutil.which(name)],'backup_file_count':len(list(pathlib.Path('/var/backups').iterdir())) if os.access('/var/backups',os.R_OK) else None,'observed_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime())}
+ if steps:info['inventory_steps']=steps
+ return info
 
 def setup_checks(observed):
  steps=[]
  def probe(argv):
   try:
    result=call(argv,2)
-   steps.append({'command':argv,'exit_code':result.returncode})
+   steps.append(command_result(argv,result))
    return result
   except (OSError,subprocess.TimeoutExpired):return None
  def present(path):
@@ -127,9 +148,11 @@ def worker():
  def run(argv):
   if (JOB/'stop').exists():raise InterruptedError('Stopped before the next command; completed changes remain.')
   seconds=max(1,min(15 if argv[0]=='ufw' else 900,int(1800-(time.monotonic()-started))))
+  steps.append({'command':argv,'exit_code':None,'stdout':'','stderr':''})
+  result('running','A reviewed operation is running.',steps=steps)
   try:r=call(argv,seconds)
   except subprocess.TimeoutExpired:raise TimeoutError('A command exceeded its bound; inspect package/service state before any retry.')
-  steps.append({'command':argv,'exit_code':r.returncode,'stdout':r.stdout[-600:],'stderr':r.stderr[-400:],'truncated':len(r.stdout)>600 or len(r.stderr)>400})
+  steps[-1]=command_result(argv,r)
   result('running','A reviewed operation is running.',steps=steps)
   if r.returncode:raise RuntimeError('A reviewed command failed; no retry was attempted.')
   return r
@@ -223,11 +246,11 @@ def worker():
 
 def emit(state):
  state=json.loads(json.dumps(state))
- for limit in (100,40,0):
+ for limit in (600,100,40,0):
   for step in state.get('steps',[]):
    for field in ('stdout','stderr'):
     value=step.get(field,'')
-    if len(value)>limit:step[field]=value[-limit:] if limit else '';step['truncated']=True
+    if len(value)>limit:step[field]=output_excerpt(value,limit);step['truncated']=True
   text=json.dumps(state)
   if len(text.encode())<=14000:print(text);return
  raise RuntimeError('Result metadata exceeds the bounded response')

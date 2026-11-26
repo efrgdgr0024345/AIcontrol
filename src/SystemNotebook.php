@@ -24,7 +24,7 @@ final class SystemNotebook
  public function observe(int $id,string $title,string $status,array $details):void{
   $this->systems->db->exec('BEGIN IMMEDIATE');try{$this->systems->system($id);$p=$this->privateData($id);$p['observations'][]=['utc'=>gmdate('c'),'title'=>$title,'status'=>$status,'details'=>$details];if(count($p['observations'])>100)$p['observations']=array_slice($p['observations'],-100);$row=$this->systems->query('SELECT public_notes FROM system_notebooks WHERE system_id=?',[$id])[0]??[];$this->save($id,$row['public_notes']??'',$p);$this->systems->db->exec('COMMIT');}catch(\Throwable $e){$this->systems->db->exec('ROLLBACK');throw $e;}
  }
- public function redactForModel(int $id,mixed $data):mixed{$s=$this->systems->system($id);$p=$this->privateData($id);$known=array_merge(array_values($p['secrets']),[$s['username'],$s['host']]);$walk=function($value)use(&$walk,$known){if(is_array($value)){foreach($value as $key=>$v)$value[$key]=$walk($v);return $value;}return is_string($value)?self::mask($value,$known):$value;};return $walk($data);}
+ public function redact(int $id,mixed $data):mixed{$s=$this->systems->system($id);$p=$this->privateData($id);$known=array_merge(array_values($p['secrets']),[$s['username'],$s['host']]);$walk=function($value)use(&$walk,$known){if(is_array($value)){foreach($value as $key=>$v)$value[$key]=$walk($v);return $value;}return is_string($value)?self::mask($value,$known):$value;};return $walk($data);}
  public function view(int $id,bool $reveal=false):array{
   $s=$this->systems->system($id);$row=$this->systems->query('SELECT public_notes,updated_at,public_json FROM system_notebooks WHERE system_id=?',[$id])[0]??[];
   if((new SystemGuard($this->systems))->configured()&&!(new SystemGuard($this->systems))->unlocked()){

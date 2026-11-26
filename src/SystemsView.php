@@ -12,10 +12,22 @@ final class SystemsView
     {
         echo '<form method="post" action="/loader.php?view=systems">'.$csrf.'<input type="hidden" name="action" value="'.$action.'"><input type="hidden" name="system_id" value="'.$id.'"><button class="btn btn-outline-secondary">'.Ui::e($label).'</button></form>';
     }
+    private static function controls(array $system,array $data,string $csrf): void
+    {
+        echo '<section class="card mb-3 systems-section" data-system-control><div class="card-body"><h2>'.Ui::e($system['name']).'</h2>';
+        SystemTerminalView::render($system,$data['terminal']??null,$csrf,$data['ssh_blocked']??false,$data['guided_transcript']??'');
+        SystemOperationsView::actions($system,$data,$csrf,true);
+        echo '</div></section>';
+    }
     public static function render(array $data,string $csrf,array $projects): void
     {
         if(($data['allowed']??true)===false){echo '<p class="alert alert-warning">Systems control requires PIN, password or host-authenticated access.</p>';return;}
-        $guard=$data['guard']??['configured'=>false,'unlocked'=>false,'until'=>0];if(!$guard['unlocked'])SystemSetupView::locked($guard);SystemOperationsView::guard($guard,$csrf,(int)($data['selected']['id']??0));
+        $guard=$data['guard']??['configured'=>false,'unlocked'=>false,'until'=>0];
+        $selected=$data['selected']??null;
+        if(!$guard['unlocked'])SystemSetupView::locked($guard);
+        $connected=$guard['unlocked']&&$selected&&$selected['enabled']&&$selected['verified_at'];
+        if($connected)self::controls($selected,$data,$csrf);
+        SystemOperationsView::guard($guard,$csrf,(int)($selected['id']??0));
         if(!$guard['unlocked']){SystemOperationsView::locked($data,$csrf);return;}
         SystemSetupView::render($data['setup']??null,$csrf,$data['setup_values']??[]);
         echo '<section class="card mb-3 systems-section"><div class="card-body"><h2>Linux servers</h2><p>Add a server, install its public key, verify its identity, then assign work. Each server has its own encrypted SSH credential.</p>';
@@ -38,18 +50,17 @@ final class SystemsView
         }
         echo '</ul></div></section>';
         $s=$data['selected'];if(!$s)return;$id=(int)$s['id'];
-        echo '<section class="card mb-3 systems-section"><div class="card-body"><h2>'.Ui::e($s['name']).'</h2><p>'.Ui::e($s['username'].'@'.$s['host'].':'.$s['port'].' · '.$s['access']).'</p>';
+        echo '<section class="card mb-3 systems-section"><div class="card-body"><h2>'.Ui::e($connected?'Connection details':$s['name']).'</h2><p>'.Ui::e($s['username'].'@'.$s['host'].':'.$s['port'].' · '.$s['access']).'</p>';
         if(!$s['enabled']){if(!$s['key_deleted_at']){echo '<p>Credential deletion is unconfirmed. Retry disconnect after checking the private vault.</p>';self::form($csrf,'system_revoke',$id,'Retry disconnect and delete local SSH key');}echo '<p>Disconnected. Local SSH execution is disabled. '.($s['key_deleted_at']?'The local private key was deleted.':'').' Remove the authorized_keys line ending <code>aicontrol-system-'.$id.'</code> on the server to revoke its public key there.</p><details><summary>Delete saved system and task logs</summary><form method="post" action="/loader.php?view=systems" class="systems-form">'.$csrf.'<input type="hidden" name="action" value="system_delete"><input type="hidden" name="system_id" value="'.$id.'"><label class="form-label" for="system-delete-confirm">Type DELETE SYSTEM '.$id.'</label><input id="system-delete-confirm" class="form-control" name="confirmation" required autocomplete="off"><button class="btn btn-outline-danger">Delete saved system and task logs</button></form></details>';}
         else {
             if($s['risk_level']==='legacy'){
                 echo '<details'.(!$s['verified_at']?' open':'').'><summary>SSH setup script</summary><p>Run this on the selected server as root or using sudo. It adds the account if missing and preserves existing authorized keys. It prints the server fingerprint for the next step.</p><label class="form-label" for="system-script">Server setup script</label><textarea class="form-control systems-code" id="system-script" readonly rows="12" spellcheck="false">'.Ui::e($data['script']).'</textarea><button type="button" class="btn btn-outline-secondary mt-2" data-copy-report="system-script">Copy setup script</button><span role="status" data-copy-report-status></span></details>';
                 echo '<form method="post" action="/loader.php?view=systems" class="systems-form">'.$csrf.'<input type="hidden" name="action" value="system_test"><input type="hidden" name="system_id" value="'.$id.'"><label class="form-label" for="system-fingerprint">Server SHA256 fingerprint</label><input class="form-control" id="system-fingerprint" name="fingerprint" value="'.Ui::e($s['fingerprint']).'" required placeholder="SHA256:…"><button class="btn btn-outline-primary">Verify identity and test SSH</button></form>';
-            }else echo '<p>Risk: <strong>'.Ui::e(SystemRisk::level($s['risk_level'])['label']).'</strong> · <a class="text-decoration-underline" href="/loader.php?view=systems&amp;system='.$id.'&amp;enrollment='.Ui::e($s['enrollment_id']??'').'">Open this server’s two-command setup</a></p>';
+            }else echo '<p>Risk: <strong>'.Ui::e(SystemRisk::level($s['risk_level'])['label']).'</strong> · <a class="text-decoration-underline" href="/loader.php?view=systems&amp;system='.$id.'&amp;enrollment='.Ui::e($s['enrollment_id']??'').'#server-setup">Open this server’s two-command setup</a></p>';
             if($s['verified_at'])echo '<p>Last successful check: '.Ui::e(Ui::time(gmdate('c',(int)$s['verified_at']))).'. Each SSH connection checks the pinned server key.</p>';
             if($s['error'])echo '<p class="alert alert-warning">'.Ui::e($s['error']).' <a href="/loader.php?view=admin#diagnostics-report">Open Admin diagnostics</a>.</p>';
             if($s['facts'])echo '<details><summary>Last observed system information</summary><pre class="systems-code">'.Ui::e($s['facts']).'</pre></details>';
-            SystemTerminalView::render($s,$data['terminal']??null,$csrf,$data['ssh_blocked']??false);
-            SystemOperationsView::actions($s,$data,$csrf,true);
+            if(!$connected)SystemOperationsView::actions($s,$data,$csrf,true);
             if($s['verified_at']){
                 echo '<form method="post" action="/loader.php?view=systems" class="systems-form">'.$csrf.'<input type="hidden" name="action" value="system_start"><input type="hidden" name="system_id" value="'.$id.'"><label class="form-label" for="system-project">Related task project (optional)</label><select class="form-select" id="system-project" name="project_id"><option value="">System task only</option>';foreach($projects as $p)echo '<option value="'.(int)$p['id'].'">'.Ui::e($p['name']).'</option>';echo '</select><label class="form-label" for="system-task">Task for the Linux agent</label><textarea class="form-control" id="system-task" name="task" rows="3" maxlength="4000" placeholder="Inspect disk usage and explain what needs attention." required></textarea><p>Up to eight model decisions; one remote command per decision. Start, then advance steps or enable automatic steps while this page stays open.</p><button class="btn btn-primary">Start system task</button></form>';
             }

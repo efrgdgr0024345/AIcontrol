@@ -78,7 +78,7 @@ final class SystemOperationsView
   };
  }
  private static function operation(array $r,string $csrf):void{
-  $id=(int)$r['system_id'];$p=$r['data'];$title=SystemPlaybooks::RECIPES[$r['recipe']]['title'];$extra=['operation_id'=>$r['id']];echo '<section id="server-operation" class="card mb-3" data-playbook="'.Ui::e($r['id']).'" data-playbook-active="'.($r['blocking']?'1':'0').'"><div class="card-body"><h2>'.Ui::e($title).'</h2><p role="status" data-playbook-status>'.Ui::e($r['status']).'</p>';
+  $id=(int)$r['system_id'];$p=$r['data'];$title=SystemPlaybooks::RECIPES[$r['recipe']]['title'];$extra=['operation_id'=>$r['id']];echo '<section id="server-operation" class="card mb-3" data-playbook="'.Ui::e($r['id']).'" data-playbook-active="'.($r['blocking']?'1':'0').'" data-playbook-state="'.Ui::e($r['status']).'"><div class="card-body"><h2>'.Ui::e($title).'</h2><p role="status" data-playbook-status>'.Ui::e($r['status']).'</p>';
   if($r['status']==='review'){
    echo '<p>'.Ui::e(SystemPlaybooks::RECIPES[$r['recipe']]['description']).'</p><p>Plan expires ten minutes after preparation. Confirm an off-server backup or provider snapshot before updates. Recovery-console access is required before changes. No automatic reboot, SSH configuration rewrite, server-password retrieval or model-generated root command is included.</p>';
    if($r['recipe']==='codex')echo '<p>Official OpenAI release 0.171.0, verified archive SHA-256 <code>'.Ui::e($p['parameters']['asset']['sha256']).'</code>. Installs under the selected non-root account’s .local/bin. Authenticate Codex separately from an interactive SSH terminal as the dedicated account; do not paste its login tokens into notes.</p>';

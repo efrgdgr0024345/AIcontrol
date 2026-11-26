@@ -116,9 +116,10 @@ host-pinned SSH authentication. Additive system_enrollments/system_terminals
 persist in systems.sqlite. Web console sessions are bound to the creating login,
 expire after 30 minutes, and allow at most 60 bounded commands/hour/system.
 The console is noninteractive; no terminal daemon or external relay is installed.
-The current console remains visible on its server during guided actions. An
-active or uncertain guided action blocks command entry until reconciliation
-releases the operation lock.
+The verified server page starts with the SSH console and its action buttons.
+Guided operations report the current command and bounded, redacted stdout and
+stderr in that console. An active or uncertain guided action blocks manual
+command entry until reconciliation releases the operation lock.
 Guided actions sit below the console. The read-only setup check disables
 one-time actions only when it detects existing components or configuration
 for the selected connection. Learn more panels explain reviewed steps and show

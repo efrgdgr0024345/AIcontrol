@@ -11,6 +11,7 @@ require_once __DIR__.'/SystemEnrollment.php';
 require_once __DIR__.'/SystemTerminal.php';
 require_once __DIR__.'/SystemGuard.php';
 require_once __DIR__.'/SystemPlaybooks.php';
+require_once __DIR__.'/SystemActionTranscript.php';
 require_once __DIR__.'/ResearchHandover.php';
 require_once __DIR__.'/TermExplainer.php';
 require_once __DIR__.'/NasaActions.php';
@@ -191,8 +192,14 @@ final class Panel
                         elseif($action==='system_playbook_status'||$action==='system_playbook_stop')$playbooks->reconcile($operationId,$id,$action==='system_playbook_stop');
                         elseif($action==='system_playbook_release')$playbooks->release($operationId,$id,self::input('confirmation'));
                         else throw new RuntimeException('Unknown guided server action.');
-                        if($json){$op=$playbooks->get($operationId,$id);header('Content-Type: application/json');echo json_encode(['playbook'=>array_intersect_key($op,array_flip(['id','system_id','status','blocking']))],JSON_THROW_ON_ERROR);return;}
-                        $anchor=$action==='system_playbook_prepare'&&self::input('recipe')==='inspect'?'#server-actions':'#server-operation';
+                        $operation=$playbooks->get($operationId,$id);
+                        if($json){
+                            header('Content-Type: application/json');
+                            echo json_encode(['playbook'=>array_intersect_key($operation,array_flip(['id','system_id','status','blocking'])),
+                                'transcript'=>SystemActionTranscript::render($operation,new SystemNotebook($systems))],JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);
+                            return;
+                        }
+                        $anchor=$operation['status']==='review'?'#server-operation':'#ssh-console';
                         header('Location: '.self::entry().'?view=systems&system='.$id.'&operation='.$operationId.$anchor,true,303);return;
                     }
                     elseif($action==='system_prepare'){$setupStage='prepare';$enrollment=(new SystemEnrollment($systems))->prepare(self::input('risk_level'));$enrollmentId=$enrollment['id'];}
@@ -422,7 +429,25 @@ final class Panel
                 $systemStore=new Systems($directory);
                 $data['systems']['guard']=(new SystemGuard($systemStore))->state();
                 $selectedSystem=(int)($data['systems']['selected']['id']??0);
-                if($selectedSystem){$data['systems']['notebook']=(new SystemNotebook($systemStore))->view($selectedSystem);if($data['systems']['guard']['unlocked']){$books=new SystemPlaybooks($systemStore);$data['systems']['playbooks']=$books->history($selectedSystem);$data['systems']['latest_operations']=$books->latestOutcomes($data['systems']['selected'],$data['systems']['playbooks']);$requestedOperation=(string)($_GET['operation']??($operationId??''));if($requestedOperation)try{$data['systems']['playbook']=$books->get($requestedOperation,$selectedSystem);}catch(Throwable $failure){$error='The selected server action is unavailable.';}}}
+                if($selectedSystem){
+                    $notebook=new SystemNotebook($systemStore);
+                    $data['systems']['notebook']=$notebook->view($selectedSystem);
+                    if($data['systems']['guard']['unlocked']){
+                        $books=new SystemPlaybooks($systemStore);
+                        $history=$books->history($selectedSystem);
+                        $data['systems']['playbooks']=$history;
+                        $data['systems']['latest_operations']=$books->latestOutcomes($data['systems']['selected'],$history);
+                        $requestedOperation=(string)($_GET['operation']??($operationId??''));
+                        if($requestedOperation==='')foreach($history as $item){
+                            if($item['blocking']){$requestedOperation=$item['id'];break;}
+                        }
+                        if($requestedOperation!=='')try{
+                            $operation=$books->get($requestedOperation,$selectedSystem);
+                            $data['systems']['playbook']=$operation;
+                            $data['systems']['guided_transcript']=SystemActionTranscript::render($operation,$notebook);
+                        }catch(Throwable $failure){$error='The selected server action is unavailable.';}
+                    }
+                }
                 try{
                     if($data['systems']['guard']['unlocked']){
                         $requestedEnrollment=(string)($_GET['enrollment']??($enrollmentId??''));

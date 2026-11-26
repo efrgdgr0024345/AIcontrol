@@ -79,9 +79,14 @@ review. Stop never commits a firewall change that is awaiting rollback.
 The short SSH console remains bounded. Longer installations use an explicitly
 approved per-operation detached Python worker with private state/log files and a
 30-minute overall bound. This is a per-action process, not a persistent agent.
-The open console and its transcript remain on the selected server page for the
-same unlocked browser session. Command input is disabled during an active or
-uncertain guided action and becomes available when reconciliation releases it.
+The selected, verified server opens with the SSH console first and its action
+buttons immediately below. An approved guided action uses the selected server's
+pinned SSH connection and shows its command records in the console. The
+console polls the same operation for bounded stdout, stderr and exit status.
+It shows a command while its output is pending. Reopening the server resumes
+the transcript of its active operation. Manual input is disabled during an
+active or uncertain action and returns after reconciliation releases the lock.
+The completed transcript stays available through the selected operation.
 The action buttons appear below the console. A command that returns neither
 stdout nor stderr shows “No output returned” along with its exit status. The
 setup check shows its observation time and disables installation or setup where
@@ -91,7 +96,8 @@ separate test. Repeatable actions such as package updates stay available.
 
 Each **Learn more** section explains the planned steps. After a recorded run,
 it also lists available command lines, exit statuses and short explanations.
-Recorded steps do not include private keys or raw remote output.
+The console shows bounded, redacted output excerpts. Learn more lists commands,
+exit codes and explanations without duplicating the output.
 The worker and rollback watchdog inherit a remote execution lock; status checks
 only inspect the same token. Local blocking records exclude console/model steps
 and other guided jobs while a mutation is running or uncertain. Stop pauses

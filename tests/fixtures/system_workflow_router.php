@@ -27,8 +27,11 @@ namespace AIcontrol {
                         ?$running:throw new \RuntimeException('Unexpected VPN launch'),
                     'status'=>$finished
                         ?array_replace($running,['status'=>'complete','summary'=>'Fixture WireGuard interface configured.','client_address'=>'10.78.0.2/24','server_public_key'=>base64_encode(str_repeat('s',32)),'handshake_verified'=>false,
-                            'steps'=>[['command'=>['systemctl','enable','--now','wg-quick@aicontrol0'],'exit_code'=>0]]])
-                        :$running,
+                            'steps'=>[['command'=>['systemctl','enable','--now','wg-quick@aicontrol0'],'exit_code'=>0,'stdout'=>'Fixture WireGuard service enabled.']]])
+                        :$running+['steps'=>[
+                            ['command'=>['apt-get','update'],'exit_code'=>0,'stdout'=>'Fixture package lists refreshed.','stderr'=>'Fixture stderr with synthetic-protected-value'],
+                            ['command'=>['apt-get','install','wireguard'],'exit_code'=>null],
+                        ]],
                     default=>throw new \RuntimeException('Unexpected SSH worker request'),
                 };
                 $output=json_encode($result,JSON_THROW_ON_ERROR)."\n";

@@ -53,6 +53,14 @@ class JobRecipes(unittest.TestCase):
   ns['call']=stop;ns['worker']();v=self.final(ns);self.assertEqual(v['status'],'running');self.assertTrue(v['rollback_pending']);self.assertNotIn(['ufw','--force','enable'],events)
  def test_update_preserves_configs_no_removal_no_reboot(self):
   ns,root,fake,events,snapshots,inv=self.fixture('update');ns['worker']();self.assertEqual(self.final(ns)['status'],'complete');self.assertIn('upgrade',str(events));self.assertIn('--no-remove',str(events));self.assertIn('--force-confold',str(events));self.assertFalse(any('reboot' in a or 'autoremove' in a or 'full-upgrade' in a for a in events))
+  progress=[json.loads(snapshot) for snapshot in snapshots]
+  self.assertTrue(any(row['status']=='running' and row['steps'][-1]['command'][-1]=='upgrade' and row['steps'][-1]['exit_code'] is None for row in progress))
+  self.assertEqual(self.final(ns)['steps'][-1]['exit_code'],0)
+ def test_command_excerpt_drops_key_blocks_and_partial_lines(self):
+  ns,*_=self.fixture('inspect')
+  string='-----BEGIN OPENSSH PRIVATE KEY-----\nPRIVATE-MATERIAL\n-----END OPENSSH PRIVATE KEY-----\nnormal output'
+  self.assertEqual(ns['output_excerpt'](string,400),'[redacted]\nnormal output')
+  self.assertEqual(ns['output_excerpt']('long incomplete line\nlast line',14),'last line')
  def test_update_timeout_is_uncertain_and_never_retries(self):
   ns,root,fake,events,snapshots,inv=self.fixture('update');call=ns['call']
   def timeout(argv,*a,**kw):
