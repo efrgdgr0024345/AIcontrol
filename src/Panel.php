@@ -192,7 +192,8 @@ final class Panel
                         elseif($action==='system_playbook_release')$playbooks->release($operationId,$id,self::input('confirmation'));
                         else throw new RuntimeException('Unknown guided server action.');
                         if($json){$op=$playbooks->get($operationId,$id);header('Content-Type: application/json');echo json_encode(['playbook'=>array_intersect_key($op,array_flip(['id','system_id','status','blocking']))],JSON_THROW_ON_ERROR);return;}
-                        header('Location: '.self::entry().'?view=systems&system='.$id.'&operation='.$operationId.'#server-operation',true,303);return;
+                        $anchor=$action==='system_playbook_prepare'&&self::input('recipe')==='inspect'?'#server-actions':'#server-operation';
+                        header('Location: '.self::entry().'?view=systems&system='.$id.'&operation='.$operationId.$anchor,true,303);return;
                     }
                     elseif($action==='system_prepare'){$setupStage='prepare';$enrollment=(new SystemEnrollment($systems))->prepare(self::input('risk_level'));$enrollmentId=$enrollment['id'];}
                     elseif($action==='system_import_discovery'){
@@ -421,7 +422,7 @@ final class Panel
                 $systemStore=new Systems($directory);
                 $data['systems']['guard']=(new SystemGuard($systemStore))->state();
                 $selectedSystem=(int)($data['systems']['selected']['id']??0);
-                if($selectedSystem){$data['systems']['notebook']=(new SystemNotebook($systemStore))->view($selectedSystem);if($data['systems']['guard']['unlocked']){$books=new SystemPlaybooks($systemStore);$data['systems']['playbooks']=$books->history($selectedSystem);$requestedOperation=(string)($_GET['operation']??($operationId??''));if($requestedOperation)try{$data['systems']['playbook']=$books->get($requestedOperation,$selectedSystem);}catch(Throwable $failure){$error='The selected server action is unavailable.';}}}
+                if($selectedSystem){$data['systems']['notebook']=(new SystemNotebook($systemStore))->view($selectedSystem);if($data['systems']['guard']['unlocked']){$books=new SystemPlaybooks($systemStore);$data['systems']['playbooks']=$books->history($selectedSystem);$data['systems']['latest_operations']=$books->latestOutcomes($data['systems']['selected'],$data['systems']['playbooks']);$requestedOperation=(string)($_GET['operation']??($operationId??''));if($requestedOperation)try{$data['systems']['playbook']=$books->get($requestedOperation,$selectedSystem);}catch(Throwable $failure){$error='The selected server action is unavailable.';}}}
                 try{
                     if($data['systems']['guard']['unlocked']){
                         $requestedEnrollment=(string)($_GET['enrollment']??($enrollmentId??''));

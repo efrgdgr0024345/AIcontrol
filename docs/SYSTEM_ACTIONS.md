@@ -53,7 +53,7 @@ repository remain part of the trust boundary; this is not hardware isolation.
 
 | Action | Behavior |
 | --- | --- |
-| Inspect VPS | Saves available OS, architecture, CPU, memory, disk, service/port and capability observations. Restricted keys use their existing diagnostic allowlist. |
+| Check system setup | Saves Linux inventory and checks the managed WireGuard interface/configuration, existing firewall rules, the selected account’s Codex path and the AIcontrol automatic-update policy and timers. Restricted keys use their existing read-only diagnostic allowlist. |
 | Lock down system | Fresh Debian/Ubuntu firewall only; refuses active/custom/container rules. Reviews listening service ports, preserves the actual SSH_CONNECTION local port, enables IPv4/IPv6 UFW incoming deny/outgoing allow, and arms rollback before activation. |
 | Update system | Signed distribution apt metadata and ordinary upgrade with --no-remove, preserved local configuration and no automatic reboot/full-upgrade/autoremove. Records package-audit/reboot-required results. |
 | Set up VPN | Debian/Ubuntu with systemd: WireGuard private-access subnet and a supplied client public key. Private server key stays on the VPS. Optional reviewed UDP allow rule in active UFW; no replacement of other rules or default-route/NAT changes. Cloud rules and client handshake require separate verification. |
@@ -82,6 +82,16 @@ approved per-operation detached Python worker with private state/log files and a
 The open console and its transcript remain on the selected server page for the
 same unlocked browser session. Command input is disabled during an active or
 uncertain guided action and becomes available when reconciliation releases it.
+The action buttons appear below the console. A command that returns neither
+stdout nor stderr shows “No output returned” along with its exit status. The
+setup check shows its observation time and disables installation or setup where
+it detects existing software or configuration. Missing observations keep the
+associated actions available for review. A VPN client handshake still needs a
+separate test. Repeatable actions such as package updates stay available.
+
+Each **Learn more** section explains the planned steps. After a recorded run,
+it also lists available command lines, exit statuses and short explanations.
+Recorded steps do not include private keys or raw remote output.
 The worker and rollback watchdog inherit a remote execution lock; status checks
 only inspect the same token. Local blocking records exclude console/model steps
 and other guided jobs while a mutation is running or uncertain. Stop pauses

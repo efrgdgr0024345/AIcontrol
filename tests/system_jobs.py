@@ -75,6 +75,24 @@ class JobRecipes(unittest.TestCase):
    if argv[:2]==['ip','-j']:return types.SimpleNamespace(stdout='[{"dst":"10.78.0.0/16"}]',returncode=0,stderr='')
    return call(argv,*a,**kw)
   ns['call']=route;ns['worker']();self.assertEqual(self.final(ns)['status'],'failed');self.assertFalse(any(a[0]=='apt-get' for a in events))
+ def test_setup_check_distinguishes_presence_from_verified_service(self):
+  ns,root,fake,events,_,inv=self.fixture('inspect')
+  ns['CONFIG']['username']='fixture'
+  ns['pwd']=types.SimpleNamespace(getpwnam=lambda name:types.SimpleNamespace(pw_dir=str(root/'account')))
+  binary=root/'account/.local/bin/codex';binary.parent.mkdir(parents=True);binary.touch();binary.chmod(0o755)
+  policy=fake/'etc/apt/apt.conf.d/99aicontrol-periodic';policy.parent.mkdir(parents=True);policy.write_bytes(ns['UPDATE_SETTINGS'])
+  def probe(argv,*a,**kw):
+   events.append(argv)
+   if argv[0]=='ip':return types.SimpleNamespace(returncode=0,stdout='[{"linkinfo":{"info_kind":"wireguard"},"flags":["UP"]}]',stderr='')
+   return types.SimpleNamespace(returncode=0,stdout='active\nactive\n' if argv[1]=='is-active' else 'enabled\nenabled\n',stderr='')
+  ns['call']=probe;ns['setup_checks'](inv)
+  self.assertEqual(inv['setup_checks'],{'vpn':'active','firewall':'unknown','codex':'installed','security_updates':'active'})
+  self.assertEqual([step['command'] for step in inv['setup_steps']],events)
+  self.assertTrue(all(argv[0] in ('ip','systemctl') for argv in events))
+  policy.write_text('local settings');binary.chmod(0o600)
+  ns['call']=lambda *a,**kw:types.SimpleNamespace(returncode=1,stdout='',stderr='Device "aicontrol0" does not exist.')
+  ns['setup_checks'](inv)
+  self.assertEqual(inv['setup_checks'],{'vpn':'absent','firewall':'unknown','codex':'configured','security_updates':'configured'})
  def codex_fixture(self,unsafe=False,bad_digest=False):
   name='codex-x86_64-unknown-linux-musl';out=io.BytesIO()
   with tarfile.open(fileobj=out,mode='w:gz') as tar:

@@ -37,7 +37,7 @@ final class SystemsView
             echo '<li><a href="/loader.php?view=systems&amp;system='.(int)$s['id'].'">'.Ui::e($s['name']).'</a> · '.Ui::e($s['username'].'@'.$s['host']).' · '.Ui::e($status).'</li>';
         }
         echo '</ul></div></section>';
-        $s=$data['selected'];if(!$s)return;$id=(int)$s['id'];SystemOperationsView::workspace($s,$data,$csrf,true);
+        $s=$data['selected'];if(!$s)return;$id=(int)$s['id'];
         echo '<section class="card mb-3 systems-section"><div class="card-body"><h2>'.Ui::e($s['name']).'</h2><p>'.Ui::e($s['username'].'@'.$s['host'].':'.$s['port'].' · '.$s['access']).'</p>';
         if(!$s['enabled']){if(!$s['key_deleted_at']){echo '<p>Credential deletion is unconfirmed. Retry disconnect after checking the private vault.</p>';self::form($csrf,'system_revoke',$id,'Retry disconnect and delete local SSH key');}echo '<p>Disconnected. Local SSH execution is disabled. '.($s['key_deleted_at']?'The local private key was deleted.':'').' Remove the authorized_keys line ending <code>aicontrol-system-'.$id.'</code> on the server to revoke its public key there.</p><details><summary>Delete saved system and task logs</summary><form method="post" action="/loader.php?view=systems" class="systems-form">'.$csrf.'<input type="hidden" name="action" value="system_delete"><input type="hidden" name="system_id" value="'.$id.'"><label class="form-label" for="system-delete-confirm">Type DELETE SYSTEM '.$id.'</label><input id="system-delete-confirm" class="form-control" name="confirmation" required autocomplete="off"><button class="btn btn-outline-danger">Delete saved system and task logs</button></form></details>';}
         else {
@@ -49,12 +49,14 @@ final class SystemsView
             if($s['error'])echo '<p class="alert alert-warning">'.Ui::e($s['error']).' <a href="/loader.php?view=admin#diagnostics-report">Open Admin diagnostics</a>.</p>';
             if($s['facts'])echo '<details><summary>Last observed system information</summary><pre class="systems-code">'.Ui::e($s['facts']).'</pre></details>';
             SystemTerminalView::render($s,$data['terminal']??null,$csrf,$data['ssh_blocked']??false);
+            SystemOperationsView::actions($s,$data,$csrf,true);
             if($s['verified_at']){
                 echo '<form method="post" action="/loader.php?view=systems" class="systems-form">'.$csrf.'<input type="hidden" name="action" value="system_start"><input type="hidden" name="system_id" value="'.$id.'"><label class="form-label" for="system-project">Related task project (optional)</label><select class="form-select" id="system-project" name="project_id"><option value="">System task only</option>';foreach($projects as $p)echo '<option value="'.(int)$p['id'].'">'.Ui::e($p['name']).'</option>';echo '</select><label class="form-label" for="system-task">Task for the Linux agent</label><textarea class="form-control" id="system-task" name="task" rows="3" maxlength="4000" placeholder="Inspect disk usage and explain what needs attention." required></textarea><p>Up to eight model decisions; one remote command per decision. Start, then advance steps or enable automatic steps while this page stays open.</p><button class="btn btn-primary">Start system task</button></form>';
             }
             self::form($csrf,'system_revoke',$id,'Disconnect and delete local SSH key');
         }
         echo '</div></section>';
+        SystemOperationsView::notes($s,$data,$csrf,true);
         if($data['runs']){echo '<section class="card mb-3 systems-section"><div class="card-body"><h2>System task history</h2><ul class="systems-list">';foreach($data['runs'] as $r)echo '<li><a href="/loader.php?view=systems&amp;system='.$id.'&amp;system_run='.(int)$r['id'].'">#'.(int)$r['id'].' · '.Ui::e($r['task']).'</a> · '.Ui::e($r['status']).'</li>';echo '</ul></div></section>';}
         $r=$data['run'];if(!$r)return;
         $manual=$r['task']==='Manual SSH command console';

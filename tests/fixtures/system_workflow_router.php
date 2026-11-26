@@ -15,14 +15,19 @@ namespace AIcontrol {
             if(preg_match('/CONFIG=json.loads\(base64.b64decode\("([A-Za-z0-9+\/=]+)"\)\)/',$command,$match)){
                 $config=json_decode(base64_decode($match[1],true),true,32,JSON_THROW_ON_ERROR);
                 $running=['token'=>$config['token'],'recipe'=>$config['recipe'],'status'=>'running'];
+                $finished=is_file($directory.'/fixture-vpn-finished');
+                $inventory=['format'=>'AIcontrol VPS inventory v1','root'=>true,'distribution'=>'ubuntu','apt_available'=>true,'systemd'=>true,'ssh_port'=>2222,'ports'=>[]];
+                if($config['recipe']==='inspect')$inventory+=['setup_checks'=>['vpn'=>$finished?'active':'absent','codex'=>'installed','security_updates'=>'unknown'],
+                    'setup_steps'=>[['command'=>['ip','-j','-details','link','show','dev','aicontrol0'],'exit_code'=>$finished?0:1]]];
                 $result=match($config['mode']){
-                    'inventory'=>['format'=>'AIcontrol VPS inventory v1','root'=>true,'distribution'=>'ubuntu','apt_available'=>true,'systemd'=>true,'ssh_port'=>2222,'ports'=>[]],
+                    'inventory'=>$inventory,
                     'launch'=> $config['recipe']==='vpn'&&$config['parameters']['network']==='10.78.0.0/24'
                         && $config['parameters']['listen_port']===51820
                         && $config['parameters']['peer_public_key']===base64_encode(str_repeat('c',32))
                         ?$running:throw new \RuntimeException('Unexpected VPN launch'),
-                    'status'=>is_file($directory.'/fixture-vpn-finished')
-                        ?array_replace($running,['status'=>'complete','summary'=>'Fixture WireGuard interface configured.','client_address'=>'10.78.0.2/24','server_public_key'=>base64_encode(str_repeat('s',32)),'handshake_verified'=>false])
+                    'status'=>$finished
+                        ?array_replace($running,['status'=>'complete','summary'=>'Fixture WireGuard interface configured.','client_address'=>'10.78.0.2/24','server_public_key'=>base64_encode(str_repeat('s',32)),'handshake_verified'=>false,
+                            'steps'=>[['command'=>['systemctl','enable','--now','wg-quick@aicontrol0'],'exit_code'=>0]]])
                         :$running,
                     default=>throw new \RuntimeException('Unexpected SSH worker request'),
                 };
@@ -33,7 +38,7 @@ namespace AIcontrol {
                 $output="manual shell fixture\n";
             }elseif(str_contains($command,'agent shell fixture')){
                 $output="agent shell fixture\n";
-            }else{
+            }elseif(!str_contains($command,'{ ls'."\n")){
                 $exit=127;
             }
         }else{

@@ -3,6 +3,7 @@ declare(strict_types=1);
 namespace AIcontrol;
 use AIcontrolWorkspaceUi as Ui;
 require_once __DIR__.'/SystemPlaybooks.php';
+require_once __DIR__.'/SystemActionGuide.php';
 final class SystemOperationsView
 {
  private static function form(string $csrf,string $action,int $id=0,array $extra=[]):void{echo '<form method="post" enctype="multipart/form-data" action="/loader.php?view=systems" class="systems-form">'.$csrf.'<input type="hidden" name="action" value="'.$action.'"><input type="hidden" name="system_id" value="'.$id.'">';foreach($extra as $key=>$value)echo '<input type="hidden" name="'.Ui::e($key).'" value="'.Ui::e($value).'">';}
@@ -16,22 +17,65 @@ final class SystemOperationsView
  }
  public static function locked(array $data,string $csrf):void{
   echo '<section class="card mb-3"><div class="card-body"><h2>Linux servers</h2><p>Unlock Systems to connect servers, run commands or manage their access.</p><ul class="systems-list">';foreach($data['systems'] as $s)echo '<li><a href="/loader.php?view=systems&amp;system='.(int)$s['id'].'">'.Ui::e($s['name']).'</a> · connection details ********</li>';echo '</ul></div></section>';
-  if($data['selected'])self::workspace($data['selected'],$data,$csrf,false);
+  if($data['selected']){self::actions($data['selected'],$data,$csrf,false);self::notes($data['selected'],$data,$csrf,false);}
  }
- public static function workspace(array $s,array $data,string $csrf,bool $unlocked):void{
+ public static function notes(array $s,array $data,string $csrf,bool $unlocked):void{
   $id=(int)$s['id'];$note=$data['notebook']??['notes'=>'','protected'=>[],'observations'=>[]];
   echo '<section class="card mb-3"><div class="card-body"><h2>VPS notes</h2><p>Private values are encrypted at rest and displayed as ********. Put usernames, passwords and tokens in protected fields. Automatic masking catches known values and common credential formats; check your public notes before saving.</p><div class="system-public-notes">'.nl2br(Ui::e($note['notes']?:'No public notes saved yet.')).'</div>';
-  if($note['inventory']??[]){echo '<h3>Last observed inventory</h3><dl class="system-inventory">';foreach($note['inventory'] as $key=>$value)echo '<dt>'.Ui::e(ucfirst(str_replace('_',' ',$key))).'</dt><dd>'.Ui::e(is_array($value)?implode(', ',$value):(is_bool($value)?($value?'Yes':'No'):(string)$value)).'</dd>';echo '</dl><p>These are saved observations. Run Inspect VPS to refresh; backup files do not establish a recoverable backup.</p>';}
+  if($note['inventory']??[]){echo '<h3>Last observed inventory</h3><dl class="system-inventory">';foreach($note['inventory'] as $key=>$value)echo '<dt>'.Ui::e(ucfirst(str_replace('_',' ',$key))).'</dt><dd>'.Ui::e(is_array($value)?implode(', ',$value):(is_bool($value)?($value?'Yes':'No'):(string)$value)).'</dd>';echo '</dl><p>These are saved observations. Run Check system setup to refresh; backup files do not establish a recoverable backup.</p>';}
   if($note['protected']){echo '<dl>';foreach($note['protected'] as $label=>$value)echo '<dt>'.Ui::e($label).'</dt><dd>********</dd>';echo '</dl>';}
   if($unlocked){self::form($csrf,'system_notes_save',$id);echo '<label class="form-label" for="vps-notes">Readable notes</label><textarea class="form-control" id="vps-notes" name="notes" rows="4" maxlength="4000">'.Ui::e($note['notes']).'</textarea><details><summary>Add or replace a protected value</summary><label class="form-label" for="vps-secret-label">Protected label (for example database_login)</label><input class="form-control" id="vps-secret-label" name="secret_label" pattern="[a-z][a-z0-9_-]{0,47}" maxlength="48"><label class="form-label" for="vps-secret-value">Protected value</label><input class="form-control" id="vps-secret-value" type="password" name="secret_value" maxlength="4000" autocomplete="off"></details><button class="btn btn-primary">Save VPS notes</button></form>';
    self::form($csrf,'system_notes_reveal',$id);echo '<button type="submit" class="btn btn-outline-secondary" data-protected-reveal>Reveal protected values and full observations</button><pre class="systems-code" data-protected-output hidden></pre><p role="status" data-protected-status></p></form>';}
   if($note['observations']){echo '<h3>Observed changes</h3><ol class="system-note-events">';foreach(array_slice($note['observations'],0,20) as $e)echo '<li><strong>'.Ui::e($e['title']).'</strong> · '.Ui::e($e['status']).'<small>'.Ui::e($e['utc']).'</small></li>';echo '</ol><p>Latest 100 notebook observations are retained; guided operation records remain in action history.</p>';}
-  echo '</div></section><section class="card mb-3"><div class="card-body"><h2>New-server actions</h2><p>Inspect, review the proposed change, then approve it. An action only reports success after a returned result. Package operations can take several minutes; Stop pauses before the next command.</p><div class="system-action-grid">';
-  foreach(SystemPlaybooks::RECIPES as $key=>$r){$allowed=$unlocked&&$s['enabled']&&$s['verified_at']&&($r['access']==='inspect'||($r['access']==='admin'?$s['risk_level']==='admin':$s['access']==='maintain'));echo '<article class="system-action-card"><h3>'.Ui::e($r['title']).'</h3><p>'.Ui::e($r['description']).'</p>';self::form($csrf,'system_playbook_prepare',$id,['recipe'=>$key]);echo '<button class="btn btn-outline-primary"'.(!$allowed?' disabled':'').'>'.Ui::e($r['access']==='inspect'?$r['title']:'Review '.$r['title']).'</button></form>';if(!$allowed)echo '<small>'.(!$unlocked?'Unlock Systems first.':(!$s['verified_at']?'Verify the connection first.':($r['access']==='admin'?'Administrator enrollment required.':'Account-level shell access required.'))).'</small>';echo '</article>';}
-  echo '</div></div></section>';
+  echo '</div></section>';
+ }
+ public static function actions(array $system,array $data,string $csrf,bool $unlocked):void
+ {
+  $id=(int)$system['id'];
+  $latest=$data['latest_operations']??[];
+  $check=$latest['inspect']??null;
+  $checks=$check['data']['inventory']['setup_checks']??[];
+  echo '<section class="system-action-controls" id="server-actions" aria-labelledby="server-actions-title"><h3 id="server-actions-title">Server actions</h3>';
+  if($check)echo '<p role="status">Last setup check '.Ui::e(Ui::time(gmdate('c',(int)$check['updated_at']))).'. '.($checks?'Run it again to refresh the detected state.':'No installation states were confirmed in this check.').'</p>';
+  foreach(SystemPlaybooks::RECIPES as $recipe=>$definition){
+   $state=$checks[$recipe]??null;
+   $detected=self::detectedState($recipe,$state);
+   $blocked=match(true){
+    !$unlocked=>'Unlock Systems first.',
+    !$system['enabled']||!$system['verified_at']=>'Verify the connection first.',
+    !empty($data['ssh_blocked'])=>'Reconcile the active server action first.',
+    $definition['access']==='admin'&&$system['risk_level']!=='admin'=>'Administrator enrollment required.',
+    $definition['access']==='account'&&$system['access']!=='maintain'=>'Account-level shell access required.',
+    default=>null,
+   };
+   $allowed=$blocked===null&&$detected===null;
+   $label=$definition['access']==='inspect'?$definition['title']:'Review '.$definition['title'];
+   echo '<article class="system-action-card'.($recipe==='inspect'?' system-setup-check':'').'" data-recipe="'.Ui::e($recipe).'">';
+   if($recipe!=='inspect')echo '<h4>'.Ui::e($definition['title']).'</h4>';
+   echo '<p>'.Ui::e($definition['description']).'</p>';
+   self::form($csrf,'system_playbook_prepare',$id,['recipe'=>$recipe]);
+   echo '<button class="btn '.($recipe==='inspect'?'btn-primary btn-lg':'btn-outline-primary').'"'.(!$allowed?' disabled':'').'>'.Ui::e($label).'</button></form>';
+   $status=$detected??$blocked;
+   if($status===null&&$check)$status=match($state){'absent'=>'No matching setup detected at the last check.','unknown'=>'Could not verify this item at the last check.',default=>null};
+   if($status)echo '<small data-setup-status>'.Ui::e($status).'</small>';
+   SystemActionGuide::render($recipe,$latest[$recipe]??null);
+   echo '</article>';
+   if($recipe==='inspect')echo '<div class="system-action-grid">';
+  }
+  echo '</div></section>';
   if(!$unlocked)return;
   $selected=$data['playbook']??null;if($selected)self::operation($selected,$csrf);
   if($data['playbooks']??[]){echo '<section class="card mb-3"><div class="card-body"><h2>Guided action history</h2><ul>';foreach($data['playbooks'] as $r)echo '<li><a class="text-decoration-underline" href="/loader.php?view=systems&amp;system='.$id.'&amp;operation='.Ui::e($r['id']).'#server-operation">'.Ui::e(SystemPlaybooks::RECIPES[$r['recipe']]['title']).'</a> · '.Ui::e($r['status']).' · '.Ui::e(gmdate('c',(int)$r['updated_at'])).'</li>';echo '</ul></div></section>';}
+ }
+ private static function detectedState(string $recipe,mixed $state):?string
+ {
+  return match($recipe){
+   'vpn'=>match($state){'active'=>'WireGuard interface active. Client handshake still needs a separate check.','configured'=>'A VPN configuration or interface already exists. Review it before making changes.',default=>null},
+   'firewall'=>$state==='configured'?'Existing firewall rules detected. This action is for a fresh firewall.':null,
+   'codex'=>match($state){'installed'=>'Codex executable detected for this Linux account.','configured'=>'The Codex install path is already occupied.',default=>null},
+   'security_updates'=>match($state){'active'=>'AIcontrol automatic-update policy and timers confirmed.','configured'=>'An automatic-update policy exists. Its settings or timers could not be confirmed.',default=>null},
+   default=>null,
+  };
  }
  private static function operation(array $r,string $csrf):void{
   $id=(int)$r['system_id'];$p=$r['data'];$title=SystemPlaybooks::RECIPES[$r['recipe']]['title'];$extra=['operation_id'=>$r['id']];echo '<section id="server-operation" class="card mb-3" data-playbook="'.Ui::e($r['id']).'" data-playbook-active="'.($r['blocking']?'1':'0').'"><div class="card-body"><h2>'.Ui::e($title).'</h2><p role="status" data-playbook-status>'.Ui::e($r['status']).'</p>';
@@ -46,6 +90,7 @@ final class SystemOperationsView
   }
   if($r['blocking']){echo '<p>The same operation is reconciled after a lost response; installation is never automatically repeated. Stop allows the current package command to finish before pausing.</p>';self::form($csrf,'system_playbook_status',$id,$extra);echo '<button class="btn btn-outline-primary" data-playbook-poll>Check progress</button></form>';self::form($csrf,'system_playbook_stop',$id,$extra);echo '<button class="btn btn-outline-danger">Stop after current command</button></form>';}
   if(isset($p['result'])){echo '<p>'.Ui::e(SystemNotebook::mask((string)($p['result']['summary']??''))).'</p>';if(array_key_exists('reboot_required',$p['result']))echo '<p>'.($p['result']['reboot_required']?'Reboot required; schedule it separately.':'No reboot-required marker was observed.').'</p>';if($r['recipe']==='vpn'&&$r['status']==='complete')echo '<p>Client address: '.Ui::e($p['result']['client_address']??'unknown').'; server public key: <code>'.Ui::e($p['result']['server_public_key']??'unknown').'</code>. Handshake is not yet verified.</p>';}
+  if($r['status']!=='review')SystemActionGuide::execution($r,false);
   if($r['status']==='uncertain'){self::form($csrf,'system_playbook_release',$id,$extra);echo '<label class="form-label" for="release-operation">After inspecting the VPS through recovery access, type INSPECTED '.$id.' to release the local operation lock. This does not claim success.</label><input class="form-control" id="release-operation" name="confirmation" required><button class="btn btn-outline-secondary">Record manual inspection and release lock</button></form>';}
   echo '</div></section>';
  }

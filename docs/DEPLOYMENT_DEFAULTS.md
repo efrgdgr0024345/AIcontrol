@@ -119,6 +119,10 @@ The console is noninteractive; no terminal daemon or external relay is installed
 The current console remains visible on its server during guided actions. An
 active or uncertain guided action blocks command entry until reconciliation
 releases the operation lock.
+Guided actions sit below the console. The read-only setup check disables
+one-time actions only when it detects existing components or configuration
+for the selected connection. Learn more panels explain reviewed steps and show
+recorded commands and exit codes where available.
 Unused first commands expire after 24 hours. Saved discoveries can resume with
 the same public key and bound receipt. Setup and SSH verification failures
 include a reference tied to a private Admin diagnostic event.

@@ -8,6 +8,8 @@ import os,sys,json,base64,pathlib,subprocess,time,fcntl,stat,shutil,hashlib,pwd,
 # CONFIG is embedded by the trusted application, never accepted from remote output.
 MODE=sys.argv[1] if len(sys.argv)>1 else CONFIG['mode']
 USER_HOME=pathlib.Path(pwd.getpwuid(os.getuid()).pw_dir)
+UPDATE_POLICY='/etc/apt/apt.conf.d/99aicontrol-periodic'
+UPDATE_SETTINGS=b'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgrade "1";\nUnattended-Upgrade::Automatic-Reboot "false";\n'
 BASE=pathlib.Path('/var/lib/aicontrol/operations') if os.geteuid()==0 else USER_HOME/'.local/state/aicontrol/operations'
 TOKEN=CONFIG['token']; JOB=BASE/TOKEN
 if not re.fullmatch('[a-f0-9]{32}',TOKEN): raise SystemExit('Invalid operation identity')
@@ -69,10 +71,55 @@ def inventory():
  mem=re.search(r'^MemTotal:\s+(\d+)',pathlib.Path('/proc/meminfo').read_text(),re.M)
  return {'format':'AIcontrol VPS inventory v1','os':release.get('PRETTY_NAME','Linux'),'distribution':release.get('ID',''),'version':release.get('VERSION_ID',''),'architecture':os.uname().machine,'kernel':os.uname().release,'cpu_count':os.cpu_count(),'load_average':list(os.getloadavg()),'failed_service_count':failed,'memory_kib':int(mem[1]) if mem else None,'disk_free_bytes':shutil.disk_usage('/').free,'ssh_port':ssh_port,'ports':list({(p['protocol'],p['port']):p for p in ports}.values()),'existing_firewall':existing,'ufw':ufw[:4000],'root':os.geteuid()==0,'apt_available':bool(shutil.which('apt-get')),'systemd':pathlib.Path('/proc/1/comm').read_text().strip()=='systemd','reboot_required':pathlib.Path('/var/run/reboot-required').exists(),'wireguard_configured':pathlib.Path('/etc/wireguard/aicontrol0.conf').exists(),'backup_tools':[name for name in ('restic','borg','rsnapshot') if shutil.which(name)],'backup_file_count':len(list(pathlib.Path('/var/backups').iterdir())) if os.access('/var/backups',os.R_OK) else None,'observed_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime())}
 
+def setup_checks(observed):
+ steps=[]
+ def probe(argv):
+  try:
+   result=call(argv,2)
+   steps.append({'command':argv,'exit_code':result.returncode})
+   return result
+  except (OSError,subprocess.TimeoutExpired):return None
+ def present(path):
+  try:path.lstat();return True
+  except FileNotFoundError:return False
+  except OSError:return None
+ vpn_config=present(pathlib.Path('/etc/wireguard/aicontrol0.conf'))
+ link=probe(['ip','-j','-details','link','show','dev','aicontrol0'])
+ vpn='configured' if vpn_config else 'unknown'
+ if link and link.returncode==0:
+  try:
+   links=json.loads(link.stdout)
+   if links:
+    dev=links[0]
+    vpn='active' if dev.get('linkinfo',{}).get('info_kind')=='wireguard' and 'UP' in dev.get('flags',[]) else 'configured'
+  except (ValueError,TypeError,KeyError,IndexError,AttributeError):pass
+ elif vpn_config is False and link and 'does not exist' in link.stderr:
+  vpn='absent'
+ codex_path=pathlib.Path(pwd.getpwnam(CONFIG['username']).pw_dir)/'.local/bin/codex'
+ codex=present(codex_path)
+ update_policy=pathlib.Path(UPDATE_POLICY)
+ auto=present(update_policy)
+ policy='absent' if auto is False else 'unknown'
+ if auto:
+  policy='configured'
+  try:
+   if not update_policy.is_symlink() and update_policy.is_file() and update_policy.stat().st_size==len(UPDATE_SETTINGS) and update_policy.read_bytes()==UPDATE_SETTINGS:
+    timers=['apt-daily.timer','apt-daily-upgrade.timer']
+    active=probe(['systemctl','is-active',*timers])
+    enabled=probe(['systemctl','is-enabled',*timers])
+    if active and enabled and active.stdout.splitlines()==['active','active'] and enabled.stdout.splitlines()==['enabled','enabled']:policy='active'
+  except OSError:pass
+ codex_status='absent' if codex is False else 'unknown'
+ if codex:
+  try:codex_status='installed' if codex_path.is_file() and not codex_path.is_symlink() and codex_path.stat().st_mode&0o111 else 'configured'
+  except OSError:pass
+ observed['setup_checks']={'vpn':vpn,'firewall':'configured' if observed['existing_firewall'] else 'unknown','codex':codex_status,'security_updates':policy}
+ observed['setup_steps']=steps
+
 def result(status,summary,**extra):
  if status=='complete' and MODE=='worker':
   try:extra['inventory']=inventory()
-  except Exception:extra['inventory_error']='Final inventory unavailable; run Inspect VPS to refresh.'
+  except Exception:extra['inventory_error']='Final inventory unavailable; run Check system setup to refresh.'
  v={'format':'AIcontrol VPS job v1','token':TOKEN,'recipe':CONFIG['recipe'],'status':status,'summary':summary,'updated_at':int(time.time()),**extra};atomic(JOB/'result.json',v);return v
 
 def worker():
@@ -102,9 +149,9 @@ def worker():
    result('complete','Package update completed. No automatic reboot or package removal.',steps=steps,reboot_required=pathlib.Path('/var/run/reboot-required').exists())
   elif recipe=='security_updates':
    require_apt();apt('update');apt('install','unattended-upgrades')
-   checkpoint();target=pathlib.Path('/etc/apt/apt.conf.d/99aicontrol-periodic')
+   checkpoint();target=pathlib.Path(UPDATE_POLICY)
    if target.exists():raise RuntimeError('An AIcontrol automatic-update policy already exists; inspect it before replacing it.')
-   atomic(target,b'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgrade "1";\nUnattended-Upgrade::Automatic-Reboot "false";\n');run(['systemctl','enable','--now','apt-daily.timer','apt-daily-upgrade.timer']);
+   atomic(target,UPDATE_SETTINGS);run(['systemctl','enable','--now','apt-daily.timer','apt-daily-upgrade.timer']);
    for timer in ('apt-daily.timer','apt-daily-upgrade.timer'):
     r=run(['systemctl','is-active',timer])
     if r.stdout.strip()!='active':raise RuntimeError('Automatic update schedule could not be verified')
@@ -185,7 +232,10 @@ def emit(state):
   if len(text.encode())<=14000:print(text);return
  raise RuntimeError('Result metadata exceeds the bounded response')
 
-if MODE=='inventory':print(json.dumps(inventory()))
+if MODE=='inventory':
+ observed=inventory()
+ if CONFIG['recipe']=='inspect':setup_checks(observed)
+ print(json.dumps(observed))
 elif MODE=='launch':
  secure_dir(BASE);fd=os.open(BASE/'active.lock',os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600)
  if os.fstat(fd).st_uid!=os.geteuid():raise RuntimeError('Unsafe operation lock')

@@ -184,6 +184,22 @@ The new five-round/Stop/failure test uses synthetic provider replies and actual
 local research actions; no billed call or live-host installation is claimed.
 Required planning-panel CI is verified on the published commit before readiness.
 
+## Guided controls and setup checks beside the SSH console
+
+Shell output distinguishes an empty command result from an omitted result in
+both live and saved transcripts. Server actions sit directly below the shell.
+**Check system setup** is a read-only SSH action. It saves a per-connection
+observation, identifies existing setup or configuration and disables affected
+one-time actions in the UI. Repeatable updates remain available. VPN interface
+state and client handshake are distinct observations.
+
+**Learn more** shows the recipe outline and available commands, exit codes and
+purposes from the latest recorded run. These explanations are deterministic and
+contain no raw remote output. Local tests cover empty and nonempty shell output,
+check status before and after a fixture VPN job, operation history, read-only
+probe logic and desktop/mobile accessibility. Deployment and VPN connectivity
+require separate authenticated verification.
+
 ## Website console during guided server actions
 
 An open SSH command line stays on the selected server page while reviewing and

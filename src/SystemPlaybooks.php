@@ -9,7 +9,7 @@ require_once __DIR__.'/SystemNotebook.php';
 final class SystemPlaybooks
 {
  public const RECIPES=[
-  'inspect'=>['title'=>'Inspect VPS','description'=>'Record the OS, resources, listening ports and available capabilities. Read-only.','access'=>'inspect'],
+  'inspect'=>['title'=>'Check system setup','description'=>'Check existing software, services and setup before choosing an action. Read-only.','access'=>'inspect'],
   'firewall'=>['title'=>'Lock down system','description'=>'Review required ports, preserve SSH and enable an inbound firewall with timed rollback. Fresh Debian/Ubuntu firewall only.','access'=>'admin'],
   'update'=>['title'=>'Update system','description'=>'Refresh package indexes and upgrade installed packages without removals, configuration replacement or automatic reboot.','access'=>'admin'],
   'vpn'=>['title'=>'Set up VPN','description'=>'Configure private-access WireGuard for your client public key. Existing routes and cloud firewall stay under your control.','access'=>'admin'],
@@ -42,7 +42,7 @@ final class SystemPlaybooks
   $lock=$this->lock();try{
    $this->systems->requireNoPlaybook();if($this->systems->query("SELECT id FROM system_runs WHERE status IN ('ready','working')"))throw new RuntimeException('Stop the active agent task before preparing a guided action.');
    if(count($this->systems->query('SELECT id FROM system_playbooks WHERE created_at>?',[time()-3600]))>=20)throw new RuntimeException('Guided actions are limited to 20 preparations per hour.');
-   $id=bin2hex(random_bytes(16));$p=['binding'=>$this->binding($s),'prepared_at'=>time(),'inventory'=>null,'parameters'=>[],'results'=>[],'inspection_partial'=>false,'root'=>$definition['access']==='admin','recipe'=>$recipe,'program_sha'=>hash('sha256',SystemJob::source())];
+   $id=bin2hex(random_bytes(16));$p=['binding'=>$this->binding($s),'prepared_at'=>time(),'inventory'=>null,'parameters'=>[],'results'=>[],'inspection_partial'=>false,'root'=>$definition['access']==='admin'||($recipe==='inspect'&&$s['risk_level']==='admin'),'recipe'=>$recipe,'program_sha'=>hash('sha256',SystemJob::source())];
    if($s['access']==='inspect'){
     foreach(($recipe==='health'?['resources','services']:['system_info','network']) as $tool){$r=$this->ssh->execute($s,$this->systems->privateKey($system),SystemsAgent::INSPECT[$tool],$this->systems->directory,fn()=>!$this->systems->controlStillAllowed()||!$this->systems->system($system)['enabled']);$p['results'][]=['tool'=>$tool,'result'=>$r];if($r['exit_code']!==0||$r['truncated'])$p['inspection_partial']=true;if($r['timed_out']||$r['cancelled']||in_array($r['exit_code'],[-1,255],true))throw new RuntimeException('Read-only inspection is uncertain. No retry was made.');}
    }else{$p['inventory']=$this->decode($this->remote($s,['mode'=>'inventory','root'=>$p['root'],'token'=>$id,'recipe'=>$recipe]));if(($p['inventory']['format']??'')!=='AIcontrol VPS inventory v1')throw new RuntimeException('Unexpected server inventory.');}
@@ -83,5 +83,17 @@ final class SystemPlaybooks
   }finally{flock($lock,LOCK_UN);fclose($lock);}
  }
  public function release(string $id,int $system,string $confirmation):void{$lock=$this->lock();try{$r=$this->get($id,$system);if($r['status']!=='uncertain'||trim($confirmation)!=='INSPECTED '.$system)throw new RuntimeException('Inspect the server through recovery access, then type INSPECTED '.$system.'.');$p=$r['data'];$p['owner_closed_uncertain_at']=time();$this->store($id,$system,'uncertain',$p,false);(new SystemNotebook($this->systems))->observe($system,self::RECIPES[$r['recipe']]['title'],'uncertain; owner released lock',['operation_id'=>$id]);}finally{flock($lock,LOCK_UN);fclose($lock);}}
- public function history(int $system):array{return $this->systems->query('SELECT id,recipe,status,blocking,created_at,updated_at FROM system_playbooks WHERE system_id=? ORDER BY created_at DESC LIMIT 30',[$system]);}
+ public function history(int $system):array{return $this->systems->query('SELECT id,recipe,status,blocking,created_at,updated_at FROM system_playbooks WHERE system_id=? ORDER BY created_at DESC,rowid DESC LIMIT 30',[$system]);}
+ public function latestOutcomes(array $system,array $history):array
+ {
+  $outcomes=[];
+  $binding=$this->binding($system);
+  foreach($history as $row){
+   if(isset($outcomes[$row['recipe']])||$row['status']==='review')continue;
+   try{$operation=$this->get($row['id'],(int)$system['id']);}
+   catch(\Throwable $e){Diagnostics::record('systems.action_history.unavailable',['system_id'=>(int)$system['id'],'operation_id'=>$row['id']],$e);continue;}
+   if(($operation['data']['binding']??null)===$binding)$outcomes[$row['recipe']]=$operation;
+  }
+  return $outcomes;
+ }
 }

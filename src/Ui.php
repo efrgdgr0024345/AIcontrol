@@ -2077,14 +2077,17 @@ document.addEventListener('submit', event => {
     const data=await response.json();if(!response.ok)throw Error(data.error||'SSH request failed.');return data;
   };
   form.addEventListener('submit',async event=>{
-    event.preventDefault();if(pending||!connected)return;
+    event.preventDefault();if(pending||!connected||input.disabled)return;
     const command=input.value.trim();if(!command)return;
     if(command==='clear'){output.textContent='';input.value='';return;}
     pending=true;const serial=generation;form.querySelector('button').disabled=true;status.textContent='Command running over SSH…';history.push(command);index=history.length;draft='';append('$ '+command);
     try {
       const data=await request(form);if(serial!==generation)return;
       const result=data.terminal_result;if(!result?.command)throw Error('The SSH result could not be verified. Reconnect before continuing.');
-      const row=result.command;append((row.stdout||'')+(row.stderr?'\n[stderr]\n'+row.stderr:'')+'\n['+row.status+' · exit '+(row.exit_code??'unknown')+(row.truncated?' · output truncated':'')+']');
+      const row=result.command;
+      const stdout=clean(row.stdout),stderr=clean(row.stderr);
+      const streams=[stdout,stderr?'[stderr]\n'+stderr:''].filter(Boolean);
+      append((streams.join('\n')||'No output returned.')+'\n['+row.status+' · exit '+(row.exit_code??'unknown')+(row.truncated?' · output truncated':'')+']');
       terminal.querySelector('[data-terminal-directory]').textContent='Directory: '+(result.cwd||'server home');
       connected=result.connected;
       status.textContent=connected?(result.cwd_verified?'Command finished.':'Command finished; the previous confirmed directory was retained.'): 'SSH outcome uncertain. The console is disconnected. Review the result and reconnect before continuing.';
@@ -3386,12 +3389,20 @@ body.research-map-open { overflow:hidden; }
 .systems-privacy { border-top:3px solid #35768b; }
 .systems-privacy h2 svg { width:22px; height:22px; margin-right:8px; }
 .system-action-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr)); gap:14px; }
+.system-action-controls { margin:24px 0; }
+.system-setup-check { margin-bottom:14px; }
+.system-action-card .btn-lg { min-height:48px; }
 .system-action-card { padding:18px; border:1px solid #becfdb; border-radius:12px; background:#f5f9fc; min-width:0; }
-.system-action-card h3 { font-size:1.05rem; margin-bottom:10px; }
+.system-action-card h4 { font-size:1.05rem; margin-bottom:10px; }
 .system-action-card p { font-size:.88rem; line-height:1.65; color:#3b5366; }
 .system-action-card form { margin:0; padding:0; border:0; }
 .system-action-card small { display:block; margin-top:8px; color:#435c70; }
 .system-action-card .btn { white-space:normal; }
+.system-action-guide { margin-top:12px; }
+.system-action-guide summary { color:#244a64; cursor:pointer; }
+.system-command-steps { overflow-wrap:anywhere; }
+.system-command-steps li { margin:10px 0; }
+.system-command-steps p { margin:4px 0; }
 .system-public-notes { white-space:pre-wrap; overflow-wrap:anywhere; padding:14px; background:#edf4f8; color:#183e55; border-radius:10px; }
 .system-note-events { padding-left:22px; }
 .system-note-events li { padding:8px 0; }
@@ -3402,6 +3413,7 @@ body.research-map-open { overflow:hidden; }
 @media(prefers-color-scheme:dark) {
  .system-action-card { background:#172b3b; border-color:#567083; color:#e5f1fa; }
  .system-action-card p,.system-action-card small,.system-note-events small { color:#c2d5e3; }
+ .system-action-guide summary { color:#c2d5e3; }
  .system-public-notes { background:#173147; color:#deeff9; }
 }
 .research-handover { max-width:1000px; padding:28px; margin:auto; }

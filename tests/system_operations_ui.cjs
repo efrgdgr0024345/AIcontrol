@@ -38,6 +38,15 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   await command.fill("printf 'manual shell fixture'");
   await page.getByRole('button',{name:'Run command',exact:true}).click();
   await terminal.locator('[data-terminal-output]').filter({hasText:'complete · exit 0'}).waitFor();
+  if(!(await terminal.locator('[data-terminal-output]').innerText()).includes('manual shell fixture\n\n[complete'))throw Error('Shell stdout was omitted from the result');
+  await command.fill('ls');await page.getByRole('button',{name:'Run command',exact:true}).click();
+  await terminal.locator('[data-terminal-output]').filter({hasText:'No output returned.'}).waitFor();
+  const checkSetup=page.getByRole('button',{name:'Check system setup',exact:true});
+  if(!await checkSetup.evaluate(button=>button.closest('.systems-section').querySelector('[data-system-terminal]').compareDocumentPosition(button)&Node.DOCUMENT_POSITION_FOLLOWING))throw Error('Server actions are outside the console area');
+  await checkSetup.click();
+  const vpnCard=page.locator('[data-recipe=vpn]');
+  await vpnCard.getByText('No matching setup detected at the last check.',{exact:true}).waitFor();
+  if(await vpn.isDisabled()||!await page.getByRole('button',{name:'Review Install Codex',exact:true}).isDisabled())throw Error('Setup check disabled the wrong items');
 
   await vpn.click();
   const operation=page.locator('[data-playbook]');
@@ -56,9 +65,17 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   await page.getByRole('button',{name:'Check progress',exact:true}).click();
   await operation.getByText('Fixture WireGuard interface configured.',{exact:true}).waitFor();
   await operation.getByText('Handshake is not yet verified.',{exact:false}).waitFor();
+  await operation.getByText('systemctl enable --now wg-quick@aicontrol0',{exact:true}).waitFor();
   if(await terminal.getAttribute('data-system-terminal')!==terminalId||await command.isDisabled())throw Error('Completed VPN work did not restore shell entry');
   const providerCalls=path.join(home,'fixture-provider-calls');
   if(fs.existsSync(providerCalls))throw Error('The reviewed VPN used a model call');
+  await checkSetup.click();
+  await vpnCard.getByText('WireGuard interface active.',{exact:false}).waitFor();
+  if(!await vpn.isDisabled()||await page.getByRole('button',{name:'Review Update system',exact:true}).isDisabled()||await checkSetup.isDisabled())throw Error('Installed VPN or repeatable action availability is incorrect');
+  await vpnCard.getByText('Learn more',{exact:true}).click();
+  await vpnCard.getByText('systemctl enable --now wg-quick@aicontrol0',{exact:true}).waitFor();
+  await vpnCard.getByText('Enable and start the selected service or timer.',{exact:true}).waitFor();
+  if(!(await terminal.locator('[data-terminal-output]').innerText()).includes('No output returned.'))throw Error('Saved empty-output result was lost on reload');
 
   await page.getByLabel('Task for the Linux agent',{exact:true}).fill('Print a disposable shell test marker');
   await page.getByRole('button',{name:'Start system task',exact:true}).click();

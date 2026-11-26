@@ -14,14 +14,17 @@
     const data=await response.json();if(!response.ok)throw Error(data.error||'SSH request failed.');return data;
   };
   form.addEventListener('submit',async event=>{
-    event.preventDefault();if(pending||!connected)return;
+    event.preventDefault();if(pending||!connected||input.disabled)return;
     const command=input.value.trim();if(!command)return;
     if(command==='clear'){output.textContent='';input.value='';return;}
     pending=true;const serial=generation;form.querySelector('button').disabled=true;status.textContent='Command running over SSH…';history.push(command);index=history.length;draft='';append('$ '+command);
     try {
       const data=await request(form);if(serial!==generation)return;
       const result=data.terminal_result;if(!result?.command)throw Error('The SSH result could not be verified. Reconnect before continuing.');
-      const row=result.command;append((row.stdout||'')+(row.stderr?'\n[stderr]\n'+row.stderr:'')+'\n['+row.status+' · exit '+(row.exit_code??'unknown')+(row.truncated?' · output truncated':'')+']');
+      const row=result.command;
+      const stdout=clean(row.stdout),stderr=clean(row.stderr);
+      const streams=[stdout,stderr?'[stderr]\n'+stderr:''].filter(Boolean);
+      append((streams.join('\n')||'No output returned.')+'\n['+row.status+' · exit '+(row.exit_code??'unknown')+(row.truncated?' · output truncated':'')+']');
       terminal.querySelector('[data-terminal-directory]').textContent='Directory: '+(result.cwd||'server home');
       connected=result.connected;
       status.textContent=connected?(result.cwd_verified?'Command finished.':'Command finished; the previous confirmed directory was retained.'): 'SSH outcome uncertain. The console is disconnected. Review the result and reconnect before continuing.';
