@@ -35,7 +35,35 @@ final class SystemPlaybooks
  public function get(string $id,int $system):array{
   if(!preg_match('/^[a-f0-9]{32}$/D',$id))throw new RuntimeException('Choose a saved server action.');$r=$this->systems->query('SELECT * FROM system_playbooks WHERE id=? AND system_id=?',[$id,$system])[0]??throw new RuntimeException('Server action does not belong to this server.');$r['data']=(new Vault($this->systems->directory))->openSystemRecord($system,$r['sealed']);unset($r['sealed']);return $r;
  }
- public function prepare(int $system,string $recipe):string{
+ public static function alreadyConfigured(string $recipe,mixed $state):bool
+ {
+  return match($recipe){
+   'vpn','security_updates'=>in_array($state,['active','configured'],true),
+   'codex'=>in_array($state,['installed','configured'],true),
+   'firewall'=>$state==='configured',
+   default=>false,
+  };
+ }
+ public function prepareWithAi(int $system,string $goal,SystemsAgent $agent):string
+ {
+  $this->systems->requireNoPlaybook();
+  $server=$this->systems->system($system);
+  if(!$server['enabled']||!$server['verified_at'])throw new RuntimeException('Verify the SSH connection before asking AI to prepare an action.');
+  $latest=$this->latestOutcomes($server,$this->history($system));
+  $checks=$latest['inspect']['data']['inventory']['setup_checks']??[];
+  $choices=[];
+  foreach(self::RECIPES as $key=>$recipe){
+   if(($recipe['access']==='admin'&&$server['risk_level']!=='admin')||($recipe['access']==='account'&&$server['access']!=='maintain')||self::alreadyConfigured($key,$checks[$key]??null))continue;
+   $choices[$key]=$recipe['description'];
+  }
+  $selection=$agent->chooseAction($system,$goal,$choices);
+  if($selection['recipe']==='none')throw new RuntimeException('AI did not choose an action. '.$selection['reason']);
+  if(!$this->systems->controlStillAllowed()||!hash_equals($this->binding($server),$this->binding($this->systems->system($system)))){
+   throw new RuntimeException('The Systems unlock or server connection changed while AI was choosing. Review the server before continuing.');
+  }
+  return $this->prepare($system,$selection['recipe'],$selection['reason']);
+ }
+ public function prepare(int $system,string $recipe,?string $aiReason=null):string{
   $s=$this->systems->system($system);$definition=self::RECIPES[$recipe]??throw new RuntimeException('Choose a known server action.');if(!$s['enabled']||!$s['verified_at'])throw new RuntimeException('Verify the SSH connection before preparing a server action.');$this->systems->requireNoPlaybook();
   if($definition['access']==='admin'&&$s['risk_level']!=='admin')throw new RuntimeException('This action requires an Administrator enrollment. Existing account permissions will not be raised automatically.');
   if($definition['access']==='account'&&$s['access']!=='maintain')throw new RuntimeException('This action needs Account maintenance or Administrator access.');
@@ -43,6 +71,7 @@ final class SystemPlaybooks
    $this->systems->requireNoPlaybook();if($this->systems->query("SELECT id FROM system_runs WHERE status IN ('ready','working')"))throw new RuntimeException('Stop the active agent task before preparing a guided action.');
    if(count($this->systems->query('SELECT id FROM system_playbooks WHERE created_at>?',[time()-3600]))>=20)throw new RuntimeException('Guided actions are limited to 20 preparations per hour.');
    $id=bin2hex(random_bytes(16));$p=['binding'=>$this->binding($s),'prepared_at'=>time(),'inventory'=>null,'parameters'=>[],'results'=>[],'inspection_partial'=>false,'root'=>$definition['access']==='admin'||($recipe==='inspect'&&$s['risk_level']==='admin'),'recipe'=>$recipe,'program_sha'=>hash('sha256',SystemJob::source())];
+   if($aiReason!==null)$p['ai_reason']=$aiReason;
    if($s['access']==='inspect'){
     foreach(($recipe==='health'?['resources','services']:['system_info','network']) as $tool){$r=$this->ssh->execute($s,$this->systems->privateKey($system),SystemsAgent::INSPECT[$tool],$this->systems->directory,fn()=>!$this->systems->controlStillAllowed()||!$this->systems->system($system)['enabled']);$p['results'][]=['tool'=>$tool,'result'=>$r];if($r['exit_code']!==0||$r['truncated'])$p['inspection_partial']=true;if($r['timed_out']||$r['cancelled']||in_array($r['exit_code'],[-1,255],true))throw new RuntimeException('Read-only inspection is uncertain. No retry was made.');}
    }else{$p['inventory']=$this->decode($this->remote($s,['mode'=>'inventory','root'=>$p['root'],'token'=>$id,'recipe'=>$recipe]));if(($p['inventory']['format']??'')!=='AIcontrol VPS inventory v1')throw new RuntimeException('Unexpected server inventory.');}

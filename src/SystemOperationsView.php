@@ -36,6 +36,16 @@ final class SystemOperationsView
   $check=$latest['inspect']??null;
   $checks=$check['data']['inventory']['setup_checks']??[];
   echo '<section class="system-action-controls" id="server-actions" aria-labelledby="server-actions-title"><h3 id="server-actions-title">Server actions</h3>';
+  if($unlocked&&$system['enabled']&&$system['verified_at']){
+   $aiBlocked=match(true){
+    !empty($data['ssh_blocked'])=>'Reconcile the active server action first.',
+    !AgentRunner::configured()=>'Connect OpenAI in Admin to use this action.',
+    default=>null,
+   };
+   $disabled=$aiBlocked===null?'':' disabled';
+   self::form($csrf,'system_playbook_ai_prepare',$id);
+   echo '<label class="form-label" for="setup-goal">What should AI set up?</label><input class="form-control" id="setup-goal" name="setup_goal" maxlength="1500" placeholder="For example, set up private VPN access" required'.$disabled.'><p>'.Ui::e($aiBlocked??'AI chooses one supported action. Server changes still require review and approval.').'</p><button class="btn btn-primary"'.$disabled.'>Ask AI to prepare</button></form>';
+  }
   if($check)echo '<p role="status">Last setup check '.Ui::e(Ui::time(gmdate('c',(int)$check['updated_at']))).'. '.($checks?'Run it again to refresh the detected state.':'No installation states were confirmed in this check.').'</p>';
   foreach(SystemPlaybooks::RECIPES as $recipe=>$definition){
    $state=$checks[$recipe]??null;
@@ -48,7 +58,7 @@ final class SystemOperationsView
     $definition['access']==='account'&&$system['access']!=='maintain'=>'Account-level shell access required.',
     default=>null,
    };
-   $allowed=$blocked===null&&$detected===null;
+   $allowed=$blocked===null&&!SystemPlaybooks::alreadyConfigured($recipe,$state);
    $label=$definition['access']==='inspect'?$definition['title']:'Review '.$definition['title'];
    echo '<article class="system-action-card'.($recipe==='inspect'?' system-setup-check':'').'" data-recipe="'.Ui::e($recipe).'">';
    if($recipe!=='inspect')echo '<h4>'.Ui::e($definition['title']).'</h4>';

@@ -51,9 +51,12 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   await guided.filter({hasText:'ip -j -details link show dev aicontrol0'}).waitFor();
   if(await vpn.isDisabled()||!await page.getByRole('button',{name:'Review Install Codex',exact:true}).isDisabled())throw Error('Setup check disabled the wrong items');
 
-  await vpn.click();
+  await page.getByLabel('What should AI set up?',{exact:true}).fill('Set up private VPN access');
+  await page.getByRole('button',{name:'Ask AI to prepare',exact:true}).click();
   const operation=page.locator('[data-playbook]');
   await operation.locator('[data-playbook-status]').filter({hasText:'review'}).waitFor();
+  await guided.filter({hasText:'WireGuard provides private access for this server.'}).waitFor();
+  if((await guided.innerText()).includes('$ apt-get update'))throw Error('VPN installation ran before approval');
   if(await terminal.getAttribute('data-system-terminal')!==terminalId||await command.isDisabled())throw Error('VPN review lost the SSH console');
   await page.getByLabel('Client WireGuard public key',{exact:true}).fill(Buffer.alloc(32,'c').toString('base64'));
   await page.getByLabel('I have tested access to this VPS provider’s recovery console.',{exact:true}).check();
@@ -82,7 +85,7 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   if(new URL(page.url()).searchParams.get('operation')!==operationId||!await terminal.locator('[data-terminal-output]').isVisible())throw Error('Completed transcript was lost or manual output did not return');
   if(await terminal.getAttribute('data-system-terminal')!==terminalId||await command.isDisabled())throw Error('Completed VPN work did not restore shell entry');
   const providerCalls=path.join(home,'fixture-provider-calls');
-  if(fs.existsSync(providerCalls))throw Error('The reviewed VPN used a model call');
+  if(fs.readFileSync(providerCalls,'utf8')!=='choice\n')throw Error('The reviewed VPN used a model call during execution');
   await checkSetup.click();
   await vpnCard.getByText('WireGuard interface active.',{exact:false}).waitFor();
   if(!await vpn.isDisabled()||await page.getByRole('button',{name:'Review Update system',exact:true}).isDisabled()||await checkSetup.isDisabled())throw Error('Installed VPN or repeatable action availability is incorrect');
@@ -99,9 +102,13 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   await agent.getByText(/agent shell fixture/).first().waitFor();
   await agent.locator('[data-system-action=system_step] button').click();
   await agent.getByText('Verified the fixture shell output.',{exact:false}).first().waitFor();
-  if(fs.readFileSync(providerCalls,'utf8')!=='step\nstep\n'||(await page.content()).includes('fixture-saved-openai-key'))throw Error('Saved-key agent did not complete without exposing the key');
+  if(fs.readFileSync(providerCalls,'utf8')!=='choice\nstep\nstep\n'||(await page.content()).includes('fixture-saved-openai-key'))throw Error('Saved-key agent did not complete without exposing the key');
+  await command.fill('é'.repeat(2001));
+  await page.getByRole('button',{name:'Run command',exact:true}).click();
+  await terminal.locator('[data-terminal-output]').filter({hasText:/\[SSH error\].*Admin diagnostics reference [a-f0-9]{16}/}).waitFor();
+  if(!await command.isDisabled())throw Error('A failed SSH request let the console send another command without reopening');
   const audit=async()=>{await page.evaluate(require('axe-core').source);const issues=await page.evaluate(async()=>(await axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa','wcag22aa']}})).violations.map(v=>({id:v.id,targets:v.nodes.map(n=>n.target)})));if(issues.length)throw Error(JSON.stringify(issues));};await audit();fs.mkdirSync(path.join(root,'test-artifacts'),{recursive:true});await page.screenshot({path:path.join(root,'test-artifacts/ui-system-actions-desktop.png'),fullPage:true});
   await page.setViewportSize({width:390,height:844});await audit();if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1))throw Error('Operations overflow mobile');await page.getByRole('button',{name:'Lock Systems now',exact:true}).click();await page.getByRole('button',{name:'Unlock Systems',exact:true}).waitFor();await page.getByRole('heading',{name:'Connect a DigitalOcean VPS',exact:true}).waitFor();await page.getByRole('link',{name:'Unlock Systems to connect',exact:true}).waitFor();const locked=await page.content();if(locked.includes(username)||locked.includes('synthetic-protected-value'))throw Error('Lock retained plaintext');if(!locked.includes('Web service on this VPS.'))throw Error('Readable notes hidden while locked');await audit();await page.screenshot({path:path.join(root,'test-artifacts/ui-system-actions-locked-mobile.png'),fullPage:true});
-  if(errors.length)throw Error(errors.join('\n'));console.log('PASS: website SSH console, reviewed VPN with preserved console and no handshake claim, saved-key shell agent, masked notes, protected reveal and desktop/mobile axe (synthetic transports)');
+  if(errors.length)throw Error(errors.join('\n'));console.log('PASS: website SSH console, saved-key AI choice, reviewed VPN with preserved console and no handshake claim, saved-key shell agent, masked notes, protected reveal and desktop/mobile axe (synthetic transports)');
  }finally{if(browser)await browser.close();server.kill();await new Promise(r=>server.exitCode!==null?r():server.once('exit',r));fs.rmSync(tmp,{recursive:true,force:true});}
 })().catch(e=>{console.error(e.stack||e.message);process.exitCode=1;});

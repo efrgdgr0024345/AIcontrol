@@ -11,8 +11,9 @@ final class SystemTerminalView
         echo '<section id="ssh-console" class="system-terminal"'.($terminal?' data-system-terminal="'.Ui::e($terminal['id']).'"':'').'><h3>SSH command line</h3>';
         echo '<p>'.($terminal?'Connected to ':'Verified server ').'<strong>'.Ui::e($system['username'].'@'.$system['host']).'</strong> · '.Ui::e($system['risk_level']==='legacy'?$system['access']:SystemRisk::level($system['risk_level'])['label']).'</p>';
         if($guided!==''){
-            echo '<h4>Guided action transcript</h4><pre class="system-terminal-output" tabindex="0" role="log" aria-label="Guided action commands and output" data-guided-output>'.Ui::e($guided).'</pre><p role="status" data-guided-progress></p>';
+            echo '<h4>Guided action transcript</h4><pre class="system-terminal-output" tabindex="0" role="log" aria-label="Guided action commands and output" data-guided-output>'.Ui::e($guided).'</pre>';
         }
+        echo '<p role="status" data-guided-progress></p>';
         if(!$terminal){
             if($blocked)echo '<p>Reconcile the active guided action before opening an SSH command line.</p>';
             else echo '<form method="post" action="/loader.php?view=systems">'.$csrf.'<input type="hidden" name="action" value="system_console_connect"><input type="hidden" name="system_id" value="'.(int)$system['id'].'"><button class="btn btn-primary">Open SSH command line</button></form>';

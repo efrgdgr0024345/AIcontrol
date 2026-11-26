@@ -188,6 +188,7 @@ final class Panel
                     elseif(str_starts_with($action,'system_playbook_')){
                         $playbooks=new SystemPlaybooks($systems);$operationId=self::input('operation_id');
                         if($action==='system_playbook_prepare')$operationId=$playbooks->prepare($id,self::input('recipe'));
+                        elseif($action==='system_playbook_ai_prepare')$operationId=$playbooks->prepareWithAi($id,self::input('setup_goal'),new SystemsAgent($systems));
                         elseif($action==='system_playbook_apply')$playbooks->start($operationId,$id,self::input('confirmation'),$_POST);
                         elseif($action==='system_playbook_status'||$action==='system_playbook_stop')$playbooks->reconcile($operationId,$id,$action==='system_playbook_stop');
                         elseif($action==='system_playbook_release')$playbooks->release($operationId,$id,self::input('confirmation'));
@@ -246,7 +247,7 @@ final class Panel
                     Diagnostics::record($setupStage!==null?'systems.setup.failed':'systems.action.failed',$context,$failure);
                     http_response_code(422);$error=Diagnostics::clean($failure->getMessage());
                     if($json){header('Content-Type: application/json');echo json_encode(['error'=>$error,'request_id'=>Diagnostics::requestId(),'stage'=>$context['stage']??null],JSON_INVALID_UTF8_SUBSTITUTE);return;}
-                    if($setupStage!==null)$error.=' Find reference '.Diagnostics::requestId().' in Admin diagnostics.';
+                    if($setupStage!==null||str_starts_with($action,'system_playbook_')||$action==='system_console_command')$error.=' Find reference '.Diagnostics::requestId().' in Admin diagnostics.';
                 }
             } elseif ($action === 'admin_project_json') {
                 try {

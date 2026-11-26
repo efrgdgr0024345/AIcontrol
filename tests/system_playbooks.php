@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__.'/../src/Vault.php';require_once __DIR__.'/../src/AgentRunner.php';require_once __DIR__.'/../src/SystemsAgent.php';require_once __DIR__.'/../src/SystemGuard.php';require_once __DIR__.'/../src/SystemPlaybooks.php';
-use AIcontrol\{Systems,SystemGuard,SystemNotebook,SystemPlaybooks,Vault};
+use AIcontrol\{Systems,SystemGuard,SystemNotebook,SystemPlaybooks,SystemsAgent,Vault};
 $dir=sys_get_temp_dir().'/aicontrol-playbooks-'.bin2hex(random_bytes(6));mkdir($dir,0700);$_SESSION=[];$checks=0;
 function check(bool $v,string $why):void{global $checks;$checks++;if(!$v)throw new RuntimeException($why);}
 function rejects(callable $f):void{try{$f();}catch(Throwable){check(true,'rejected');return;}throw new RuntimeException('Expected rejection');}
@@ -21,6 +21,16 @@ try{
  $id=$s->add('Fixture VPS','192.0.2.15','2222','fixture_login','maintain','SHA256:'.str_repeat('a',43));$s->write("UPDATE systems SET risk_level='admin',verified_at=?,host_key='ssh-ed25519 fixture' WHERE id=?",[time(),$id]);$other=$s->add('Other fixture','192.0.2.16','22','other_login','inspect','');
  $notes=new SystemNotebook($s);$notes->edit($id,'Runs a web app. username=fixture_login password=fixture-secret-value','database_password','fixture-secret-value');$v=$notes->view($id);check(str_contains($v['notes'],'Runs a web app.')&&!str_contains(json_encode($v),'fixture-secret-value')&&!str_contains(json_encode($v),'fixture_login'),'Public notes disclosed credentials');check($notes->view($id,true)['revealed']['secrets']['database_password']==='fixture-secret-value','Protected value not recoverable');$protected=$notes->view($id,true);$g->lock();check(!str_contains(json_encode($notes->view($id)),'fixture-secret-value'),'Locked readable notes disclose protected data');rejects(fn()=>$notes->view($id,true));$g->unlock('fixture separate passphrase');$cipher=$s->query('SELECT sealed FROM system_notebooks WHERE system_id=?',[$id])[0]['sealed'];check(!str_contains($cipher,'fixture-secret-value'),'Secret stored unencrypted');rejects(fn()=>(new Vault($dir))->openSystemRecord($other,$cipher));$raw=base64_decode(substr($cipher,3));$raw[30]=chr(ord($raw[30])^1);rejects(fn()=>(new Vault($dir))->openSystemRecord($id,substr($cipher,0,3).base64_encode($raw)));
  $b=new SystemPlaybooks($s,$ssh);$backup=$b->prepare($id,'backup');check($b->get($backup,$id)['status']==='complete','Read-only backup inspection incorrectly asks to mutate');$inspect=$b->prepare($id,'inspect');check($b->get($inspect,$id)['status']==='complete','Inspection not recorded');rejects(fn()=>$b->prepare($id,'arbitrary-script'));rejects(fn()=>$b->prepare($other,'firewall'));
+ $calls=count($ssh->calls);
+ foreach([
+  ['recipe'=>'arbitrary-script','reason'=>'Unsupported recipe'],
+  ['recipe'=>'vpn','reason'=>'Extra field','command'=>'arbitrary-command'],
+  ['recipe'=>'none','reason'=>'Needs clarification'],
+ ] as $decision){
+  $agent=new SystemsAgent($s,$ssh,fn(array $body)=>$decision);
+  rejects(fn()=>$b->prepareWithAi($id,'Set up private access',$agent));
+ }
+ check(count($ssh->calls)===$calls,'Rejected AI selections sent SSH commands');
  $ssh->existing=true;rejects(fn()=>$b->prepare($id,'firewall'));$ssh->existing=false;$plan=$b->prepare($id,'firewall');rejects(fn()=>$b->start($plan,$id,'wrong',['recovery_confirmed'=>'1']));rejects(fn()=>$b->start($plan,$id,'APPLY '.$id,[]));rejects(fn()=>$b->start($plan,$id,'APPLY '.$id,['recovery_confirmed'=>'1','allow_ports'=>['443/tcp']]));$b->start($plan,$id,'APPLY '.$id,['recovery_confirmed'=>'1','allow_ports'=>['80/tcp']]);check($b->get($plan,$id)['blocking']==1,'Active operation did not block competing SSH');rejects(fn()=>$b->start($plan,$id,'APPLY '.$id,['recovery_confirmed'=>'1']));rejects(fn()=>$s->requireNoPlaybook());$ssh->state='complete';$b->reconcile($plan,$id);check(!$b->get($plan,$id)['blocking'],'Completion did not release operation lock');
  $plan=$b->prepare($id,'update');$ssh->loseStart=true;rejects(fn()=>$b->start($plan,$id,'APPLY '.$id,['recovery_confirmed'=>'1']));check($b->get($plan,$id)['status']==='uncertain','Lost start claimed failure or success');$before=count($ssh->calls);rejects(fn()=>$b->start($plan,$id,'APPLY '.$id,['recovery_confirmed'=>'1']));check(count($ssh->calls)===$before,'Unknown start retried');$ssh->loseStart=false;$b->reconcile($plan,$id);check($b->get($plan,$id)['status']==='complete','Same operation not reconciled');
  $plan=$b->prepare($id,'vpn');rejects(fn()=>$b->start($plan,$id,'APPLY '.$id,['recovery_confirmed'=>'1','vpn_network'=>'8.8.8.0/24','vpn_port'=>'51820','peer_public_key'=>base64_encode(str_repeat('x',32))]));$codex=$b->prepare($id,'codex');check($b->get($codex,$id)['data']['parameters']['asset']['sha256']==='01baa2e47809f8597be5b2f8abd4e4dfe3fb5bcb6e504c2fbaaad97056c15e8d','Codex release is not pinned');$ssh->distribution='other-linux';rejects(fn()=>$b->prepare($id,'update'));$b->prepare($id,'inspect');

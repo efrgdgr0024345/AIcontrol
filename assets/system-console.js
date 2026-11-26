@@ -11,7 +11,10 @@
     const url=new URL(target.getAttribute('action'),location.href);url.searchParams.set('systems_api','1');
     const response=await fetch(url,{method:'POST',credentials:'same-origin',body:new URLSearchParams(new FormData(target))});
     if(!(response.headers.get('content-type')||'').includes('application/json'))throw Error('Session or SSH progress could not be verified. Sign in and reconnect before sending another command.');
-    const data=await response.json();if(!response.ok)throw Error(data.error||'SSH request failed.');return data;
+    const data=await response.json();if(!response.ok){
+      const reference=/^[a-f0-9]{16}$/.test(data.request_id||'')?' Admin diagnostics reference '+data.request_id+'.':'';
+      throw Error((data.error||'SSH request failed.')+reference);
+    }return data;
   };
   form.addEventListener('submit',async event=>{
     event.preventDefault();if(pending||!connected||input.disabled)return;
@@ -29,7 +32,7 @@
       connected=result.connected;
       status.textContent=connected?(result.cwd_verified?'Command finished.':'Command finished; the previous confirmed directory was retained.'): 'SSH outcome uncertain. The console is disconnected. Review the result and reconnect before continuing.';
       input.value='';
-    }catch(error){if(serial===generation){connected=false;status.textContent=error.message+' No command was retried automatically.';}}
+    }catch(error){if(serial===generation){connected=false;append('[SSH error] '+error.message);status.textContent=error.message+' Reopen the console before another command.';}}
     finally{pending=false;form.querySelector('button').disabled=!connected;input.disabled=!connected;if(connected)input.focus({preventScroll:true});}
   });
   disconnect.addEventListener('submit',async event=>{

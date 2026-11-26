@@ -124,6 +124,11 @@ Guided actions sit below the console. The read-only setup check disables
 one-time actions only when it detects existing components or configuration
 for the selected connection. Learn more panels explain reviewed steps and show
 recorded commands and exit codes where available.
+Ask AI to prepare uses the configured OpenAI model and saved key for one
+choice among the actions available to that server. AI supplies the action
+and its reason. Existing review and approval are required for changes.
+Command request errors and guided action failures show an Admin diagnostic
+reference.
 Unused first commands expire after 24 hours. Saved discoveries can resume with
 the same public key and bound receipt. Setup and SSH verification failures
 include a reference tied to a private Admin diagnostic event.

@@ -10,6 +10,7 @@ final class SystemActionTranscript
         $result=$data['result']??[];
         $status=$operation['status'];
         $lines=[SystemPlaybooks::RECIPES[$operation['recipe']]['title'].' · '.$status];
+        if(is_string($data['ai_reason']??null))$lines[]='AI selected this action: '.$data['ai_reason'];
         $summary=$result['summary']??null;
         if(is_string($summary)&&$summary!=='')$lines[]=$summary;
         if($status==='review')$lines[]='Ready for review. Applying the action requires approval.';

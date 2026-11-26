@@ -184,6 +184,22 @@ The new five-round/Stop/failure test uses synthetic provider replies and actual
 local research actions; no billed call or live-host installation is claimed.
 Required planning-panel CI is verified on the published commit before readiness.
 
+## AI selection for guided server actions
+
+On a verified server, **Ask AI to prepare** uses the saved OpenAI key to
+match a setup goal to an available guided action. The choices respect the
+server's access level and the last setup check. The console shows the AI's
+reason and the guided commands with returned output and exit status. Setup
+changes require the existing review and **Apply this reviewed action**.
+Failed command requests and guided actions show a reference for Admin
+diagnostics.
+
+The browser workflow verifies manual stdout, empty output, the saved-key AI
+choice, VPN review and running and completed transcripts using synthetic SSH
+and OpenAI. Unit checks reject unsupported choices and extra command fields
+before SSH. The live owner PIN sign-in confirmed the site was running
+`a611677`. The separate Systems unlock prevented live shell and action tests.
+
 ## Guided command transcripts in the SSH console
 
 Verified server pages put the console above the setup, protection and server

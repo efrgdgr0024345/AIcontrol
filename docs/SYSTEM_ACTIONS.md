@@ -94,6 +94,13 @@ it detects existing software or configuration. Missing observations keep the
 associated actions available for review. A VPN client handshake still needs a
 separate test. Repeatable actions such as package updates stay available.
 
+To choose an action using the saved OpenAI key, enter a goal in **What should
+AI set up?** and select **Ask AI to prepare**. Review the AI's choice and reason
+in the console. Changes still require **Apply this reviewed action** and any
+required setup details. During the run, the same SSH console shows the current
+command and the output returned by the VPS. Use the reference on a failed
+request to find the matching event in Admin diagnostics.
+
 Each **Learn more** section explains the planned steps. After a recorded run,
 it also lists available command lines, exit statuses and short explanations.
 The console shows bounded, redacted output excerpts. Learn more lists commands,

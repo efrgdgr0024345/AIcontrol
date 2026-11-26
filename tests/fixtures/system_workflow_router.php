@@ -66,18 +66,30 @@ namespace AIcontrol {
         $body=json_decode($options[CURLOPT_POSTFIELDS],true,32,JSON_THROW_ON_ERROR);
         $input=json_decode($body['input'],true,32,JSON_THROW_ON_ERROR);
         if(!in_array('Authorization: Bearer fixture-saved-openai-key',$options[CURLOPT_HTTPHEADER],true)
-            || $body['model']!=='gpt-4.1-mini'||$input['task']!=='Print a disposable shell test marker'
+            || $body['model']!=='gpt-4.1-mini'
             ||str_contains($options[CURLOPT_POSTFIELDS],'fixture-saved-openai-key')
             ||str_contains($options[CURLOPT_POSTFIELDS],'synthetic-protected-value')){
             throw new \RuntimeException('Unexpected saved-key request or private data in prompt');
         }
-        $decision=match($input['step']){
-            0=>['tool'=>'shell','command'=>"printf 'agent shell fixture'"],
-            1=>str_contains($input['executed_commands'][0]['stdout']??'','agent shell fixture')
-                ?['tool'=>'finish','summary'=>'Verified the fixture shell output.']:throw new \RuntimeException('Missing shell evidence'),
-            default=>throw new \RuntimeException('Unexpected provider step'),
-        };
-        file_put_contents(getenv('AICONTROL_PRIVATE_DIR').'/fixture-provider-calls',"step\n",FILE_APPEND|LOCK_EX);
+        $format=$body['text']['format'];
+        if(($format['name']??'')==='guided_action_choice'){
+            if($input['goal']!=='Set up private VPN access'||!isset($input['actions']['vpn'])||isset($input['actions']['codex'])
+                ||$format['strict']!==true||$format['schema']['additionalProperties']!==false){
+                throw new \RuntimeException('Unexpected guided action choices');
+            }
+            $decision=['recipe'=>'vpn','reason'=>'WireGuard provides private access for this server.'];
+            $call="choice\n";
+        }else{
+            if($input['task']!=='Print a disposable shell test marker')throw new \RuntimeException('Unexpected fixture task');
+            $decision=match($input['step']){
+                0=>['tool'=>'shell','command'=>"printf 'agent shell fixture'"],
+                1=>str_contains($input['executed_commands'][0]['stdout']??'','agent shell fixture')
+                    ?['tool'=>'finish','summary'=>'Verified the fixture shell output.']:throw new \RuntimeException('Missing shell evidence'),
+                default=>throw new \RuntimeException('Unexpected provider step'),
+            };
+            $call="step\n";
+        }
+        file_put_contents(getenv('AICONTROL_PRIVATE_DIR').'/fixture-provider-calls',$call,FILE_APPEND|LOCK_EX);
         $response=['status'=>'completed','output'=>[['content'=>[['type'=>'output_text','text'=>json_encode($decision,JSON_THROW_ON_ERROR)]]]]];
         ($options[CURLOPT_WRITEFUNCTION])($handle,json_encode($response,JSON_THROW_ON_ERROR));
         return true;
