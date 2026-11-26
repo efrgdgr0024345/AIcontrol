@@ -34,7 +34,6 @@
  if(!op||op.dataset.playbookActive!=='1')return;
  const poll=op.querySelector('[data-playbook-poll]')?.closest('form');
  const status=op.querySelector('[data-playbook-status]');
- const transcript=document.querySelector('[data-guided-output]');
  let busy=false,timer;
  let auto=op.dataset.playbookState!=='uncertain';
  function schedule(delay){
@@ -47,11 +46,8 @@
   try{
    const data=await request(poll);
    const playbook=data.playbook;
-   if(playbook?.id!==op.dataset.playbook||typeof data.transcript!=='string')throw Error('The operation result could not be verified.');
-   if(transcript&&transcript.textContent!==data.transcript){
-    transcript.textContent=data.transcript;
-    transcript.scrollTop=transcript.scrollHeight;
-   }
+   if(playbook?.id!==op.dataset.playbook||!Array.isArray(data.entries))throw Error('The operation result could not be verified.');
+   document.dispatchEvent(new CustomEvent('aicontrol:terminal-records',{detail:data.entries}));
    if(!playbook.blocking||playbook.status==='uncertain'){
     auto=false;
     const url=new URL(location.href);

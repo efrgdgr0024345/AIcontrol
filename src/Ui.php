@@ -2047,7 +2047,6 @@ document.addEventListener('submit', event => {
   const status=area.querySelector('[data-agent-status]');
   const message=area.querySelector('[data-agent-message]');
   const updates=area.querySelector('[data-agent-updates]');
-  const output=area.querySelector('[data-agent-output]');
   let busy=false,stopping=false,automatic=false,nextTimer,progressTimer,progress;
 
   function pauseAuto(){
@@ -2075,10 +2074,7 @@ document.addEventListener('submit', event => {
   function show(activity){
     area.dataset.systemStatus=activity.status;
     status.textContent=activity.status+' · '+activity.rounds+' / 8 decisions';
-    if(activity.output&&output.textContent!==activity.output){
-      output.textContent=activity.output;
-      output.scrollTop=output.scrollHeight;
-    }
+    document.dispatchEvent(new CustomEvent('aicontrol:terminal-records',{detail:activity.entries}));
     if(updates.children.length!==activity.updates.length){
       const items=activity.updates.map(note=>{
         const item=document.createElement('li');item.textContent=note;return item;
@@ -2163,6 +2159,10 @@ document.addEventListener('submit', event => {
     try{await request(stop,'system_stop',AbortSignal.timeout(15000));reopen();}
     catch(error){message.textContent=error.message;stopping=false;stop.querySelector('button').disabled=false;}
   });
+  if(sessionStorage.getItem('aicontrol-agent-auto')===area.dataset.systemRun){
+    sessionStorage.removeItem('aicontrol-agent-auto');
+    if(auto&&!document.hidden)setTimeout(()=>{automatic=true;advance();},0);
+  }
   if(area.dataset.systemStatus==='working'){
     progress=new AbortController();
     setTimeout(()=>{
@@ -2177,50 +2177,118 @@ document.addEventListener('submit', event => {
 (() => {
   const riskForm=document.querySelector('[data-system-risk-form]');
   riskForm?.querySelector('[data-system-risk]')?.addEventListener('change',()=>riskForm.requestSubmit());
-  const terminal=document.querySelector('[data-system-terminal]');if(!terminal)return;
-  const form=terminal.querySelector('[data-terminal-form]'),input=form.querySelector('[data-terminal-input]'),output=terminal.querySelector('[data-terminal-output]'),status=terminal.querySelector('[data-terminal-status]'),disconnect=terminal.querySelector('[data-terminal-disconnect]');
-  let pending=false,generation=0,connected=true;
-  const history=Array.from(output.textContent.matchAll(/^\$ (.*)$/gm),m=>m[1]);let index=history.length,draft='';
-  const clean=text=>String(text||'').replace(/\x1b\[[0-?]*[ -\/]*[@-~]|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g,'');
-  const append=text=>{output.textContent+='\n'+clean(text);if(output.textContent.length>200000)output.textContent=output.textContent.slice(-200000);output.scrollTop=output.scrollHeight;};
+  const terminal=document.querySelector('#ssh-console');
+  if(!terminal)return;
+  const output=terminal.querySelector('[data-terminal-output]');
+  const sources={ssh:'SSH',manual:'You',agent:'Agent',guided:'Guided action'};
+  const rows=new Map([...output.children].map(node=>[node.dataset.terminalEntry,node]));
+  const clean=text=>String(text||'').replace(/\x1b\[[0-?]*[ -\/]*[@-~]|[\x00-\x08\x0b-\x1f\x7f]/g,'');
+  const scroll=()=>{output.scrollTop=output.scrollHeight;};
+  const order=(a,b)=>Number(a.dataset.terminalTime)-Number(b.dataset.terminalTime)
+    ||a.dataset.terminalEntry.localeCompare(b.dataset.terminalEntry,'en',{numeric:true});
+  const put=(entries,force=false)=>{
+    const follow=force||output.scrollHeight-output.clientHeight-output.scrollTop<32;
+    for(const entry of entries){
+      if(!Object.hasOwn(sources,entry.source)||typeof entry.text!=='string')continue;
+      let row=rows.get(entry.key);
+      if(row){
+        if(row.lastElementChild.textContent!==entry.text)row.lastElementChild.textContent=entry.text;
+        continue;
+      }
+      row=document.createElement('div');
+      row.className='terminal-entry';
+      row.dataset.terminalEntry=entry.key;
+      row.dataset.terminalTime=entry.at;
+      row.dataset.source=entry.source;
+      const label=document.createElement('span');label.className='terminal-source';label.textContent=sources[entry.source];
+      const body=document.createElement('div');body.className='terminal-text';body.textContent=entry.text;
+      row.append(label,body);
+      const next=[...output.children].find(existing=>order(existing,row)>0);
+      output.insertBefore(row,next||null);rows.set(entry.key,row);
+    }
+    if(follow)scroll();
+  };
+  const remove=key=>{rows.get(key)?.remove();rows.delete(key);};
+  document.addEventListener('aicontrol:terminal-records',event=>put(event.detail));
+  scroll();
+
   const request=async target=>{
     const url=new URL(target.getAttribute('action'),location.href);url.searchParams.set('systems_api','1');
     const response=await fetch(url,{method:'POST',credentials:'same-origin',body:new URLSearchParams(new FormData(target))});
-    if(!(response.headers.get('content-type')||'').includes('application/json'))throw Error('Session or SSH progress could not be verified. Sign in and reconnect before sending another command.');
+    if(!(response.headers.get('content-type')||'').includes('application/json'))throw Error('The request could not be verified. Sign in again before continuing.');
     const data=await response.json();if(!response.ok){
       const reference=/^[a-f0-9]{16}$/.test(data.request_id||'')?' Admin diagnostics reference '+data.request_id+'.':'';
       throw Error((data.error||'SSH request failed.')+reference);
     }return data;
   };
+
+  const connect=terminal.querySelector('[data-terminal-connect]');
+  connect?.addEventListener('submit',()=>{
+    put([{key:'connecting',at:Date.now()/1000,source:'ssh',text:'Verifying the host and signing in with the saved SSH key…'}],true);
+  });
+
+  const direction=terminal.querySelector('[data-terminal-agent-form]');
+  direction?.addEventListener('submit',async event=>{
+    if(event.submitter?.value==='step')return;
+    event.preventDefault();
+    const controls=[...direction.querySelectorAll('button')],status=direction.querySelector('[data-agent-submit-status]');
+    controls.forEach(button=>button.disabled=true);
+    status.textContent='Starting the agent…';
+    try{
+      const data=await request(direction),run=data.run;
+      if(!Number.isSafeInteger(run?.id)||run.status!=='ready')throw Error('The agent task could not be confirmed.');
+      sessionStorage.setItem('aicontrol-agent-auto',String(run.id));
+      const next=new URL(direction.getAttribute('action'),location.href);
+      next.searchParams.set('system',direction.elements.system_id.value);
+      next.searchParams.set('system_run',run.id);
+      next.hash='ssh-console';
+      location.assign(next);
+    }catch(error){status.textContent=error.message;controls.forEach(button=>button.disabled=false);}
+  });
+
+  const form=terminal.querySelector('[data-terminal-form]');
+  if(!form)return;
+  const input=form.querySelector('[data-terminal-input]'),status=terminal.querySelector('[data-terminal-status]');
+  const disconnect=terminal.querySelector('[data-terminal-disconnect]');
+  let pending=false,generation=0,connected=true;
+  const history=Array.from(output.querySelectorAll('[data-source=manual] .terminal-text'),row=>row.textContent.split('\n')[0].slice(2));let index=history.length,draft='';
   form.addEventListener('submit',async event=>{
     event.preventDefault();if(pending||!connected||input.disabled)return;
     const command=input.value.trim();if(!command)return;
-    if(command==='clear'){output.textContent='';input.value='';return;}
-    pending=true;const serial=generation;form.querySelector('button').disabled=true;status.textContent='Command running over SSH…';history.push(command);index=history.length;draft='';append('$ '+command);
+    if(command==='clear'){output.replaceChildren();rows.clear();input.value='';return;}
+    pending=true;const serial=generation;form.querySelector('button').disabled=true;
+    status.textContent='Command running over SSH…';history.push(command);index=history.length;draft='';
+    put([{key:'pending-manual',at:Date.now()/1000,source:'manual',text:'$ '+clean(command)+'\n[waiting for VPS output]'}],true);
     try {
       const data=await request(form);if(serial!==generation)return;
-      const result=data.terminal_result;if(!result?.command)throw Error('The SSH result could not be verified. Reconnect before continuing.');
-      const row=result.command;
-      const stdout=clean(row.stdout),stderr=clean(row.stderr);
-      const streams=[stdout,stderr?'[stderr]\n'+stderr:''].filter(Boolean);
-      append((streams.join('\n')||'No output returned.')+'\n['+row.status+' · exit '+(row.exit_code??'unknown')+(row.truncated?' · output truncated':'')+']');
+      const result=data.terminal_result;if(!result?.entry)throw Error('The SSH result could not be verified. Reconnect before continuing.');
+      remove('pending-manual');put([result.entry],true);
       terminal.querySelector('[data-terminal-directory]').textContent='Directory: '+(result.cwd||'server home');
       connected=result.connected;
-      status.textContent=connected?(result.cwd_verified?'Command finished.':'Command finished; the previous confirmed directory was retained.'): 'SSH outcome uncertain. The console is disconnected. Review the result and reconnect before continuing.';
+      status.textContent=connected?(result.cwd_verified?'Command finished.':'Command finished. The previous confirmed directory was retained.'):'SSH outcome uncertain. The console is disconnected. Review the result before reconnecting.';
       input.value='';
-    }catch(error){if(serial===generation){connected=false;append('[SSH error] '+error.message);status.textContent=error.message+' Reopen the console before another command.';}}
-    finally{pending=false;form.querySelector('button').disabled=!connected;input.disabled=!connected;if(connected)input.focus({preventScroll:true});}
+    }catch(error){
+      if(serial===generation){
+        connected=false;remove('pending-manual');
+        put([{key:'manual-error',at:Date.now()/1000,source:'ssh',text:'[SSH error] '+error.message}],true);
+        status.textContent=error.message+' Reopen the console before another command.';
+      }
+    }finally{pending=false;form.querySelector('button').disabled=!connected;input.disabled=!connected;if(connected)input.focus({preventScroll:true});}
   });
   disconnect.addEventListener('submit',async event=>{
     event.preventDefault();generation++;connected=false;input.disabled=true;form.querySelector('button').disabled=true;status.textContent='Disconnecting SSH console…';
-    try{await request(disconnect);status.textContent='Console disconnected. A command already dispatched may have an uncertain outcome.';disconnect.querySelector('button').disabled=true;}
-    catch(error){status.textContent=error.message+' Disconnect could not be confirmed; check the saved task report.';}
+    try{
+      await request(disconnect);
+      if(pending)put([{key:'ssh-disconnect',at:Date.now()/1000,source:'ssh',text:'Connection closed while a command was pending. Check its result before retrying.'}],true);
+      status.textContent='Console disconnected.';disconnect.querySelector('button').disabled=true;
+    }
+    catch(error){status.textContent=error.message+' Disconnect could not be confirmed. Check the saved task report.';}
   });
   input.addEventListener('keydown',event=>{
     if(event.key==='ArrowUp'){event.preventDefault();if(index===history.length)draft=input.value;if(index>0)input.value=history[--index];}
     else if(event.key==='ArrowDown'){event.preventDefault();if(index<history.length){index++;input.value=index===history.length?draft:history[index];}}
   });
-  if(location.hash==='#ssh-console')input.focus({preventScroll:true});
+  if(location.hash==='#ssh-console'&&!input.disabled)input.focus({preventScroll:true});
 })();
 
 // Secrets are fetched only by an explicit reveal and never placed in browser storage.
@@ -2259,7 +2327,6 @@ document.addEventListener('submit', event => {
  if(!op||op.dataset.playbookActive!=='1')return;
  const poll=op.querySelector('[data-playbook-poll]')?.closest('form');
  const status=op.querySelector('[data-playbook-status]');
- const transcript=document.querySelector('[data-guided-output]');
  let busy=false,timer;
  let auto=op.dataset.playbookState!=='uncertain';
  function schedule(delay){
@@ -2272,11 +2339,8 @@ document.addEventListener('submit', event => {
   try{
    const data=await request(poll);
    const playbook=data.playbook;
-   if(playbook?.id!==op.dataset.playbook||typeof data.transcript!=='string')throw Error('The operation result could not be verified.');
-   if(transcript&&transcript.textContent!==data.transcript){
-    transcript.textContent=data.transcript;
-    transcript.scrollTop=transcript.scrollHeight;
-   }
+   if(playbook?.id!==op.dataset.playbook||!Array.isArray(data.entries))throw Error('The operation result could not be verified.');
+   document.dispatchEvent(new CustomEvent('aicontrol:terminal-records',{detail:data.entries}));
    if(!playbook.blocking||playbook.status==='uncertain'){
     auto=false;
     const url=new URL(location.href);
@@ -3251,16 +3315,32 @@ body.research-map-open { overflow:hidden; }
 .system-script-preview { max-height:340px; overflow:auto; padding:12px; }
 .system-one-command { overflow-wrap:anywhere; }
 .system-terminal { padding:18px; border:1px solid #465971; border-radius:10px; background:#101923; color:#e7eff8; }
-.system-terminal h3,.system-terminal h4,.system-terminal .form-label { color:#e7eff8; }
+.system-terminal h3,.system-terminal h4,.system-terminal .form-label,.system-terminal summary,.system-terminal code { color:#e7eff8; }
 .system-terminal p { color:#c8d7e8; }
-.system-terminal-output { min-height:210px; max-height:420px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; background:#000; color:#d5f4dc; padding:14px; border-radius:6px; }
+.system-terminal-frame { margin:14px 0 10px; border:1px solid #536780; border-radius:8px; overflow:hidden; background:#080e15; }
+.system-terminal-output { min-height:250px; max-height:52vh; overflow:auto; color:#deebf5; padding:16px; font:0.9rem/1.55 monospace; }
 .system-terminal-output:focus-visible { outline:2px solid #90cbff; outline-offset:3px; }
+.terminal-entry { margin-bottom:14px; }
+.terminal-entry:last-child { margin-bottom:0; }
+.terminal-source { display:block; margin-bottom:3px; font:bold .78rem/1.3 system-ui,sans-serif; color:#c5d4e1; }
+.terminal-entry[data-source=manual] .terminal-source,.terminal-prompt>span { color:#87e7ac; }
+.terminal-entry[data-source=agent] .terminal-source { color:#7bdcfa; }
+.terminal-entry[data-source=guided] .terminal-source { color:#ffd479; }
+.terminal-text { white-space:pre-wrap; overflow-wrap:anywhere; }
+.terminal-prompt { display:flex; flex-wrap:wrap; align-items:center; gap:8px; border-top:1px solid #536780; padding:8px 12px; margin:0; }
+.terminal-prompt>span { font:bold 1rem monospace; }
+.terminal-prompt .form-control { flex:1; min-width:6ch; border-color:#536780; background:#121d29; color:#eaf5ff; font:inherit; font-family:monospace; }
+.terminal-prompt .terminal-run { border-color:#7f9db4; color:#e6f4ff; background:#203548; }
+.system-terminal-footer { display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; justify-content:space-between; margin:10px 0; }
+.system-terminal-footer p { margin:0; overflow-wrap:anywhere; }
+.terminal-agent-form { max-width:none; margin-bottom:0; }
+.terminal-agent-buttons { display:flex; flex-wrap:wrap; gap:8px; }
 .system-agent-activity { margin:16px 0; }
 .system-terminal .system-agent-updates { margin-bottom:12px; padding:12px 14px; border-inline-start:3px solid #83cbf2; background:#1c3042; color:#e7eff8; border-radius:5px; overflow-wrap:anywhere; }
 .system-agent-updates ol { margin:7px 0; padding-inline-start:22px; max-height:190px; overflow:auto; }
 .system-agent-updates :empty { display:none; }
-.system-terminal .system-agent-commands { min-height:110px; font-family:monospace; }
-.system-terminal .system-agent-auto { color:#d9ebf9; border-color:#93abc0; }
+.system-terminal .system-agent-auto { color:#d9ebf9; border-color:#93abc0; background:#1a2b3e; }
+.system-terminal .system-agent-auto:is(:hover,:focus-visible,:active):not(:disabled) { color:#fff; background:#304963; }
 
 .system-terminal .btn-outline-danger { color:#ffbec5; border-color:#c16b7a; background:#30131b; }
 

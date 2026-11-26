@@ -117,6 +117,11 @@ persist in systems.sqlite. Web console sessions are bound to the creating login,
 expire after 30 minutes, and allow at most 60 bounded commands/hour/system.
 The console is noninteractive; no terminal daemon or external relay is installed.
 The verified server page starts with the SSH console and its action buttons.
+The console displays the saved-key sign-in result, the advertised SSH banner
+when present, and the selected server's observed welcome and system details.
+Manual commands, Linux agent commands and guided actions share one scrollback
+with source labels and colors. The agent direction field and plain-language
+reply sit below the scrollback and command prompt.
 Guided operations report the current command and bounded, redacted stdout and
 stderr in that console. An active or uncertain guided action blocks manual
 command entry until reconciliation releases the operation lock.

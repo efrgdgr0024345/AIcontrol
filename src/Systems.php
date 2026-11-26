@@ -8,6 +8,7 @@ require_once __DIR__.'/SshTransport.php';
 require_once __DIR__.'/SystemRisk.php';
 require_once __DIR__.'/SystemGuard.php';
 require_once __DIR__.'/SystemNotebook.php';
+require_once __DIR__.'/SystemConsoleTranscript.php';
 
 final class Systems
 {
@@ -90,7 +91,7 @@ final class Systems
         if($s['host_key']&&$s['fingerprint']!==$fingerprint)throw new RuntimeException('A verified server identity cannot be replaced. Disconnect and add the server again after checking the change.');
         $this->write('UPDATE systems SET fingerprint=? WHERE id=?',[$fingerprint,$id]);
     }
-    public function verify(int $id,?object $transport=null): void
+    public function verify(int $id,?object $transport=null,bool $welcome=false): string
     {
         $this->requireNoPlaybook();$s=$this->system($id);if(!$s['enabled'])throw new RuntimeException('This system is disconnected. Add it again to issue a new key.');$transport??=new SshTransport();
         $stage='host_identity';
@@ -100,9 +101,20 @@ final class Systems
             $stage='connection_key';
             $private=$this->privateKey($id);
             $stage='inspection';
-            $r=$transport->execute($s,$private,SystemsAgent::INSPECT['system_info'],$this->directory,fn()=>!(bool)$this->system($id)['enabled']);
+            $probe=SystemsAgent::INSPECT['system_info'];
+            $marker=null;
+            if($welcome&&$s['access']==='maintain'){
+                $marker='AICTRL_WELCOME_'.bin2hex(random_bytes(12));
+                $probe='if [ -r /etc/motd ]; then head -c 4096 /etc/motd; fi; printf '.SystemRisk::quote("\n".$marker."\n").'; '.$probe;
+            }
+            $r=$transport->execute($s,$private,$probe,$this->directory,fn()=>!$this->controlStillAllowed()||!(bool)$this->system($id)['enabled'],$welcome);
             if($r['exit_code']!==0||$r['timed_out']||$r['cancelled'])throw SshTransport::verificationFailure($r);
+            $motd='';
+            if($marker!==null&&str_contains($r['stdout'],"\n".$marker."\n")){
+                [$motd,$r['stdout']]=explode("\n".$marker."\n",$r['stdout'],2);
+            }
             $this->write('UPDATE systems SET host_key=?,verified_at=?,facts=?,error=NULL WHERE id=? AND enabled=1',[$s['host_key'],time(),Diagnostics::clean($r['stdout']),$id]);$this->observe($id,'SSH connection check','verified',['results'=>[['tool'=>'system_info','result'=>$r]]]);
+            return $welcome?SystemConsoleTranscript::text((new SystemNotebook($this))->redact($id,trim($r['stderr']."\n".$motd."\n".$r['stdout'])),8192):'';
         }catch(\Throwable $e){
             $details=['system_id'=>$id,'stage'=>$stage];
             if($e instanceof SshConnectionError)$details=array_merge($details,['stage'=>$e->stage,'reason'=>$e->reason],$e->details);

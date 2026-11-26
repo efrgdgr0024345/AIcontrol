@@ -77,7 +77,7 @@ final class SshTransport
         return new SshConnectionError($stage,$reason,$message,$result);
     }
 
-    public function execute(array $system,string $private,string $command,string $directory,callable $cancel): array
+    public function execute(array $system,string $private,string $command,string $directory,callable $cancel,bool $includeBanner=false): array
     {
         if(empty($system['host_key']))throw new RuntimeException('Verify the SSH host key before executing work.');
         $key=tempnam($directory,'.ssh-key-');$hosts=tempnam($directory,'.ssh-host-');
@@ -85,7 +85,7 @@ final class SshTransport
             chmod($key,0600);chmod($hosts,0600);file_put_contents($key,$private);
             file_put_contents($hosts,'['.$system['host'].']:'.$system['port'].' '.$system['host_key']."\n".$system['host'].' '.$system['host_key']."\n");
             $args=['/usr/bin/ssh','-F','/dev/null','-i',$key,'-p',(string)$system['port'],'-l',$system['username']];
-            foreach(['HostKeyAlgorithms=ssh-ed25519','BatchMode=yes','IdentitiesOnly=yes','StrictHostKeyChecking=yes','UserKnownHostsFile='.$hosts,'GlobalKnownHostsFile=/dev/null','ConnectTimeout=8','PasswordAuthentication=no','KbdInteractiveAuthentication=no','ForwardAgent=no','ClearAllForwardings=yes','LogLevel=ERROR','ServerAliveInterval=5','ServerAliveCountMax=1'] as $option){$args[]='-o';$args[]=$option;}
+            foreach(['HostKeyAlgorithms=ssh-ed25519','BatchMode=yes','IdentitiesOnly=yes','StrictHostKeyChecking=yes','UserKnownHostsFile='.$hosts,'GlobalKnownHostsFile=/dev/null','ConnectTimeout=8','PasswordAuthentication=no','KbdInteractiveAuthentication=no','ForwardAgent=no','ClearAllForwardings=yes','LogLevel='.($includeBanner?'INFO':'ERROR'),'ServerAliveInterval=5','ServerAliveCountMax=1'] as $option){$args[]='-o';$args[]=$option;}
             if(($system['risk_level']??'legacy')==='readonly'){
                 $tool=array_search($command,SystemRisk::commands(),true);
                 if($tool===false)throw new RuntimeException('The read-only SSH key accepts diagnostic commands only.');

@@ -16,7 +16,6 @@
   const status=area.querySelector('[data-agent-status]');
   const message=area.querySelector('[data-agent-message]');
   const updates=area.querySelector('[data-agent-updates]');
-  const output=area.querySelector('[data-agent-output]');
   let busy=false,stopping=false,automatic=false,nextTimer,progressTimer,progress;
 
   function pauseAuto(){
@@ -44,10 +43,7 @@
   function show(activity){
     area.dataset.systemStatus=activity.status;
     status.textContent=activity.status+' · '+activity.rounds+' / 8 decisions';
-    if(activity.output&&output.textContent!==activity.output){
-      output.textContent=activity.output;
-      output.scrollTop=output.scrollHeight;
-    }
+    document.dispatchEvent(new CustomEvent('aicontrol:terminal-records',{detail:activity.entries}));
     if(updates.children.length!==activity.updates.length){
       const items=activity.updates.map(note=>{
         const item=document.createElement('li');item.textContent=note;return item;
@@ -132,6 +128,10 @@
     try{await request(stop,'system_stop',AbortSignal.timeout(15000));reopen();}
     catch(error){message.textContent=error.message;stopping=false;stop.querySelector('button').disabled=false;}
   });
+  if(sessionStorage.getItem('aicontrol-agent-auto')===area.dataset.systemRun){
+    sessionStorage.removeItem('aicontrol-agent-auto');
+    if(auto&&!document.hidden)setTimeout(()=>{automatic=true;advance();},0);
+  }
   if(area.dataset.systemStatus==='working'){
     progress=new AbortController();
     setTimeout(()=>{

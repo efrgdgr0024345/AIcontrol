@@ -12,10 +12,10 @@ final class SystemsView
     {
         echo '<form method="post" action="/loader.php?view=systems">'.$csrf.'<input type="hidden" name="action" value="'.$action.'"><input type="hidden" name="system_id" value="'.$id.'"><button class="btn btn-outline-secondary">'.Ui::e($label).'</button></form>';
     }
-    private static function controls(array $system,array $data,string $csrf): void
+    private static function controls(array $system,array $data,string $csrf,array $projects): void
     {
         echo '<section class="card mb-3 systems-section" data-system-control><div class="card-body"><h2>'.Ui::e($system['name']).'</h2>';
-        SystemTerminalView::render($system,$data['terminal']??null,$csrf,$data['ssh_blocked']??false,$data['guided_transcript']??'',$data['run']??null,$data['agent_activity']??null);
+        SystemTerminalView::render($system,$data,$csrf,$projects);
         SystemOperationsView::actions($system,$data,$csrf,true);
         echo '</div></section>';
     }
@@ -26,7 +26,7 @@ final class SystemsView
         $selected=$data['selected']??null;
         if(!$guard['unlocked'])SystemSetupView::locked($guard);
         $connected=$guard['unlocked']&&$selected&&$selected['enabled']&&$selected['verified_at'];
-        if($connected)self::controls($selected,$data,$csrf);
+        if($connected)self::controls($selected,$data,$csrf,$projects);
         SystemOperationsView::guard($guard,$csrf,(int)($selected['id']??0));
         if(!$guard['unlocked']){SystemOperationsView::locked($data,$csrf);return;}
         SystemSetupView::render($data['setup']??null,$csrf,$data['setup_values']??[]);
@@ -61,9 +61,6 @@ final class SystemsView
             if($s['error'])echo '<p class="alert alert-warning">'.Ui::e($s['error']).' <a href="/loader.php?view=admin#diagnostics-report">Open Admin diagnostics</a>.</p>';
             if($s['facts'])echo '<details><summary>Last observed system information</summary><pre class="systems-code">'.Ui::e($s['facts']).'</pre></details>';
             if(!$connected)SystemOperationsView::actions($s,$data,$csrf,true);
-            if($s['verified_at']){
-                echo '<form method="post" action="/loader.php?view=systems" class="systems-form">'.$csrf.'<input type="hidden" name="action" value="system_start"><input type="hidden" name="system_id" value="'.$id.'"><label class="form-label" for="system-project">Related task project (optional)</label><select class="form-select" id="system-project" name="project_id"><option value="">System task only</option>';foreach($projects as $p)echo '<option value="'.(int)$p['id'].'">'.Ui::e($p['name']).'</option>';echo '</select><label class="form-label" for="system-task">Task for the Linux agent</label><textarea class="form-control" id="system-task" name="task" rows="3" maxlength="4000" placeholder="Inspect disk usage and explain what needs attention." required></textarea><p>Up to eight model decisions; one remote command per decision. Start, then advance steps or enable automatic steps while this page stays open.</p><button class="btn btn-primary">Start system task</button></form>';
-            }
             self::form($csrf,'system_revoke',$id,'Disconnect and delete local SSH key');
         }
         echo '</div></section>';

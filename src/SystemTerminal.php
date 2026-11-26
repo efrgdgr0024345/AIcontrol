@@ -15,12 +15,13 @@ final class SystemTerminal
             $e=(new SystemEnrollment($this->systems))->get($s['enrollment_id']);
             if(!$e['receipt_json'])throw new RuntimeException('Paste the key setup reply before connecting.');
         }
-        $this->systems->verify($system,$this->ssh);
+        $welcome=$this->systems->verify($system,$this->ssh,true);
         $id=bin2hex(random_bytes(16));
-        $this->systems->write("INSERT INTO system_runs(system_id,task,status,created_at)VALUES(?,'Manual SSH command console','console',?)",[$system,time()]);$run=(int)$this->systems->db->lastInsertId();
-        $this->systems->write('INSERT INTO system_terminals(id,system_id,run_id,owner_hash,cwd,expires_at,created_at)VALUES(?,?,?,?,?,?,?)',[$id,$system,$run,$owner,$s['home_dir'],time()+1800,time()]);
+        $now=microtime(true);
+        $this->systems->write("INSERT INTO system_runs(system_id,task,status,result,created_at)VALUES(?,'Manual SSH command console','console',?,?)",[$system,$welcome,$now]);$run=(int)$this->systems->db->lastInsertId();
+        $this->systems->write('INSERT INTO system_terminals(id,system_id,run_id,owner_hash,cwd,expires_at,created_at)VALUES(?,?,?,?,?,?,?)',[$id,$system,$run,$owner,$s['home_dir'],time()+1800,$now]);
         if($s['enrollment_id'])$this->systems->write("UPDATE system_enrollments SET state='connected' WHERE id=?",[$s['enrollment_id']]);
-        return $this->get($id,$owner);
+        return $this->view($id,$owner);
     }
     public function get(string $id,string $owner): array
     {
@@ -34,6 +35,7 @@ final class SystemTerminal
     public function view(string $id,string $owner): array
     {
         $t=$this->get($id,$owner);unset($t['owner_hash']);
+        $t['welcome']=$this->systems->run((int)$t['run_id'])['result'];
         $t['commands']=array_reverse($this->systems->query('SELECT * FROM system_commands WHERE run_id=? ORDER BY id DESC LIMIT 20',[$t['run_id']]));
         return $t;
     }
@@ -69,7 +71,7 @@ final class SystemTerminal
             }
             $marker='AICTRL_CWD_'.bin2hex(random_bytes(16)).':';
             if(!$readonly){$cd=$t['cwd']===null?'"$HOME"':SystemRisk::quote($t['cwd']);$actual='cd -- '.$cd.' || exit 125; { '.$command."\n".'}; __aicontrol_status=$?; __aicontrol_cwd=$(printf %s "$PWD" | base64 -w 0); printf '.SystemRisk::quote("\n".$marker."%s\n").' "$__aicontrol_cwd"; exit "$__aicontrol_status"';}
-            $this->systems->write("INSERT INTO system_commands(run_id,command,status,created_at)VALUES(?,?,'running',?)",[$t['run_id'],Diagnostics::clean($command),time()]);$commandId=(int)$this->systems->db->lastInsertId();
+            $this->systems->write("INSERT INTO system_commands(run_id,command,status,created_at)VALUES(?,?,'running',?)",[$t['run_id'],Diagnostics::clean($command),microtime(true)]);$commandId=(int)$this->systems->db->lastInsertId();
             $cancel=function()use($id,$owner):bool{if(!$this->systems->controlStillAllowed())return true;try{$this->get($id,$owner);return false;}catch(\Throwable){return true;}};
             if($cancel())throw new RuntimeException('Console disconnected before dispatch.');
             $r=$this->ssh->execute($s,$this->systems->privateKey((int)$s['id']),$actual,$this->systems->directory,$cancel);
@@ -84,7 +86,9 @@ final class SystemTerminal
             if($uncertain){$this->systems->write('UPDATE system_terminals SET enabled=0 WHERE id=?',[$id]);$this->systems->write("UPDATE system_runs SET status='outcome_uncertain',error=?,finished_at=? WHERE id=?",['SSH command outcome uncertain. No command was retried; inspect the server before reconnecting.',time(),$t['run_id']]);}
             else $this->systems->write('UPDATE system_terminals SET cwd=?,expires_at=? WHERE id=? AND enabled=1',[$cwd,time()+1800,$id]);
             $this->systems->observe((int)$s['id'],'Manual SSH command',$uncertain?'outcome uncertain':'command exit '.$r['exit_code'],['command'=>$command,'result'=>$r]);
-            return ['command'=>$this->systems->query('SELECT * FROM system_commands WHERE id=?',[$commandId])[0],'cwd'=>$cwd,'cwd_verified'=>$cwdVerified,'connected'=>!$uncertain];
+            $row=$this->systems->query('SELECT * FROM system_commands WHERE id=?',[$commandId])[0];
+            $entries=SystemConsoleTranscript::commands([$row],true,new SystemNotebook($this->systems),(int)$s['id']);
+            return ['command'=>$row,'entry'=>$entries[0],'cwd'=>$cwd,'cwd_verified'=>$cwdVerified,'connected'=>!$uncertain];
         }catch(\Throwable $e){
             if($commandId){$this->systems->write("UPDATE system_commands SET status='outcome_uncertain',stderr=?,finished_at=? WHERE id=? AND status='running'",[Diagnostics::clean($e->getMessage()),time(),$commandId]);$this->systems->write('UPDATE system_terminals SET enabled=0 WHERE id=?',[$id]);$this->systems->write("UPDATE system_runs SET status='outcome_uncertain',error=?,finished_at=? WHERE id=?",[Diagnostics::clean($e->getMessage()),time(),$t['run_id']]);}
             throw $e;

@@ -38,13 +38,14 @@ namespace AIcontrol {
                 $output=json_encode($result,JSON_THROW_ON_ERROR)."\n";
             }elseif(str_contains($command,'getconf _NPROCESSORS_ONLN')){
                 $output="Linux verification fixture\n";
+                if(preg_match('/AICTRL_WELCOME_[a-f0-9]{24}/',$command,$welcome))$output="Welcome to the fixture VPS\n\n".$welcome[0]."\n".$output;
             }elseif(str_contains($command,'manual shell fixture')){
                 $output="manual shell fixture\n";
-            }elseif(str_contains($command,'test -f .fixture-missing')){
+            }elseif(str_contains($command,'wg show all latest-handshakes')){
                 $delay=2400000;
                 $exit=1;
-            }elseif(str_contains($command,'agent shell fixture')){
-                $output="agent shell fixture\n";
+            }elseif(str_contains($command,'ss -lnt; ip -brief address')){
+                $output="aicontrol0 UP 10.78.0.1/24\n";
             }elseif(!str_contains($command,'{ ls'."\n")){
                 $exit=127;
             }
@@ -84,13 +85,13 @@ namespace AIcontrol {
             $decision=['recipe'=>'vpn','reason'=>'WireGuard provides private access for this server.'];
             $call="choice\n";
         }else{
-            if($input['task']!=='Print a disposable shell test marker')throw new \RuntimeException('Unexpected fixture task');
+            if($input['task']!=='Check why VPN traffic is not getting through.')throw new \RuntimeException('Unexpected fixture task');
             $decision=match($input['step']){
-                0=>['tool'=>'shell','command'=>'test -f .fixture-missing','update'=>'I will check whether the marker file exists.'],
+                0=>['tool'=>'vpn_status','update'=>'I will check local WireGuard handshakes and transfer counters.'],
                 1=>($input['executed_commands'][0]['exit_code']??null)===1
-                    ?['tool'=>'shell','command'=>"printf 'agent shell fixture'",'update'=>'The marker file is absent. I will verify stdout directly.']:throw new \RuntimeException('Missing file check evidence'),
-                2=>str_contains($input['executed_commands'][1]['stdout']??'','agent shell fixture')
-                    ?['tool'=>'finish','summary'=>'Verified the fixture shell output.']:throw new \RuntimeException('Missing shell evidence'),
+                    ?['tool'=>'network','update'=>'The WireGuard read failed. I will check whether the tunnel interface is up.']:throw new \RuntimeException('Missing WireGuard check evidence'),
+                2=>str_contains($input['executed_commands'][1]['stdout']??'','aicontrol0 UP')
+                    ?['tool'=>'finish','summary'=>'The interface is up. Handshakes and end-to-end traffic remain unverified.']:throw new \RuntimeException('Missing interface evidence'),
                 default=>throw new \RuntimeException('Unexpected provider step'),
             };
             $call="step\n";

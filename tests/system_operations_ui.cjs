@@ -34,12 +34,17 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   await page.getByRole('button',{name:'Connect and open command line',exact:true}).click();
   const terminal=page.locator('[data-system-terminal]');
   await terminal.waitFor();const terminalId=await terminal.getAttribute('data-system-terminal');
+  const transcript=terminal.getByRole('log',{name:'SSH terminal commands and output'});
+  const welcome=transcript.locator('[data-source=ssh]').filter({hasText:'Welcome to the fixture VPS'});
+  await welcome.waitFor();
+  if(!(await welcome.innerText()).includes('Signed in with the saved SSH key.')||(await welcome.innerText()).includes('AICTRL_WELCOME_'))throw Error('Verified welcome message was not presented correctly');
   if(!await page.locator('[data-system-control]').evaluate(section=>document.querySelector('[data-system-privacy]').compareDocumentPosition(section)&Node.DOCUMENT_POSITION_PRECEDING))throw Error('Verified console is below the setup controls');
   const command=page.getByLabel('Shell command',{exact:true});
   await command.fill("printf 'manual shell fixture'");
   await page.getByRole('button',{name:'Run command',exact:true}).click();
   await terminal.locator('[data-terminal-output]').filter({hasText:'complete · exit 0'}).waitFor();
-  if(!(await terminal.locator('[data-terminal-output]').innerText()).includes('manual shell fixture\n\n[complete'))throw Error('Shell stdout was omitted from the result');
+  const manual=transcript.locator('[data-source=manual]');
+  if(!(await manual.first().innerText()).includes('manual shell fixture\n\n[complete')||await manual.first().locator('.terminal-source').innerText()!=='You')throw Error('Shell stdout or command attribution was omitted');
   await command.fill('ls');await page.getByRole('button',{name:'Run command',exact:true}).click();
   await terminal.locator('[data-terminal-output]').filter({hasText:'No output returned.'}).waitFor();
   const checkSetup=page.getByRole('button',{name:'Check system setup',exact:true});
@@ -47,7 +52,7 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   await checkSetup.click();
   const vpnCard=page.locator('[data-recipe=vpn]');
   await vpnCard.getByText('No matching setup detected at the last check.',{exact:true}).waitFor();
-  const guided=terminal.locator('[data-guided-output]');
+  const guided=transcript;
   await guided.filter({hasText:'ip -j -details link show dev aicontrol0'}).waitFor();
   if(await vpn.isDisabled()||!await page.getByRole('button',{name:'Review Install Codex',exact:true}).isDisabled())throw Error('Setup check disabled the wrong items');
 
@@ -72,7 +77,7 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   await guided.filter({hasText:'Fixture package lists refreshed.'}).waitFor();
   const runningText=await guided.innerText();
   if(!runningText.includes('$ apt-get update')||!runningText.includes('[stderr]')||!runningText.includes('awaiting output')||runningText.includes('synthetic-protected-value')||!await page.evaluate(()=>window.liveTranscriptNavigationMarker))throw Error('Running transcript lost output or redaction, or reloaded the page');
-  if(await terminal.locator('[data-terminal-output]').isVisible())throw Error('Manual output still owns the visible terminal while the guided action runs');
+  if(!await manual.first().isVisible()||!await guided.locator('[data-source=guided]').filter({hasText:'Fixture package lists refreshed.'}).isVisible())throw Error('Manual and guided output are not in the same terminal');
   const csrf=await terminal.locator('input[name=csrf]').first().inputValue();
   const blocked=await page.request.post(url+'?view=systems&systems_api=1',{form:{action:'system_console_command',csrf,system_id:'1',terminal_id:terminalId,command:"printf 'manual shell fixture'"}});
   if(blocked.status()!==422||(await blocked.json()).error.includes('guided server operation')===false)throw Error('VPN did not block competing SSH on the server');
@@ -94,20 +99,25 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   await vpnCard.getByText('Enable and start the selected service or timer.',{exact:true}).waitFor();
   if(!(await terminal.locator('[data-terminal-output]').innerText()).includes('No output returned.'))throw Error('Saved empty-output result was lost on reload');
 
-  await page.getByLabel('Task for the Linux agent',{exact:true}).fill('Print a disposable shell test marker');
-  await page.getByRole('button',{name:'Start system task',exact:true}).click();
-  const agent=page.locator('[data-system-run]');
+  await page.getByLabel('Task for the Linux agent',{exact:true}).fill('Check why VPN traffic is not getting through.');
+  await page.getByRole('button',{name:'Send to agent',exact:true}).click();
+  const agent=terminal.locator('[data-system-run]');
   await agent.waitFor();if(await terminal.getAttribute('data-system-terminal')!==terminalId)throw Error('Starting an agent task hid the console');
   if(!await terminal.locator('[data-system-run]').count()||!await command.isDisabled())throw Error('Agent does not own the open console');
   await page.evaluate(()=>window.agentConsoleStayedOpen=true);
-  await agent.getByRole('button',{name:'Run automatic steps',exact:true}).click();
-  const agentOutput=agent.locator('[data-agent-output]'),agentNotes=agent.locator('[data-agent-updates]');
+  const agentOutput=transcript.locator('[data-source=agent]'),agentNotes=agent.locator('[data-agent-updates]');
   await agentOutput.filter({hasText:'[waiting for VPS output]'}).waitFor();
-  await agentNotes.getByText('I will check whether the marker file exists.',{exact:true}).waitFor();
-  await agentNotes.getByText('The marker file is absent. I will verify stdout directly.',{exact:true}).waitFor();
+  await agentNotes.getByText('I will check local WireGuard handshakes and transfer counters.',{exact:true}).waitFor();
+  await agentNotes.getByText('The WireGuard read failed. I will check whether the tunnel interface is up.',{exact:true}).waitFor();
   if(!await page.evaluate(()=>window.agentConsoleStayedOpen))throw Error('Agent reloaded the page between steps');
-  await agent.getByText('Verified the fixture shell output.',{exact:false}).first().waitFor();
-  if(!(await agentOutput.innerText()).includes('[complete · exit 1]')||!(await agentOutput.innerText()).includes('agent shell fixture'))throw Error('Agent console lost command outcomes');
+  await agent.getByText('The interface is up. Handshakes and end-to-end traffic remain unverified.',{exact:false}).first().waitFor();
+  if(!(await agentOutput.first().innerText()).includes('[complete · exit 1]')||!(await agentOutput.last().innerText()).includes('aicontrol0 UP'))throw Error('Agent console lost command outcomes');
+  await guided.locator('[data-source=guided]').filter({hasText:'Fixture WireGuard service enabled.'}).waitFor();
+  await command.fill("printf 'manual shell fixture'");
+  await page.getByRole('button',{name:'Run command',exact:true}).click();
+  await transcript.locator('[data-source=manual]').last().filter({hasText:'complete · exit 0'}).waitFor();
+  const sequence=await transcript.locator('.terminal-entry').evaluateAll(rows=>rows.map(row=>row.dataset.source));
+  if(sequence[0]!=='ssh'||sequence.indexOf('manual')>=sequence.indexOf('guided')||sequence.indexOf('guided')>=sequence.indexOf('agent')||sequence.at(-1)!=='manual')throw Error('Shared terminal entries did not stay in execution order');
   if(fs.readFileSync(providerCalls,'utf8')!=='choice\nstep\nstep\nstep\n'||(await page.content()).includes('fixture-saved-openai-key'))throw Error('Saved-key agent did not complete without exposing the key');
   await command.fill('é'.repeat(2001));
   await page.getByRole('button',{name:'Run command',exact:true}).click();
@@ -115,6 +125,6 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   if(!await command.isDisabled())throw Error('A failed SSH request let the console send another command without reopening');
   const audit=async()=>{await page.evaluate(require('axe-core').source);const issues=await page.evaluate(async()=>(await axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa','wcag22aa']}})).violations.map(v=>({id:v.id,targets:v.nodes.map(n=>n.target)})));if(issues.length)throw Error(JSON.stringify(issues));};await audit();fs.mkdirSync(path.join(root,'test-artifacts'),{recursive:true});await page.screenshot({path:path.join(root,'test-artifacts/ui-system-actions-desktop.png'),fullPage:true});
   await page.setViewportSize({width:390,height:844});await audit();if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1))throw Error('Operations overflow mobile');await page.getByRole('button',{name:'Lock Systems now',exact:true}).click();await page.getByRole('button',{name:'Unlock Systems',exact:true}).waitFor();await page.getByRole('heading',{name:'Connect a DigitalOcean VPS',exact:true}).waitFor();await page.getByRole('link',{name:'Unlock Systems to connect',exact:true}).waitFor();const locked=await page.content();if(locked.includes(username)||locked.includes('synthetic-protected-value'))throw Error('Lock retained plaintext');if(!locked.includes('Web service on this VPS.'))throw Error('Readable notes hidden while locked');await audit();await page.screenshot({path:path.join(root,'test-artifacts/ui-system-actions-locked-mobile.png'),fullPage:true});
-  if(errors.length)throw Error(errors.join('\n'));console.log('PASS: website SSH console, saved-key AI choice, reviewed VPN with preserved console and no handshake claim, saved-key shell agent, masked notes, protected reveal and desktop/mobile axe (synthetic transports)');
+  if(errors.length)throw Error(errors.join('\n'));console.log('PASS: shared SSH transcript and greeting, ordered manual/VPN/agent output, agent directions and follow-up, masked notes and desktop/mobile axe (synthetic transports)');
  }finally{if(browser)await browser.close();if(server.exitCode===null&&server.signalCode===null){process.kill(-server.pid);await new Promise(r=>server.once('exit',r));}fs.rmSync(tmp,{recursive:true,force:true});}
 })().catch(e=>{console.error(e.stack||e.message);process.exitCode=1;});

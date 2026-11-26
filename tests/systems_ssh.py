@@ -10,6 +10,7 @@ PHP=os.environ.get('PHP_BINARY','php')
 class Server(paramiko.ServerInterface):
     def __init__(self, harness): self.harness=harness; self.event=threading.Event(); self.command=None;self.risk='legacy'
     def get_allowed_auths(self, username): return 'publickey'
+    def get_banner(self): return 'OpenSSH protocol welcome fixture\n', 'en'
     def check_auth_publickey(self, username, key):
         db=sqlite3.connect(self.harness.home+'/systems.sqlite')
         rows=list(db.execute('SELECT public_key,username,risk_level FROM systems WHERE enabled=1'));db.close()
@@ -87,6 +88,7 @@ class SshIntegration(unittest.TestCase):
             time.sleep(.02)
         self.assertTrue(pending);self.driver('stop',run=stop_run);worker.join(5);self.assertFalse(worker.is_alive());self.assertEqual(results[0]['run']['status'],'stopped');self.assertEqual(results[0]['commands'][-1]['status'],'outcome_uncertain')
         terminal=self.driver('console_connect',id=sid)
+        self.assertIn('OpenSSH protocol welcome fixture', terminal['welcome'])
         command=self.driver('console_command',terminal=terminal['id'],command="cd '"+self.home+"' && printf 'café'")
         self.assertEqual(command['command']['stdout'],'café');self.assertEqual(command['cwd'],self.home)
         command=self.driver('console_command',terminal=terminal['id'],command='pwd');self.assertEqual(command['command']['stdout'].strip(),'[private]')

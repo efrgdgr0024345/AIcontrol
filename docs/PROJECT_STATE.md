@@ -184,6 +184,29 @@ The new five-round/Stop/failure test uses synthetic provider replies and actual
 local research actions; no billed call or live-host installation is claimed.
 Required planning-panel CI is verified on the published commit before readiness.
 
+## Shared SSH terminal transcript
+
+The server page uses one terminal transcript for manual commands, guided action
+commands and Linux agent commands. Each source has a label and color. After
+host-key verification and SSH key sign-in, the transcript shows the SSH banner
+if advertised, readable `/etc/motd` for maintenance accounts and server facts.
+The command prompt sits on the transcript. The agent direction input and its
+plans, observations and reply sit below it. **Send to agent** starts the
+existing bounded automatic steps. The Administrator VPN diagnostic reads local
+WireGuard handshake and transfer counters and interface and route state.
+
+Manual and agent commands use the existing noninteractive SSH transport. The
+terminal preserves the last confirmed manual directory. The enrolled keys
+disable PTY allocation. Reviewed guided actions use their SSH worker and share
+its command records in the same transcript. The UI displays only the confirmed
+sign-in method and server output. Private key and password values stay out of
+the transcript.
+
+The browser fixture checks attribution and ordering across a manual command,
+reviewed VPN setup, an agent task that follows up on a failed WireGuard probe,
+and another manual command. It uses synthetic OpenAI and SSH. The local OpenSSH
+transport check uses public-key authentication and a protocol banner.
+
 ## AI selection for guided server actions
 
 On a verified server, **Ask AI to prepare** uses the saved OpenAI key to

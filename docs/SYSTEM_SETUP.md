@@ -82,7 +82,11 @@ console ID is tied to its creating sign-in session, selected system and 30-minut
 expiry. IDs alone do not grant command access. Commands use the existing strict
 host-key SSH transport and encrypted per-system key; no provider call is made.
 
-The console supports escaped stdout/stderr, exit status, output truncation,
+The SSH transcript opens with the server's advertised SSH banner when present,
+readable `/etc/motd` for maintenance accounts, and observed server details.
+Authentication uses the saved key. Manual, guided and agent command records use
+the same transcript, with color and text labels for their source. The console
+supports escaped stdout/stderr, exit status, output truncation,
 Up/Down history, clear, and last-confirmed working-directory persistence. Each
 command runs in a fresh noninteractive shell. Full-screen editors, password
 prompts, persistent environment variables and a PTY session are not provided by

@@ -196,8 +196,9 @@ final class Panel
                         $operation=$playbooks->get($operationId,$id);
                         if($json){
                             header('Content-Type: application/json');
+                            $entries=SystemActionTranscript::entries($operation,new SystemNotebook($systems));
                             echo json_encode(['playbook'=>array_intersect_key($operation,array_flip(['id','system_id','status','blocking'])),
-                                'transcript'=>SystemActionTranscript::render($operation,new SystemNotebook($systems))],JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);
+                                'entries'=>$entries,'transcript'=>implode("\n\n",array_column($entries,'text'))],JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);
                             return;
                         }
                         $anchor=$operation['status']==='review'?'#server-operation':'#ssh-console';
@@ -456,7 +457,6 @@ final class Panel
                         if($requestedOperation!=='')try{
                             $operation=$books->get($requestedOperation,$selectedSystem);
                             $data['systems']['playbook']=$operation;
-                            $data['systems']['guided_transcript']=SystemActionTranscript::render($operation,$notebook);
                         }catch(Throwable $failure){$error='The selected server action is unavailable.';}
                     }
                 }
@@ -483,6 +483,8 @@ final class Panel
                         }
                         $data['systems']['terminal']=$terminal;
                         $data['systems']['ssh_blocked']=$systemStore->playbookBlocksSsh();
+                        $selected=$data['systems']['selected'];
+                        if($selected['enabled']&&$selected['verified_at'])$data['systems']['transcript']=SystemConsoleTranscript::history($systemStore,$data['systems']);
                     }
                 }catch(Throwable $failure){unset($data['systems']['terminal']);$error=Diagnostics::clean($failure->getMessage());}
                 if($method==='POST')foreach(['discovery_reply','setup_reply','connection_host','connection_port'] as $field)if(is_string($_POST[$field]??null))$data['systems']['setup_values'][$field]=self::input($field);

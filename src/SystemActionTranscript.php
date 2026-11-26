@@ -4,15 +4,15 @@ namespace AIcontrol;
 
 final class SystemActionTranscript
 {
-    public static function render(array $operation,SystemNotebook $notebook):string
+    public static function entries(array $operation,SystemNotebook $notebook):array
     {
         $data=$operation['data'];
         $result=$data['result']??[];
         $status=$operation['status'];
-        $lines=[SystemPlaybooks::RECIPES[$operation['recipe']]['title'].' · '.$status];
+        $title=SystemPlaybooks::RECIPES[$operation['recipe']]['title'];
+        $approved=$data['approved_at']??null;
+        $lines=[$title.' · '.($approved?'preflight':$status)];
         if(is_string($data['ai_reason']??null))$lines[]='AI selected this action: '.$data['ai_reason'];
-        $summary=$result['summary']??null;
-        if(is_string($summary)&&$summary!=='')$lines[]=$summary;
         if($status==='review')$lines[]='Ready for review. Applying the action requires approval.';
 
         $inventory=$data['inventory']??[];
@@ -38,7 +38,22 @@ final class SystemActionTranscript
                 $steps[]=['command'=>[SystemsAgent::INSPECT[$tool]]]+$entry['result'];
             }
         }
-        if(is_array($result['steps']??null))$steps=array_merge($steps,$result['steps']);
+        $prefix='action-'.$operation['id'].'-';
+        $entries=[SystemConsoleTranscript::entry($prefix.'review',(float)($data['prepared_at']??$operation['created_at']),'guided',
+            self::text($operation,$notebook,array_merge($lines,self::commands($steps,$status))))];
+        if($approved){
+            $execution=[$title.' · '.$status];
+            if(is_array($result['steps']??null))$execution=array_merge($execution,self::commands($result['steps'],$status));
+            $summary=$result['summary']??null;
+            if(is_string($summary)&&$summary!=='')$execution[]=$summary;
+            $entries[]=SystemConsoleTranscript::entry($prefix.'run',(float)$approved,'guided',self::text($operation,$notebook,$execution));
+        }
+        return $entries;
+    }
+
+    private static function commands(array $steps,string $status):array
+    {
+        $lines=[];
         foreach(array_slice($steps,-30) as $step){
             $argv=$step['command']??null;
             if(!is_array($argv)||!$argv||count($argv)>40||array_filter($argv,static fn($value)=>!is_string($value)))continue;
@@ -51,11 +66,11 @@ final class SystemActionTranscript
             $outcome=is_int($exit)?'exit '.$exit:($status==='running'?'awaiting output':'exit unconfirmed');
             $lines[]=$line."\n[".$outcome.(!empty($step['truncated'])?' · output truncated':'').']';
         }
-        // Redact before imposing the browser display limit, so a complete known
-        // credential cannot be split by the transcript renderer.
-        $text=$notebook->redact((int)$operation['system_id'],implode("\n\n",$lines));
-        $text=Diagnostics::clean($text);
-        $text=preg_replace('/\x1b\[[0-?]*[ -\/]*[@-~]|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/','',$text)??'';
-        return strlen($text)>24000?mb_strcut($text,0,24000,'UTF-8')."\n[Transcript truncated]":$text;
+        return $lines;
+    }
+
+    private static function text(array $operation,SystemNotebook $notebook,array $lines):string
+    {
+        return SystemConsoleTranscript::text($notebook->redact((int)$operation['system_id'],implode("\n\n",$lines)),24000);
     }
 }
