@@ -62,7 +62,7 @@ final class PanelView
 
     public static function render(array $data, string $view, string $csrf, string $error, bool $passwordMode, array $config, bool $authenticated): void
     {
-        $views = ['overview' => ['Overview', 'grid'], 'research' => ['Research projects', 'search'],'nasa'=>['Engineering','grid'], 'admin' => ['Admin', 'lock'], 'projects' => ['Projects & tasks', 'folder'], 'runs' => ['Agent runs', 'robot'], 'systems' => ['Systems', 'plug'], 'history' => ['Activity', 'clock']];
+        $views = ['overview' => ['Overview', 'grid'], 'projects' => ['Projects & tasks', 'folder'], 'research' => ['Research projects', 'search'], 'nasa' => ['Engineering', 'grid'], 'systems' => ['Systems', 'plug'], 'runs' => ['Agent runs', 'robot'], 'history' => ['Activity', 'clock'], 'admin' => ['Admin', 'lock']];
         $subtitle = [
             'nasa'=>'Follow a pathway, inspect results, and keep decisions traceable.',
             'admin' => 'Connections, diagnostics and application updates.',
@@ -77,21 +77,23 @@ final class PanelView
         echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' . Ui::e($label) . ' · AIcontrol</title>' . Ui::favicon() . '<style nonce="' . Ui::e($data['asset_nonce']) . '">' . Ui::css() . '</style></head><body><a class="skip-link" href="#main-content">Skip to content</a><div class="app-layout"><aside class="app-sidebar">' . Ui::brand('/loader.php') . '<div class="sidebar-label">WORKSPACE</div><nav class="app-navigation" aria-label="Main navigation">';
         if ($authenticated) {
             foreach ($views as $key => [$name, $icon]) {
+                if ($key === 'admin') echo '<div class="sidebar-admin">';
                 echo '<a href="/loader.php?view=' . $key . '"' . ($key === $view ? ' aria-current="page"' : '') . '>' . Ui::icon($icon) . '<span>' . $name . '</span></a>';
+                if ($key === 'admin') {
+                    if ($config['access_mode'] === 'pin') echo '<a class="sidebar-admin-action" href="/loader.php?pin=manage">' . Ui::icon('lock') . '<span>Lock panel</span></a>';
+                    echo '</div>';
+                }
             }
         }
         echo '</nav><div class="sidebar-foot">';
         if ($authenticated) {
             if ($passwordMode) {
                 echo '<form method="post" action="/loader.php">' . $csrf . '<input type="hidden" name="action" value="logout"><button class="btn btn-sm btn-outline-secondary mt-3">Sign out</button></form>';
-            } elseif ($config['access_mode'] === 'pin') {
-                echo '<a class="sidebar-lock" href="/loader.php?pin=manage">' . Ui::icon('lock') . '<span>Lock panel</span></a>';
-            } else {
+            } elseif ($config['access_mode'] !== 'pin') {
                 echo '<div class="sidebar-lock">' . Ui::icon('lock') . '<span>' . ($config['access_mode'] === 'testing' ? 'Testing workspace' : 'Hosting access') . '</span></div>';
             }
         }
         echo '</div></aside><div class="app-main"><header class="app-topbar"><div class="breadcrumbs">Workspace <span aria-hidden="true">/</span><strong>' . Ui::e($label) . '</strong></div><div class="topbar-right">' . self::pill('Testing release', 'purple');
-        if ($authenticated && $config['access_mode'] === 'pin') { echo '<a class="topbar-lock" href="/loader.php?pin=manage" aria-label="Lock panel" title="Lock panel">' . Ui::icon('lock') . '</a>'; }
         echo '<span class="workspace-avatar" aria-label="Workspace">AC</span></div></header><main class="app-content" id="main-content">';
         if ($error !== '') {
             echo '<div class="alert alert-danger" role="alert">' . Ui::e($error) . '</div>';

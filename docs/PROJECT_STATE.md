@@ -184,6 +184,13 @@ The new five-round/Stop/failure test uses synthetic provider replies and actual
 local research actions; no billed call or live-host installation is claimed.
 Required planning-panel CI is verified on the published commit before readiness.
 
+## Sidebar navigation
+
+Navigation follows workspace planning and execution, then Activity and Admin.
+The PIN lock link is grouped directly under Admin on desktop and alongside
+Admin in the small-screen navigation strip. The UI smoke test checks the
+order and PIN lock placement.
+
 ## Linux server cards
 
 The Linux servers list displays a card for each enrolled server. Unlocked

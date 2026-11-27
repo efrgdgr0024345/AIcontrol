@@ -41,6 +41,14 @@ const {spawn,spawnSync}=require('child_process');
   await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(artifacts,'ui-installer-mobile.png'),fullPage:true});
   await page.setViewportSize({width:1440,height:1000});await page.goto(appUrl+'/loader.php');if(await page.locator('link[rel=stylesheet],script[src]').count())throw new Error('Workspace still depends on separate assets');if(await page.locator('.app-sidebar').evaluate(element=>getComputedStyle(element).position)!=='fixed')throw new Error('Embedded workspace CSS missing');await page.setViewportSize({width:1440,height:1000});
   await page.screenshot({path:path.join(artifacts,'ui-empty-desktop.png'),fullPage:true});
+  const navigation=page.getByRole('navigation',{name:'Main navigation'});
+  const expectedOrder=['Overview','Projects & tasks','Research projects','Engineering','Systems','Agent runs','Activity','Admin','Lock panel'];
+  if(JSON.stringify(await navigation.getByRole('link').allTextContents())!==JSON.stringify(expectedOrder))throw Error('Workspace navigation is out of order');
+  const lock=navigation.locator('.sidebar-admin').getByRole('link',{name:'Lock panel',exact:true});
+  if(await lock.getAttribute('href')!=='/loader.php?pin=manage')throw Error('Admin group lost its PIN lock action');
+  await page.setViewportSize({width:390,height:844});
+  if(!await lock.isVisible()||await page.getByRole('link',{name:'Lock panel',exact:true}).count()!==1)throw Error('Mobile navigation lost or duplicated the Admin lock');
+  await page.setViewportSize({width:1440,height:1000});
   await page.keyboard.press('Tab');if(await page.evaluate(()=>document.activeElement.textContent.trim())!=='Skip to content')throw new Error('Skip link is not keyboard accessible');await page.keyboard.press('Enter');
   await page.getByRole('link',{name:'Projects & tasks',exact:true}).click();
   for(const [name,brief] of [['AIcontrol launch','Build a useful control panel, then verify the installation and first task workflow.'],['Client website','Refresh the website structure and make the first-time experience clearer.'],['Reporting toolkit','Define a simple reporting workflow with observable, reviewable results.']]){

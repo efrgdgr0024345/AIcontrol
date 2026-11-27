@@ -2,7 +2,7 @@
     "version": 2,
     "files": {
         "app.php": "031b76861c650413202b1c66a125b488e2986709cd99cce26f2f32762b850284",
-        "assets/panel.css": "463736cc0434bfe801a7811b109e11fb8d2abf69954278ca88cffd673adc8c55",
+        "assets/panel.css": "45bbfbd37e6ce077de4edc9fd1c145cc5896369413000dd57ddd866e6f0a0f98",
         "assets/panel.js": "86d65e3060981658f895defded04fe68445fe38ea1513a2dcc2c7202da3852eb",
         "src/AccessPolicy.php": "44469fc613bb1704d857e06e6d70d484d44083b33753e99feaec93baed561cd8",
         "src/AdminData.php": "6a52c9cc23833ebaada3384d50a1d7a5ef069a3b37aea9424dc79b9e90c413ad",
@@ -37,7 +37,7 @@
         "src/NasaView.php": "eb6c7dc19974330e68c71a80c8dcf154511cc36d4e5745895cee9819dd43b62b",
         "src/Panel.php": "73fa2fd073a6157d60be5d5ce5dcd37097304cfa71c479cf431789612905acbe",
         "src/PanelStore.php": "c434fb7928fcb73356b9c31c00cb358cad1f283811b0469bcad5388bbb2423f0",
-        "src/PanelView.php": "f446329374aaf6e76607c18e0aaa9266b4be190d2f2d6413fe0f400fb5e9315e",
+        "src/PanelView.php": "f69282f9c613e94529329d096a3a4ec4e9fbf651fad2a04be122fe2d65c2cc0f",
         "src/PrivateStorage.php": "2b8dc6200eb49b248dfe2908de331a583d9ef0b3c324c8cfd2fc8159734c7836",
         "src/ProjectInspector.php": "701ac6ff26f55b0309e21ce0617526e7f497503e634967fadabc30471715db94",
         "src/ProviderGate.php": "25e0df576173e46d97de4bf8dd655dd2d76075c7abe8283233bb36c6e1fa9703",
@@ -67,13 +67,13 @@
         "src/SystemsAgent.php": "17bd74373fe9cbcce806205a57e169ad9e81f6d247fbcc0d18d4df95b618bdc8",
         "src/SystemsView.php": "bb34b36f0a7ce8f943842d01400dc7f788dbfc6a56403579e7c062ab981dfd4f",
         "src/TermExplainer.php": "480d7ed8c20f43c76303812362e5f3602d70241b785bcb5cf437d5dc2cd3b526",
-        "src/Ui.php": "49bc6b660aba59bc64162a4fea634053f310dd3b757cc6af48203201369f63d0",
+        "src/Ui.php": "d52d550ca51ae7bb4bcb15339d57694d4a44e6acf10891986d96c6a6400e7ab2",
         "src/UsageMeter.php": "71b6b2af9377430023dd20b42ac48cce17c98ae0cae987c6ca557a90c8b7e48a",
         "src/Vault.php": "5a6972747fd364624b837e32780a2117e0b72ef42a641823eb75e7164de6e438",
         "src/WorkspaceView.php": "331496363f1883e6f2f5d21d47d771f67b9c36d2c63cf37aab7293d20c9249d0"
     },
     "bootstrap": {
         "path": "loader.php",
-        "sha256": "0cf182ed64cf3b885222e6faa70983246b5e5b6d97b9102d105a40bf4c808602"
+        "sha256": "fe38522578757158b674e0f981cd12bb599174bbaa048badf78f226a9a05ff57"
     }
 }

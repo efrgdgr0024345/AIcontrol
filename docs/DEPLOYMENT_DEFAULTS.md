@@ -33,6 +33,8 @@ private records persist on the hosting server.
 | Research spend cap | $5 USD tracked per project by default; adjustable in Project menu; saved API-usage estimates + conservative reservations, not an invoice cap |
 | Rate provenance | Official standard USD prices checked 2026-11-10, saved per request; missing/historical unpriced usage stays unknown |
 
+
+Admin appears last in workspace navigation, with the PIN lock link in its group.
 ## Automatic storage policy v1
 
 `AIcontrolInstaller::autoStorage` derives candidates using PHP's actual Unix
