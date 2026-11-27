@@ -4079,7 +4079,7 @@ AICONTROL_UI_CSS;
 
     public static function favicon(): string
     {
-        $svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#b7eedb"/><path d="m16 6 3 7 7 3-7 3-3 7-3-7-7-3 7-3z" fill="none" stroke="#182b27" stroke-width="1.6"/></svg>';
+        $svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="#08132f"/><path d="M16 6v11L6 24m10-7 10 7" fill="none" stroke="#22f1a0" stroke-width="2" stroke-linecap="round"/><g fill="#22f1a0"><circle cx="16" cy="17" r="4.8"/><circle cx="16" cy="6" r="3"/><circle cx="6" cy="24" r="3"/><circle cx="26" cy="24" r="3"/></g></svg>';
         return '<link rel="icon" href="data:image/svg+xml;base64,' . base64_encode($svg) . '">';
     }
 

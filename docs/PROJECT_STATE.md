@@ -191,6 +191,9 @@ The PIN lock link is grouped directly under Admin on desktop and alongside
 Admin in the small-screen navigation strip. The UI smoke test checks the
 order and PIN lock placement.
 
+The favicon uses the selected mint AI network mark on a navy square. The
+workspace and standalone loader embed it through the shared UI template.
+
 ## Linux server cards
 
 The Linux servers list displays a card for each enrolled server. Unlocked
