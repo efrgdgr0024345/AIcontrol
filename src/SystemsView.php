@@ -19,6 +19,64 @@ final class SystemsView
         SystemOperationsView::actions($system,$data,$csrf,true);
         echo '</div></section>';
     }
+    public static function serverCards(array $data,bool $unlocked):void
+    {
+        if(!$data['systems']){
+            echo '<p class="mt-3">No Linux servers saved yet.</p>';
+            return;
+        }
+        echo '<ul class="systems-list system-server-grid mt-3">';
+        foreach($data['systems'] as $s){
+            $id=(int)$s['id'];
+            $current=$id===(int)($data['selected']['id']??0);
+            echo '<li class="card system-server-card" data-server-card="'.$id.'"><div class="card-body">';
+            echo '<h3><a href="/loader.php?view=systems&amp;system='.$id.'"'.($current?' aria-current="page"':'').'>'.Ui::e($s['name']).'</a></h3>';
+            if($unlocked)self::serverDetails($s,$data['server_checks'][$id]??null);
+            else echo '<p>Systems locked</p>';
+            echo '</div></li>';
+        }
+        echo '</ul>';
+    }
+    private static function serverDetails(array $server,?array $check):void
+    {
+        $status=match(true){
+            !$server['enabled']=>'Disconnected',
+            (bool)$server['verified_at']=>'Connection verified',
+            !empty($server['error'])=>'SSH verification failed',
+            ($server['setup_state']??null)==='discovered'=>'Waiting for command 2 receipt',
+            in_array($server['setup_state']??null,['configured','connected'],true)=>'Receipt saved · SSH verification pending',
+            default=>'SSH setup pending',
+        };
+        $host=str_contains($server['host'],':')?'['.$server['host'].']':$server['host'];
+        echo '<p class="system-server-endpoint">'.Ui::e($server['username'].'@'.$host.':'.$server['port']).'</p><p>'.Ui::e($status).'</p>';
+
+        $inventory=$check['data']['inventory']??[];
+        $observed=$inventory['setup_checks']??[];
+        $details=[];
+        foreach(['os'=>'OS','cpu_count'=>'Logical CPUs','failed_service_count'=>'Failed services'] as $key=>$label){
+            $value=$inventory[$key]??null;
+            if(is_int($value)||(is_string($value)&&$value!==''))$details[$label]=SystemConsoleTranscript::text((string)$value,160);
+        }
+        foreach(['memory_kib'=>['RAM',1048576],'disk_free_bytes'=>['Free disk',1073741824]] as $key=>[$label,$divisor]){
+            $value=$inventory[$key]??null;
+            if(is_int($value)&&$value>=0)$details[$label]=number_format($value/$divisor,1).' GiB';
+        }
+        $details['Codex']=match($observed['codex']??null){
+            'installed'=>'Installed','configured'=>'Install path occupied','absent'=>'Not detected',default=>'Unverified',
+        };
+        $details['WireGuard VPN']=match($observed['vpn']??null){
+            'active'=>'Interface active','configured'=>'Configuration detected','absent'=>'Not detected',default=>'Unverified',
+        };
+        $details['Firewall']=($observed['firewall']??null)==='configured'?'Rules detected':'Unverified';
+        $details['Security updates']=match($observed['security_updates']??null){
+            'active'=>'Timers active','configured'=>'Policy detected','absent'=>'Not detected',default=>'Unverified',
+        };
+        echo '<dl class="system-server-facts">';
+        foreach($details as $label=>$value)echo '<dt>'.Ui::e($label).'</dt><dd>'.Ui::e($value).'</dd>';
+        echo '</dl>';
+        if($inventory)echo '<p class="system-server-check">Checked '.Ui::e(Ui::time(gmdate('c',(int)$check['updated_at']))).'</p>';
+        elseif($server['enabled']&&$server['verified_at'])echo '<p class="system-server-check">Run Check system setup to collect details.</p>';
+    }
     public static function render(array $data,string $csrf,array $projects): void
     {
         if(($data['allowed']??true)===false){echo '<p class="alert alert-warning">Systems control requires PIN, password or host-authenticated access.</p>';return;}
@@ -35,20 +93,8 @@ final class SystemsView
         echo '<details><summary>Manual server registration (advanced)</summary><details id="add-system"><summary>Add a Linux server</summary><form method="post" action="/loader.php?view=systems" class="systems-form">'.$csrf.'<input type="hidden" name="action" value="system_add">';
         foreach([['name','System name','text','120','Web server'],['host','IP address or hostname','text','253','192.0.2.10'],['port','SSH port','number','5','22'],['username','Linux account','text','32','aicontrol']] as [$name,$label,$type,$max,$value])echo '<label class="form-label" for="system-'.$name.'">'.$label.'</label><input class="form-control" id="system-'.$name.'" name="'.$name.'" type="'.$type.'" maxlength="'.$max.'" value="'.($name==='port'||$name==='username'?$value:'').'" placeholder="'.$value.'" required>';
         echo '<label class="form-label" for="system-access">Agent access</label><select class="form-select" id="system-access" name="access"><option value="inspect">Inspection — fixed diagnostic commands</option><option value="maintain">Maintenance — shell commands within the Linux account’s permissions</option></select><p>Manual setup grants no sudo privileges. Maintenance can change files and services only where this account already has permission.</p><button class="btn btn-primary">Add server and generate setup script</button></form></details></details>';
-        if(!$data['systems'])echo '<p class="mt-3">No Linux servers saved yet.</p>';
-        echo '<ul class="systems-list mt-3">';
-        foreach($data['systems'] as $s){
-            $status=match(true){
-                !$s['enabled']=>'Disconnected',
-                (bool)$s['verified_at']=>'Connection verified',
-                !empty($s['error'])=>'SSH verification failed',
-                ($s['setup_state']??null)==='discovered'=>'Waiting for command 2 receipt',
-                in_array($s['setup_state']??null,['configured','connected'],true)=>'Receipt saved · SSH verification pending',
-                default=>'SSH setup pending',
-            };
-            echo '<li><a href="/loader.php?view=systems&amp;system='.(int)$s['id'].'">'.Ui::e($s['name']).'</a> · '.Ui::e($s['username'].'@'.$s['host']).' · '.Ui::e($status).'</li>';
-        }
-        echo '</ul></div></section>';
+        self::serverCards($data,true);
+        echo '</div></section>';
         $s=$data['selected'];if(!$s)return;$id=(int)$s['id'];
         echo '<section class="card mb-3 systems-section"><div class="card-body"><h2>'.Ui::e($connected?'Connection details':$s['name']).'</h2><p>'.Ui::e($s['username'].'@'.$s['host'].':'.$s['port'].' · '.$s['access']).'</p>';
         if(!$s['enabled']){if(!$s['key_deleted_at']){echo '<p>Credential deletion is unconfirmed. Retry disconnect after checking the private vault.</p>';self::form($csrf,'system_revoke',$id,'Retry disconnect and delete local SSH key');}echo '<p>Disconnected. Local SSH execution is disabled. '.($s['key_deleted_at']?'The local private key was deleted.':'').' Remove the authorized_keys line ending <code>aicontrol-system-'.$id.'</code> on the server to revoke its public key there.</p><details><summary>Delete saved system and task logs</summary><form method="post" action="/loader.php?view=systems" class="systems-form">'.$csrf.'<input type="hidden" name="action" value="system_delete"><input type="hidden" name="system_id" value="'.$id.'"><label class="form-label" for="system-delete-confirm">Type DELETE SYSTEM '.$id.'</label><input id="system-delete-confirm" class="form-control" name="confirmation" required autocomplete="off"><button class="btn btn-outline-danger">Delete saved system and task logs</button></form></details>';}

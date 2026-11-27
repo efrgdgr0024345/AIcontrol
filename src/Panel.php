@@ -437,6 +437,15 @@ final class Panel
             if(($data['systems']['allowed']??true)!==false){
                 $systemStore=new Systems($directory);
                 $data['systems']['guard']=(new SystemGuard($systemStore))->state();
+                if($data['systems']['guard']['unlocked']){
+                    $books=new SystemPlaybooks($systemStore);
+                    foreach($data['systems']['systems'] as $server){
+                        if(!$server['enabled']||!$server['verified_at'])continue;
+                        $serverId=(int)$server['id'];
+                        $check=$books->latestOutcomes($server,$books->history($serverId,'inspect'))['inspect']??null;
+                        if($check)$data['systems']['server_checks'][$serverId]=$check;
+                    }
+                }
                 $selectedSystem=(int)($data['systems']['selected']['id']??0);
                 if($selectedSystem){
                     $notebook=new SystemNotebook($systemStore);
@@ -446,7 +455,6 @@ final class Panel
                         if($run&&!in_array($run['task'],['Manual SSH command console','AI-guided action selection'],true)){
                             $data['systems']['agent_activity']=(new SystemsAgent($systemStore))->activity($run);
                         }
-                        $books=new SystemPlaybooks($systemStore);
                         $history=$books->history($selectedSystem);
                         $data['systems']['playbooks']=$history;
                         $data['systems']['latest_operations']=$books->latestOutcomes($data['systems']['selected'],$history);

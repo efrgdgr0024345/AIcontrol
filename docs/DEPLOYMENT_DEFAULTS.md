@@ -116,6 +116,8 @@ host-pinned SSH authentication. Additive system_enrollments/system_terminals
 persist in systems.sqlite. Web console sessions are bound to the creating login,
 expire after 30 minutes, and allow at most 60 bounded commands/hour/system.
 The console is noninteractive; no terminal daemon or external relay is installed.
+Linux server cards show saved setup observations and their check time after
+Systems unlock. Rendering the list makes no SSH requests.
 The verified server page starts with the SSH console and its action buttons.
 The console displays the saved-key sign-in result, the advertised SSH banner
 when present, and the selected server's observed welcome and system details.

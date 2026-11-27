@@ -16,7 +16,9 @@ final class SystemOperationsView
   echo '</div></section>';
  }
  public static function locked(array $data,string $csrf):void{
-  echo '<section class="card mb-3"><div class="card-body"><h2>Linux servers</h2><p>Unlock Systems to connect servers, run commands or manage their access.</p><ul class="systems-list">';foreach($data['systems'] as $s)echo '<li><a href="/loader.php?view=systems&amp;system='.(int)$s['id'].'">'.Ui::e($s['name']).'</a> · connection details ********</li>';echo '</ul></div></section>';
+  echo '<section class="card mb-3 systems-section"><div class="card-body"><h2>Linux servers</h2><p>Unlock Systems to view server details and manage access.</p>';
+  SystemsView::serverCards($data,false);
+  echo '</div></section>';
   if($data['selected']){self::actions($data['selected'],$data,$csrf,false);self::notes($data['selected'],$data,$csrf,false);}
  }
  public static function notes(array $s,array $data,string $csrf,bool $unlocked):void{

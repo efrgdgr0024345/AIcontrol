@@ -17,7 +17,8 @@ namespace AIcontrol {
                 $config=json_decode(base64_decode($match[1],true),true,32,JSON_THROW_ON_ERROR);
                 $running=['token'=>$config['token'],'recipe'=>$config['recipe'],'status'=>'running'];
                 $finished=is_file($directory.'/fixture-vpn-finished');
-                $inventory=['format'=>'AIcontrol VPS inventory v1','root'=>true,'distribution'=>'ubuntu','apt_available'=>true,'systemd'=>true,'ssh_port'=>2222,'ports'=>[]];
+                $inventory=['format'=>'AIcontrol VPS inventory v1','root'=>true,'distribution'=>'ubuntu','apt_available'=>true,'systemd'=>true,'ssh_port'=>2222,'ports'=>[],
+                    'os'=>'Ubuntu fixture','cpu_count'=>4,'memory_kib'=>4194304,'disk_free_bytes'=>21474836480,'failed_service_count'=>0];
                 if($config['recipe']==='inspect')$inventory+=['setup_checks'=>['vpn'=>$finished?'active':'absent','codex'=>'installed','security_updates'=>'unknown'],
                     'setup_steps'=>[['command'=>['ip','-j','-details','link','show','dev','aicontrol0'],'exit_code'=>$finished?0:1]]];
                 $result=match($config['mode']){

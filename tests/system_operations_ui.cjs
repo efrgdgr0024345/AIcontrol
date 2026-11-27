@@ -56,6 +56,11 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   await checkSetup.click();
   const vpnCard=page.locator('[data-recipe=vpn]');
   await vpnCard.getByText('No matching setup detected at the last check.',{exact:true}).waitFor();
+  const serverCard=page.locator('[data-server-card="1"]');
+  await serverCard.getByText('Ubuntu fixture',{exact:true}).waitFor();
+  for(const value of ['4.0 GiB','20.0 GiB','Installed','Not detected']){
+   if(!await serverCard.getByText(value,{exact:true}).count())throw Error('Server card is missing '+value);
+  }
   const guided=transcript;
   await guided.filter({hasText:'ip -j -details link show dev aicontrol0'}).waitFor();
   if(await vpn.isDisabled()||!await page.getByRole('button',{name:'Review Install Codex',exact:true}).isDisabled())throw Error('Setup check disabled the wrong items');
@@ -97,6 +102,7 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   if(fs.readFileSync(providerCalls,'utf8')!=='choice\n')throw Error('The reviewed VPN used a model call during execution');
   await checkSetup.click();
   await vpnCard.getByText('WireGuard interface active.',{exact:false}).waitFor();
+  await serverCard.getByText('Interface active',{exact:true}).waitFor();
   if(!await vpn.isDisabled()||await page.getByRole('button',{name:'Review Update system',exact:true}).isDisabled()||await checkSetup.isDisabled())throw Error('Installed VPN or repeatable action availability is incorrect');
   await vpnCard.getByText('Learn more',{exact:true}).click();
   await vpnCard.getByText('systemctl enable --now wg-quick@aicontrol0',{exact:true}).waitFor();

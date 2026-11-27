@@ -184,6 +184,15 @@ The new five-round/Stop/failure test uses synthetic provider replies and actual
 local research actions; no billed call or live-host installation is claimed.
 Required planning-panel CI is verified on the published commit before readiness.
 
+## Linux server cards
+
+The Linux servers list displays a card for each enrolled server. Unlocked
+cards show the SSH endpoint and connection state, with CPU, RAM, free disk,
+failed services and component status from the latest saved setup check when
+available. Codex installation and a WireGuard interface are reported as
+observations. The browser fixture checks summary formatting and WireGuard
+status before and after a synthetic setup.
+
 ## Shell prompt and empty directory listings
 
 The SSH view uses a single monospace viewport for scrollback and the command

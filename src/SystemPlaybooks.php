@@ -112,7 +112,9 @@ final class SystemPlaybooks
   }finally{flock($lock,LOCK_UN);fclose($lock);}
  }
  public function release(string $id,int $system,string $confirmation):void{$lock=$this->lock();try{$r=$this->get($id,$system);if($r['status']!=='uncertain'||trim($confirmation)!=='INSPECTED '.$system)throw new RuntimeException('Inspect the server through recovery access, then type INSPECTED '.$system.'.');$p=$r['data'];$p['owner_closed_uncertain_at']=time();$this->store($id,$system,'uncertain',$p,false);(new SystemNotebook($this->systems))->observe($system,self::RECIPES[$r['recipe']]['title'],'uncertain; owner released lock',['operation_id'=>$id]);}finally{flock($lock,LOCK_UN);fclose($lock);}}
- public function history(int $system):array{return $this->systems->query('SELECT id,recipe,status,blocking,created_at,updated_at FROM system_playbooks WHERE system_id=? ORDER BY created_at DESC,rowid DESC LIMIT 30',[$system]);}
+ public function history(int $system,?string $recipe=null):array{
+  return $this->systems->query('SELECT id,recipe,status,blocking,created_at,updated_at FROM system_playbooks WHERE system_id=?'.($recipe===null?'':' AND recipe=?').' ORDER BY created_at DESC,rowid DESC LIMIT 30',$recipe===null?[$system]:[$system,$recipe]);
+ }
  public function latestOutcomes(array $system,array $history):array
  {
   $outcomes=[];

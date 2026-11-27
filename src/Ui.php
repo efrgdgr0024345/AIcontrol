@@ -3726,6 +3726,14 @@ body.research-map-open { overflow:hidden; }
 .system-note-events small { display:block; color:#506377; }
 .system-inventory { display:grid; grid-template-columns:minmax(110px,1fr) minmax(0,2fr); gap:6px 14px; }
 .system-inventory dd { overflow-wrap:anywhere; margin:0; }
+.system-server-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%, 17rem),1fr)); gap:12px; padding:0; list-style:none; }
+.system-server-card { min-width:0; }
+.system-server-card h3 { margin:0 0 .45rem; overflow-wrap:anywhere; }
+.system-server-card p { margin:0 0 .45rem; }
+.system-server-endpoint { font-family:ui-monospace,monospace; font-size:.85rem; overflow-wrap:anywhere; }
+.system-server-facts { display:grid; grid-template-columns:1fr 1fr; gap:.25rem .75rem; margin:.75rem 0; font-size:.875rem; }
+.system-server-facts dd { margin:0; overflow-wrap:anywhere; }
+.system-server-card .system-server-check { margin:0; font-size:.8rem; }
 [data-protected-output] { white-space:pre-wrap; max-height:480px; overflow:auto; overflow-wrap:anywhere; margin-top:14px; }
 @media(prefers-color-scheme:dark) {
  .system-action-card { background:#172b3b; border-color:#567083; color:#e5f1fa; }
