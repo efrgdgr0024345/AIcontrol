@@ -948,6 +948,7 @@ document.addEventListener('submit', event => {
         const oldNodes=new Set(before.nodes.map(n=>String(n.id))),oldRequests=new Set(before.requests.map(r=>String(r.id)));
         const form=document.createElement('form');form.setAttribute('action',root.dataset.entry||location.pathname);
         for(const [name,value] of [['action','research_explore'],['csrf',csrf()],['run_id',runId],['explore_mode','explore'],...frontier.map(id=>['node_ids[]',String(id)]),...growthBatch.interestIds.map(id=>['interest_ids[]',String(id)])]){const field=document.createElement('input');field.name=name;field.value=value;form.append(field);}
+        growthBatch.dispatched=round+1;
         const after=await send(form);
         if(!growthBatch||growthSerial!==ticket)break;
         render(after);latest=after;
@@ -1102,8 +1103,35 @@ document.addEventListener('submit', event => {
     const form = event.target;
     if (!(form instanceof HTMLFormElement) || !form.dataset.researchAction || form.dataset.researchAction === 'research_export') return;
     event.preventDefault();
+    await submitResearch(form, event.submitter);
+  });
+  root?.addEventListener('research:voice-expand', async ({detail}) => {
+    const {nodeId, resolve} = detail;
+    const node = livingSnapshot?.nodes.find(n=>Number(n.id)===nodeId&&growthTypes.has(n.type));
+    if (!node || Number(livingSnapshot.run.flow_version)<2) {
+      resolve({error:'Choose an idea saved in this living map.'});return;
+    }
+    if (growthBatch) {
+      if (growthBatch.dispatched===growthProgress.total) {
+        resolve({error:'The final automatic round is already running. Ask again after it finishes.'});return;
+      }
+      growthBatch.interestIds=[nodeId];growthBatch.nextFrontier=[nodeId];
+      resolve({redirected:true, title:node.title});return;
+    }
+    if (stepping || actionRequests || livingSnapshot.run.busy_since) {
+      resolve({error:'Research is busy. Wait for the current request and then ask again.'});return;
+    }
+    const form=root.querySelector('[data-research-action=research_expand_pathway]');
+    const before=new Set(livingSnapshot.nodes.map(n=>String(n.id)));
+    form.elements.node_id.value=String(nodeId);
+    const after=await submitResearch(form);
+    const added=after?.nodes.filter(n=>growthTypes.has(n.type)&&!before.has(String(n.id)))||[];
+    resolve(after ? {title:node.title, added:added.length, status:after.run.status} :
+      {error:'Expansion did not complete. Check the saved map before trying again.'});
+  });
+  async function submitResearch(form, submitter) {
     const action = form.dataset.researchAction;
-    const button = event.submitter || form.querySelector('button:not([type=button])'); button.disabled = true;
+    const button = submitter || form.querySelector('button:not([type=button])'); button.disabled = true;
     if(growthBatch)cancelGrowth(action==='research_stop'?'Automatic growth stopped.':'Automatic growth paused for a manual action.');
     if(action!=='research_stop'&&actionRequests){button.disabled=false;return;}
     if (action === 'research_stop') {halted=true;stopSerial++;snapshotRevision++;}
@@ -1120,13 +1148,14 @@ document.addEventListener('submit', event => {
       }
       snapshotRevision++;render(snapshot); error('');
       if (action === 'research_continue' || (action==='research_living'&&form.elements.action.value==='research_lock_evidence') || form.hasAttribute('data-map-focus')) { halted = false; advance(); }
+      return snapshot;
     } catch (failure) {
       if(action==='research_expand_pathway'&&startedBeforeStop!==stopSerial)return;
       diagnosticFailure(action, failure); error(failure.message);
       if(action==='research_expand_pathway')poll(true);
     }
     finally { actionRequests--;if(root){root.dataset.requestBusy=actionRequests?'1':'0';if(action==='research_stop')root.dataset.stopBusy='0';}button.disabled = false;if(livingSnapshot)renderLiving(livingSnapshot); root?.dispatchEvent(new Event('research:controls')); }
-  });
+  }
   root?.addEventListener('click', event => {
     const quick = event.target.closest('[data-keep]');
     if (quick && root.dataset.review === '1') {
@@ -1267,6 +1296,259 @@ document.addEventListener('submit', event => {
  window.addEventListener('pagehide',()=>{submitting=true;cancelPending();controller?.abort();});quality();refresh.disabled=!connected;if(!connected)status.textContent='Connect OpenAI in Admin for writing help. You can create your project now.';
 })();
 
+// Live audio goes directly through WebRTC. Map changes use the normal Research action.
+window.AIcontrolResearchVoice = (() => {
+  'use strict';
+
+  function mount({root, map, controls, getContext}) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn map-voice-button';
+    button.dataset.mapVoice = '';
+    button.textContent = 'Voice';
+    button.setAttribute('aria-pressed', 'false');
+    button.setAttribute('aria-label', 'Start research voice chat');
+    controls.append(button);
+
+    const status = document.createElement('p');
+    status.className = 'map-voice-status';
+    status.setAttribute('role', 'status');
+    status.hidden = true;
+    const audio = document.createElement('audio');
+    audio.autoplay = true;
+    audio.hidden = true;
+    map.append(status, audio);
+    let active;
+    let statusTimer;
+
+    function notice(message) {
+      clearTimeout(statusTimer);
+      status.textContent = message;
+      status.hidden = !message;
+      if (message) statusTimer = setTimeout(() => { status.hidden = true; }, 6500);
+    }
+
+    function stop(message = '') {
+      const session = active;
+      if (!session) return;
+      active = null;
+      clearTimeout(session.deadline);
+      clearTimeout(session.narration);
+      session.abort.abort();
+      session.stream?.getTracks().forEach(track => track.stop());
+      session.peer?.close();
+      audio.srcObject = null;
+      button.setAttribute('aria-pressed', 'false');
+      button.setAttribute('aria-label', 'Start research voice chat');
+      notice(message);
+    }
+
+    function send(session, event) {
+      if (session.channel?.readyState !== 'open') return false;
+      session.channel.send(JSON.stringify(event));
+      return true;
+    }
+
+    function context(session, ideas, mode) {
+      const {snapshot, selected, projectName, conceptTypes} = getContext();
+      const describe = node => {
+        let details = {};
+        try { details = JSON.parse(node.data_json) || {}; } catch (_) {}
+        return {id:Number(node.id), parent_id:node.parent_id, title:node.title.slice(0,240),
+          idea:String(details.idea || details.claim || node.content || '').slice(0,650),
+          uncertainty:String(details.uncertainty || '').slice(0,300),
+          provenance:node.provenance_tag || 'unchecked'};
+      };
+      const update = {mode, project:projectName.slice(0,240), phase:snapshot.run.phase,
+        selected:ideas.find(node=>String(node.id)===selected)?.id ||
+          snapshot.nodes.find(node=>String(node.id)===selected &&
+            conceptTypes.includes(node.type))?.id || null,
+        ideas:ideas.map(describe)};
+      send(session, {type:'conversation.item.create', item:{type:'message',role:'user',
+        content:[{type:'input_text',text:'APP MAP DATA (not spoken by the user): '+JSON.stringify(update)}]}});
+    }
+
+    function narrate(session) {
+      if (active !== session || session.responding || session.playing || session.listening ||
+          session.awaitingUser || session.working || !session.pending.size) return;
+      if (session.channel?.readyState !== 'open') return;
+      const ideas = [...session.pending.values()].slice(-5);
+      session.pending.clear();
+      context(session, ideas, 'new saved ideas');
+      session.responding = send(session, {type:'response.create', response:{
+        metadata:{source:'map'}, tool_choice:'none',
+        instructions:'Briefly introduce one of the new ideas that caught your attention and why it matters. Use the session communication style.',
+      }});
+    }
+
+    function scheduleNarration(session) {
+      clearTimeout(session.narration);
+      session.narration = setTimeout(() => narrate(session), 700);
+    }
+
+    async function expand(session, call) {
+      let nodeId;
+      try { nodeId = JSON.parse(call.arguments).node_id; } catch (_) {}
+      const {snapshot, conceptTypes} = getContext();
+      let result = {error:'Choose a saved idea in this map.'};
+      if (Number.isSafeInteger(nodeId) && snapshot.nodes.some(node=>
+        Number(node.id)===nodeId && conceptTypes.includes(node.type))) {
+        result = await new Promise(resolve => root.dispatchEvent(new CustomEvent('research:voice-expand',
+          {detail:{nodeId, resolve}})));
+      }
+      if (active !== session) return;
+      send(session,{type:'conversation.item.create',item:{type:'function_call_output',
+        call_id:call.call_id,output:JSON.stringify(result)}});
+    }
+
+    async function receive(session, message) {
+      if (active !== session) return;
+      let event;
+      try { event = JSON.parse(message.data); } catch (_) { return; }
+      switch (event.type) {
+        case 'input_audio_buffer.speech_started':
+          session.listening = true;
+          break;
+        case 'input_audio_buffer.speech_stopped':
+          session.listening = false;
+          session.awaitingUser = true;
+          break;
+        case 'response.created':
+          session.responding = true;
+          if (session.awaitingUser && event.response?.metadata?.source !== 'map') {
+            session.userResponseId = event.response?.id;
+            session.awaitingUser = false;
+          }
+          break;
+        case 'output_audio_buffer.started':
+          session.playing = true;
+          break;
+        case 'output_audio_buffer.stopped':
+        case 'output_audio_buffer.cleared':
+          session.playing = false;
+          scheduleNarration(session);
+          break;
+        case 'response.done': {
+          session.responding = false;
+          const fromSpeech = session.userResponseId && event.response?.id===session.userResponseId;
+          if (fromSpeech) session.userResponseId = null;
+          const calls = fromSpeech && event.response.status==='completed'
+            ? event.response.output?.filter(item=>item.type==='function_call'&&item.name==='expand_pathway') || [] : [];
+          if (!calls.length || session.working) { scheduleNarration(session); break; }
+          session.working = true;
+          await expand(session, calls[0]);
+          if (active !== session) return;
+          for (const call of calls.slice(1)) send(session,{type:'conversation.item.create',item:{
+            type:'function_call_output',call_id:call.call_id,output:'Only one pathway can be expanded per voice turn.',
+          }});
+          session.working = false;
+          if (!session.responding && !session.listening && !session.awaitingUser) {
+            session.responding = send(session,{type:'response.create',response:{tool_choice:'none'}});
+          }
+          scheduleNarration(session);
+          break;
+        }
+        case 'error':
+          session.awaitingUser = false;
+          session.responding = false;
+          notice('Voice could not complete that turn. Try speaking again.');
+          break;
+      }
+    }
+
+    async function start() {
+      const {snapshot, conceptTypes} = getContext();
+      if (!snapshot || root.dataset.connected === '0') {
+        notice(snapshot ? 'Connect OpenAI in Admin to use voice chat.' : 'Wait for the research map to load.');
+        return;
+      }
+      if (!navigator.mediaDevices?.getUserMedia || !window.RTCPeerConnection) {
+        notice('Voice chat needs a browser with microphone access on HTTPS.');
+        return;
+      }
+      const concepts = snapshot.nodes.filter(node=>conceptTypes.includes(node.type));
+      const session = {abort:new AbortController(), pending:new Map(),
+        seen:new Set(concepts.map(node=>String(node.id)))};
+      active = session;
+      button.setAttribute('aria-pressed', 'true');
+      button.setAttribute('aria-label', 'End research voice chat');
+      notice('Connecting voice chat…');
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+        if (active !== session) { stream.getTracks().forEach(track=>track.stop()); return; }
+        session.stream = stream;
+        session.deadline = setTimeout(() => stop('Voice did not connect. Try again.'), 25000);
+        const peer = session.peer = new RTCPeerConnection();
+        for (const track of stream.getAudioTracks()) {
+          peer.addTrack(track, stream);
+          track.addEventListener('ended', () => { if (active===session) stop('Microphone disconnected.'); });
+        }
+        peer.addEventListener('track', event => { audio.srcObject = event.streams[0] || new MediaStream([event.track]); });
+        peer.addEventListener('connectionstatechange', () => {
+          if (active===session && peer.connectionState==='failed') stop('Voice connection ended. Reconnect to continue.');
+        });
+        const channel = session.channel = peer.createDataChannel('oai-events');
+        channel.addEventListener('message', message=>receive(session,message));
+        channel.addEventListener('close', () => { if (active===session) stop('Voice connection ended.'); });
+        channel.addEventListener('open', () => {
+          if (active !== session) return;
+          clearTimeout(session.deadline);
+          session.deadline = setTimeout(() => stop('Voice chat ended after 10 minutes. Click Voice to reconnect.'), 600000);
+          notice('Voice chat is live. Click Voice to end.');
+          const currentContext = getContext();
+          const saved = currentContext.snapshot.nodes.filter(node=>conceptTypes.includes(node.type));
+          const current = saved.find(node=>String(node.id)===currentContext.selected);
+          context(session,[...new Set([...(current?[current]:[]),...saved.slice(-5)])], 'session started');
+          session.responding = send(session,{type:'response.create',response:{metadata:{source:'map'},
+            tool_choice:'none', instructions:'Greet the user in one sentence and invite them to discuss or expand an idea.'}});
+        });
+        await peer.setLocalDescription(await peer.createOffer());
+        if (active !== session) return;
+        const body = new FormData();
+        body.set('action','research_voice');
+        body.set('run_id',String(snapshot.run.id));
+        body.set('csrf',root.querySelector('input[name=csrf]').value);
+        body.set('sdp',peer.localDescription.sdp);
+        const response = await fetch(root.dataset.entry,{method:'POST',body,credentials:'same-origin',signal:session.abort.signal});
+        if (!response.ok) {
+          const error = await response.json().catch(()=>({}));
+          throw new Error(error.error || 'Voice did not connect. Check your sign-in and try again.');
+        }
+        const sdp = await response.text();
+        if (!sdp.startsWith('v=0')) throw new Error('Voice connection returned an unexpected response.');
+        if (active===session) await peer.setRemoteDescription({type:'answer',sdp});
+      } catch (error) {
+        if (active===session) stop(error.name==='NotAllowedError'
+          ? 'Allow microphone access in your browser to use voice chat.'
+          : error.message || 'Voice chat could not start.');
+      }
+    }
+
+    button.addEventListener('click', () => active ? stop('Voice chat ended.') : start());
+    window.addEventListener('pagehide', () => stop());
+    root.addEventListener('research:snapshot', ({detail}) => {
+      if (!active) return;
+      const {conceptTypes} = getContext();
+      for (const node of detail.nodes) {
+        const id=String(node.id);
+        if (!conceptTypes.includes(node.type) || active.seen.has(id)) continue;
+        active.seen.add(id);
+        active.pending.set(id,node);
+        if (active.pending.size > 5) active.pending.delete(active.pending.keys().next().value);
+      }
+      if (active.pending.size) scheduleNarration(active);
+    });
+    return {stop, focus() {
+      if (active?.channel?.readyState !== 'open') return;
+      const {snapshot, selected, conceptTypes} = getContext();
+      const node = snapshot.nodes.find(n=>String(n.id)===selected&&conceptTypes.includes(n.type));
+      context(active,node?[node]:[],'selection changed');
+    }};
+  }
+
+  return {mount};
+})();
+
 // Spatial view of the same persisted nodes. No provider or database operations live here.
 (() => {
   'use strict';
@@ -1323,7 +1605,7 @@ document.addEventListener('submit', event => {
   growRounds.addEventListener('input',()=>screenControls());
   root.addEventListener('research:auto-grow-state',event=>{growthState=event.detail;growProgress.hidden=!growthState.total;growProgress.textContent=growthState.total?`${growthState.completed}/${growthState.total}`:'';growProgress.setAttribute('aria-label',growthState.message||'');growProgress.title=growthState.message||'';screenControls();});
   quickControls.append(runToggle,stopButton,autoGrow,growRounds,growProgress);
-  tray.append(actions,map.querySelector('.mindmap-toolbar'),map.querySelector('[data-map-outcomes]'));
+  tray.append(heading,actions,map.querySelector('.mindmap-toolbar'),map.querySelector('[data-map-outcomes]'));
   const layerControls=el('div',undefined,'map-layer-controls');layerControls.setAttribute('role','group');layerControls.setAttribute('aria-label','Map layers');
   for(const [layer,label] of [[1,'Dim Secondary'],[2,'Dim Tertiary']]){const button=el('button',label,'btn btn-outline-secondary');button.type='button';button.setAttribute('aria-pressed','false');button.addEventListener('click',()=>{dimLayers.has(layer)?dimLayers.delete(layer):dimLayers.add(layer);button.setAttribute('aria-pressed',String(dimLayers.has(layer)));renderCamera(camera.getState());});layerControls.append(button);}
   const activeFocus=el('button','Focus Active','btn btn-outline-secondary');activeFocus.type='button';activeFocus.addEventListener('click',()=>{const node=visible.find(n=>n.type!=='root'&&Number(n.layer||0)===0)||visible[0];if(node){inspect(node.id);world.querySelector(`[data-map-node="${node.id}"] button`)?.focus({preventScroll:true});}});layerControls.append(activeFocus);tray.append(layerControls);
@@ -1346,7 +1628,11 @@ document.addEventListener('submit', event => {
 
   const live=el('p');live.dataset.liveActivity='1';live.setAttribute('role','status');const clock=el('small');clock.dataset.liveClock='1';clock.setAttribute('aria-live','off');const spend=el('p');spend.dataset.projectSpend='1';
   const history=el('details',undefined,'map-idea-history'),historyTitle=el('summary','Idea history'),historyList=el('ol');history.append(historyTitle,historyList);tray.append(live,clock,spend,map.querySelector('[data-map-evidence-help]'),history);
-  header.append(quickControls,heading,ticker,handle,tray);map.prepend(header);
+  header.append(quickControls,ticker,handle,tray);map.prepend(header);
+  const voice=root.hasAttribute('data-voice-available')&&window.AIcontrolResearchVoice?.mount({
+    root, map, controls:quickControls,
+    getContext:()=>({snapshot, selected, conceptTypes, projectName}),
+  });
   const notification=el('button','','map-state-notice');notification.type='button';notification.hidden=true;notification.setAttribute('aria-label','Review research status');notification.addEventListener('click',()=>controls(true));map.append(notification);
   const mapError=el('p','','map-request-error');mapError.hidden=true;mapError.setAttribute('role','alert');tray.prepend(mapError);
   const focusError=el('p','','map-request-error');focusError.hidden=true;focusError.setAttribute('role','alert');map.querySelector('[data-map-focus]').before(focusError);
@@ -1376,7 +1662,7 @@ document.addEventListener('submit', event => {
   const side=map.querySelector('[data-map-inspector]');side.hidden=true;const closeSide=el('button','×','map-inspector-close btn');closeSide.type='button';closeSide.setAttribute('aria-label','Close details');closeSide.addEventListener('click',()=>{details(false);viewport.focus();});side.prepend(closeSide);
   let underlay=[],previousFocus=null,manualViewport=false;
   function showView(next) {
-    view=next;map.hidden=view!=='map';if(view!=='map'){root.dispatchEvent(new Event('research:auto-grow-cancel'));clearFlight();camera.cancel();clearTimeout(growthTimer);}root.querySelector('[data-investigate-list]').hidden=view!=='list';
+    view=next;map.hidden=view!=='map';if(view!=='map'){voice?.stop?.();root.dispatchEvent(new Event('research:auto-grow-cancel'));clearFlight();camera.cancel();clearTimeout(growthTimer);}root.querySelector('[data-investigate-list]').hidden=view!=='list';
     root.querySelectorAll('[data-investigate-view]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.investigateView===view)));
     if(view==='map'){
       controls(false);details(false);previousFocus=document.activeElement;document.body.append(map);document.body.classList.add('research-map-open');
@@ -1755,6 +2041,7 @@ document.addEventListener('submit', event => {
     for(const ancestor of seen)recededBranches.delete(ancestor);
     controls(false);selected=id;details(true);draw();geometry();camera.focus(id);targetPicker.value=id;
     root.dispatchEvent(new CustomEvent('research:interest',{detail:{nodeId:id}}));
+    voice?.focus?.();
   }
   map.addEventListener('research:inspect-concept',event=>inspect(event.detail.nodeId));
   map.addEventListener('research:close-concept',()=>details(false));
@@ -3091,11 +3378,11 @@ body.research-map-open { overflow:hidden; }
 .research-map-open .map-workspace { position:absolute; inset:58px 0 0; display:block; border:0; border-radius:0; min-height:0; }
 .research-map-open .map-viewport { width:100%; height:100%; background-color:#f7f8fc; background-image:radial-gradient(#d8dfeb .8px,transparent .8px); background-size:24px 24px; }
 .research-map-open .map-screen-header { position:absolute; z-index:5; inset:0 0 auto; height:58px; padding:7px 12px; display:flex; flex-direction:row; align-items:center; gap:14px; border-bottom:1px solid #e0e5ef; background:rgba(250,251,254,.97); }
-.map-project-label { width:160px; max-width:18vw; flex-shrink:0; }
-.map-project-label strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#49566d; font-size:.75rem; }
+.map-controls-tray .map-project-label { display:block; overflow-wrap:anywhere; }
+.map-project-label strong { color:#49566d; font-size:.75rem; }
 .map-project-label .map-screen-status { position:absolute; width:1px; height:1px; clip-path:inset(50%); overflow:hidden; white-space:nowrap; }
 .map-idea-sentence,.research-idea-sentence { border:0; background:transparent; text-align:left; color:#243951; font-size:1rem; line-height:1.4; padding:3px 5px; min-width:0; font-weight:550; cursor:pointer; }
-.map-idea-sentence { flex:1; }
+.map-idea-sentence { flex:1 1 0; min-width:0; overflow:hidden; }
 .map-idea-sentence span { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; transition:opacity .22s ease; }
 .research-idea-sentence span { display:block; transition:opacity .22s ease; }
 /* Keep the changing sentence readable throughout its transition. */
@@ -3140,7 +3427,7 @@ body.research-map-open { overflow:hidden; }
 .research-now [data-current-findings] { margin:6px 0; padding:0; }
 .research-now h2 { margin-bottom:4px; }
 .research-now-metadata { margin-top:8px; }
-@media(max-width:700px) { .map-project-label { display:none; } .research-map-open .map-screen-header { height:64px; gap:8px; } .research-map-open .map-workspace { top:64px; } .map-idea-sentence { font-size:.85rem; } .map-idea-sentence span { white-space:normal; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; } .research-map-open .map-review { width:calc(100% - 24px); } .research-map-open .map-review [data-map-selection-count] { flex:1; } }
+@media(max-width:700px) { .research-map-open .map-screen-header { height:64px; gap:8px; } .research-map-open .map-workspace { top:64px; } .map-idea-sentence { font-size:.85rem; } .map-idea-sentence span { white-space:normal; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; } .research-map-open .map-review { width:calc(100% - 24px); } .research-map-open .map-review [data-map-selection-count] { flex:1; } }
 @media(prefers-reduced-motion:reduce) { .map-node,.map-idea-sentence span,.research-idea-sentence span { transition:none; } .map-node[data-working=true] { animation:none; box-shadow:0 0 0 3px #c7d9e6; } }
 .map-controls-tray .map-evidence-help { position:static; clip-path:none; width:auto; height:auto; margin:10px 0; padding:8px; font-size:.75rem; }
 .research-map-open .map-review { z-index:6; }
@@ -3399,6 +3686,9 @@ body.research-map-open { overflow:hidden; }
 .mindmap .map-compact-button[data-stopping=true] { color:#ffd0d5; background:#361a22; border-color:#c47f91; }
 .mindmap .map-compact-button:focus-visible,.map-grow-rounds:focus-visible { outline:2px solid #bde6ff; outline-offset:2px; }
 .mindmap .map-grow-rounds { width:46px; height:36px; min-height:36px; padding:4px; border:1px solid #71859c; border-radius:6px; background:#101b27; color:#e5f2ff; font-size:13px; }
+.mindmap .map-voice-button { min-height:36px; padding:4px 8px; color:#d8f5e9; background:#122b28; border:1px solid #5d9489; white-space:nowrap; }
+.mindmap .map-voice-button[aria-pressed=true] { background:#25485c; }
+.map-voice-status { position:absolute; z-index:10; top:68px; right:12px; max-width:min(340px,calc(100% - 24px)); margin:0; padding:8px 12px; border:1px solid #60869d; border-radius:8px; background:#102235; color:#e6f1ff; font-size:.85rem; pointer-events:none; }
 .map-grow-progress { color:#d4f4e7; font-size:11px; white-space:nowrap; }
 .research-map-open .map-screen-header { gap:9px; }
 @media(max-width:700px) { .research-map-open .map-screen-header { gap:6px; padding-left:8px; padding-right:8px; }.map-quick-controls { gap:4px; } }

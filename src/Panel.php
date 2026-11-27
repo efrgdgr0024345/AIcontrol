@@ -323,6 +323,21 @@ final class Panel
                 require_once __DIR__.'/BriefSuggestions.php';
                 BriefSuggestions::serve($directory,$_POST['draft']??'',$_POST['name']??'',$_POST['count']??'3',$_POST['avoid']??[]);
                 return;
+            } elseif ($action === 'research_voice') {
+                require_once __DIR__.'/ResearchVoice.php';
+                if ($config['access_mode']==='testing') {
+                    ResearchVoice::error(403, 'Voice chat requires signed-in owner access.');
+                    return;
+                }
+                if (time() - (int)($_SESSION['research_voice_at'] ?? 0) < 5) {
+                    ResearchVoice::error(429, 'Wait a few seconds before reconnecting voice chat.');
+                    return;
+                }
+                $_SESSION['research_voice_at'] = time();
+                $identity = hash_hmac('sha256', 'research-voice', $directory);
+                session_write_close();
+                ResearchVoice::connect($directory, (int)self::input('run_id'), self::input('sdp'), $identity);
+                return;
             } elseif ($action === 'research_status') {
                 session_write_close();
                 ResearchApi::status($directory,(int)self::input('run_id'));

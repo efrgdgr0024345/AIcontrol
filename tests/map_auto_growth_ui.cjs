@@ -3,7 +3,7 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
 (async()=>{
  const root=path.resolve(__dirname,'..'),php=process.env.PHP_BINARY||'php',tmp=fs.mkdtempSync(path.join(os.tmpdir(),'aicontrol-auto-map-')),home=path.join(tmp,'private'),env={...process.env,AICONTROL_PRIVATE_DIR:home,AICONTROL_LOCAL_DEV:'1',AICONTROL_PIN_VERIFIED:'1',AICONTROL_OPENAI_API_KEY:'synthetic-only',AICONTROL_RESEARCH_HOURLY_LIMIT:'30'};
  const setup=spawnSync(php,['bin/setup.php','--access-mode=local','--private-dir='+home,'--public-root='+root],{cwd:root,env,encoding:'utf8'});if(setup.status)throw Error(setup.stderr);
- const seed=spawnSync(php,['-r',`require 'src/Vault.php';require 'src/AgentRunner.php';require 'src/Research.php';(new \\AIcontrol\\Research(getenv('AICONTROL_PRIVATE_DIR')))->create('Automatic growth fixture','Explore ideas about repair hubs.');$e=new \\AIcontrol\\Investigation(getenv('AICONTROL_PRIVATE_DIR'));$e->createRun(1);`],{cwd:root,env,encoding:'utf8'});if(seed.status)throw Error(seed.stderr);
+ const seed=spawnSync(php,['-r',`require 'src/Vault.php';require 'src/AgentRunner.php';require 'src/Research.php';(new \\AIcontrol\\Research(getenv('AICONTROL_PRIVATE_DIR')))->create('Automatic growth fixture with a very long unbroken title ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZ','Explore ideas about repair hubs.');$e=new \\AIcontrol\\Investigation(getenv('AICONTROL_PRIVATE_DIR'));$e->createRun(1);`],{cwd:root,env,encoding:'utf8'});if(seed.status)throw Error(seed.stderr);
  const port=await new Promise(resolve=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p));});}),url=`http://127.0.0.1:${port}/loader.php`;
  const server=spawn(php,['-S',`127.0.0.1:${port}`,'tests/fixtures/exploration_router.php'],{cwd:root,env,stdio:'ignore'});let browser;
  try{
@@ -75,6 +75,73 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   await rounds.fill('1');await page.getByRole('button',{name:'Start automatic growth',exact:true}).click();await page.locator('[data-map-grow-progress]').filter({hasText:'1/1'}).waitFor();await page.waitForFunction(()=>!document.querySelector('[data-map-auto-grow]').disabled);const beforeRepeat=await read(),sentBefore=sent.length;fs.writeFileSync(path.join(home,'repeat-idea-fixture'),'repeat');await rounds.fill('5');await page.getByRole('button',{name:'Start automatic growth',exact:true}).click();await page.waitForFunction(()=>document.querySelector('[data-map-auto-grow]').getAttribute('aria-pressed')==='false');await page.waitForTimeout(350);const afterRepeat=await read();fs.unlinkSync(path.join(home,'repeat-idea-fixture'));if(sent.length!==sentBefore+1||afterRepeat.nodes.filter(n=>n.type==='model_idea').length!==beforeRepeat.nodes.filter(n=>n.type==='model_idea').length||!(await page.locator('[data-map-grow-progress]').getAttribute('title')).includes('no new ideas'))throw Error('Duplicate-only round grew stars or automatically retried');
   // A transport failure ends the sequence, with no automatic retry.
   let attempts=0;await page.route('**/loader.php?**',async route=>{if((route.request().postData()||'').includes('research_explore')){attempts++;return route.fulfill({status:503,contentType:'application/json',body:'{"error":"Synthetic growth outage"}'});}return route.continue();});await page.getByRole('button',{name:'Start automatic growth',exact:true}).click();await page.locator('[data-map-grow-progress]').filter({hasText:'0/5'}).waitFor();await page.waitForFunction(()=>document.querySelector('[data-map-auto-grow]')?.getAttribute('aria-pressed')==='false');await page.waitForTimeout(500);if(attempts!==1)throw Error('Failed automatic request was retried');
-  if(errors.length)throw Error(errors.join('\n'));console.log('PASS: compact Start continues selected ideas in active and stopped runs, root Start, selected-path readability, automatic steering, Stop/stale response, no-retry and desktop/mobile axe (synthetic provider)');
+  // The header has one message slot even when the project title would overflow it.
+  for(const width of [390,1440]){
+    await page.setViewportSize({width,height:900});
+    const clear=await header.evaluate(el=>{
+      const ticker=el.querySelector('.map-idea-sentence'),bounds=ticker.getBoundingClientRect();
+      const controls=el.querySelector('.map-quick-controls').getBoundingClientRect();
+      const handle=el.querySelector('[data-map-controls]').getBoundingClientRect();
+      return bounds.width>0&&bounds.left>=controls.right&&bounds.right<=handle.left&&
+        ticker.querySelectorAll('span').length===1&&!el.querySelector('.map-project-label').checkVisibility();
+    });
+    if(!clear)throw Error('Long project title overlaps the reading queue');
+  }
+
+  const validVoiceRun=await read();
+  const voiceAnchor=validVoiceRun.nodes.find(n=>n.type==='dream_claim');
+  const invalidVoice=await page.request.post(url,{form:{action:'research_voice',run_id:String(validVoiceRun.run.id),
+    csrf:await page.locator('input[name=csrf]').first().inputValue(),sdp:'bad'}});
+  if(invalidVoice.status()!==422||(await invalidVoice.json()).error.includes('OpenAI'))throw Error('Malformed voice signaling reached the provider');
+  await page.evaluate(()=>{
+    const wire=window.voiceFixture={sent:[],stopped:false,closed:false};
+    const track={addEventListener(){},stop(){wire.stopped=true;}};
+    Object.defineProperty(navigator.mediaDevices,'getUserMedia',{configurable:true,
+      value:async()=>({getTracks:()=>[track],getAudioTracks:()=>[track]})});
+    window.RTCPeerConnection=class extends EventTarget{
+      addTrack(){}
+      createDataChannel(){
+        const channel=wire.channel=new EventTarget();
+        channel.send=message=>wire.sent.push(JSON.parse(message));
+        return channel;
+      }
+      async createOffer(){return {type:'offer',sdp:'v=0\r\nfixture-offer'};}
+      async setLocalDescription(offer){this.localDescription=offer;}
+      async setRemoteDescription(){wire.channel.readyState='open';wire.channel.dispatchEvent(new Event('open'));}
+      close(){wire.closed=true;}
+    };
+  });
+  await page.route('**/loader.php',route=>route.request().postData()?.includes('research_voice')
+    ? route.fulfill({contentType:'application/sdp',body:'v=0\r\nfixture-answer'}) : route.continue());
+  await page.getByRole('button',{name:'Start research voice chat'}).click();
+  await page.waitForFunction(()=>window.voiceFixture.sent.some(e=>e.type==='response.create'));
+  const deliverVoice=(id,source)=>page.evaluate(({id,source})=>{
+    const channel=window.voiceFixture.channel;
+    const emit=event=>channel.dispatchEvent(new MessageEvent('message',{data:JSON.stringify(event)}));
+    if(source==='user'){
+      emit({type:'input_audio_buffer.speech_started'});
+      emit({type:'input_audio_buffer.speech_stopped'});
+    }
+    const response={id:source,status:'completed',metadata:{source},output:[
+      {type:'function_call',name:'expand_pathway',call_id:source,arguments:JSON.stringify({node_id:id})},
+    ]};
+    emit({type:'response.created',response});
+    emit({type:'response.done',response});
+  },{id:Number(voiceAnchor.id),source});
+  const manualBeforeVoice=manual.length;
+  await deliverVoice(Number(voiceAnchor.id),'map');
+  await deliverVoice(Number(voiceAnchor.id),'user');
+  await page.waitForFunction(()=>window.voiceFixture.sent.some(e=>e.item?.type==='function_call_output'&&
+    JSON.parse(e.item.output).added===1));
+  const afterVoice=await read();
+  if(manual.length!==manualBeforeVoice+1||manual.at(-1).get('node_id')!==String(voiceAnchor.id)||
+    afterVoice.requests.length!==validVoiceRun.requests.length+1)throw Error('Spoken expansion did not reuse exactly one saved map action');
+  await page.evaluate(()=>window.voiceFixture.channel.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({
+    type:'response.done',response:{id:'readback',status:'completed',output:[]},
+  })})));
+  await page.waitForFunction(()=>window.voiceFixture.sent.some(e=>e.response?.instructions?.includes('one of the new ideas')));
+  await page.getByRole('button',{name:'End research voice chat'}).click();
+  if(!await page.evaluate(()=>window.voiceFixture.stopped&&window.voiceFixture.closed))throw Error('Ending voice left the mic or call open');
+  if(errors.length)throw Error(errors.join('\n'));console.log('PASS: compact Start continues selected ideas in active and stopped runs, root Start, selected-path readability, automatic steering, Stop/stale response, no-retry and desktop/mobile axe, single ticker and simulated Realtime pathway control (synthetic research provider)');
  }finally{if(browser)await browser.close();server.kill();await new Promise(resolve=>server.exitCode!==null?resolve():server.once('exit',resolve));fs.rmSync(tmp,{recursive:true,force:true});}
 })().catch(e=>{console.error(e.stack||e.message);process.exitCode=1;});

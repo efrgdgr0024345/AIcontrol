@@ -415,6 +415,7 @@ document.addEventListener('submit', event => {
         const oldNodes=new Set(before.nodes.map(n=>String(n.id))),oldRequests=new Set(before.requests.map(r=>String(r.id)));
         const form=document.createElement('form');form.setAttribute('action',root.dataset.entry||location.pathname);
         for(const [name,value] of [['action','research_explore'],['csrf',csrf()],['run_id',runId],['explore_mode','explore'],...frontier.map(id=>['node_ids[]',String(id)]),...growthBatch.interestIds.map(id=>['interest_ids[]',String(id)])]){const field=document.createElement('input');field.name=name;field.value=value;form.append(field);}
+        growthBatch.dispatched=round+1;
         const after=await send(form);
         if(!growthBatch||growthSerial!==ticket)break;
         render(after);latest=after;
@@ -569,8 +570,35 @@ document.addEventListener('submit', event => {
     const form = event.target;
     if (!(form instanceof HTMLFormElement) || !form.dataset.researchAction || form.dataset.researchAction === 'research_export') return;
     event.preventDefault();
+    await submitResearch(form, event.submitter);
+  });
+  root?.addEventListener('research:voice-expand', async ({detail}) => {
+    const {nodeId, resolve} = detail;
+    const node = livingSnapshot?.nodes.find(n=>Number(n.id)===nodeId&&growthTypes.has(n.type));
+    if (!node || Number(livingSnapshot.run.flow_version)<2) {
+      resolve({error:'Choose an idea saved in this living map.'});return;
+    }
+    if (growthBatch) {
+      if (growthBatch.dispatched===growthProgress.total) {
+        resolve({error:'The final automatic round is already running. Ask again after it finishes.'});return;
+      }
+      growthBatch.interestIds=[nodeId];growthBatch.nextFrontier=[nodeId];
+      resolve({redirected:true, title:node.title});return;
+    }
+    if (stepping || actionRequests || livingSnapshot.run.busy_since) {
+      resolve({error:'Research is busy. Wait for the current request and then ask again.'});return;
+    }
+    const form=root.querySelector('[data-research-action=research_expand_pathway]');
+    const before=new Set(livingSnapshot.nodes.map(n=>String(n.id)));
+    form.elements.node_id.value=String(nodeId);
+    const after=await submitResearch(form);
+    const added=after?.nodes.filter(n=>growthTypes.has(n.type)&&!before.has(String(n.id)))||[];
+    resolve(after ? {title:node.title, added:added.length, status:after.run.status} :
+      {error:'Expansion did not complete. Check the saved map before trying again.'});
+  });
+  async function submitResearch(form, submitter) {
     const action = form.dataset.researchAction;
-    const button = event.submitter || form.querySelector('button:not([type=button])'); button.disabled = true;
+    const button = submitter || form.querySelector('button:not([type=button])'); button.disabled = true;
     if(growthBatch)cancelGrowth(action==='research_stop'?'Automatic growth stopped.':'Automatic growth paused for a manual action.');
     if(action!=='research_stop'&&actionRequests){button.disabled=false;return;}
     if (action === 'research_stop') {halted=true;stopSerial++;snapshotRevision++;}
@@ -587,13 +615,14 @@ document.addEventListener('submit', event => {
       }
       snapshotRevision++;render(snapshot); error('');
       if (action === 'research_continue' || (action==='research_living'&&form.elements.action.value==='research_lock_evidence') || form.hasAttribute('data-map-focus')) { halted = false; advance(); }
+      return snapshot;
     } catch (failure) {
       if(action==='research_expand_pathway'&&startedBeforeStop!==stopSerial)return;
       diagnosticFailure(action, failure); error(failure.message);
       if(action==='research_expand_pathway')poll(true);
     }
     finally { actionRequests--;if(root){root.dataset.requestBusy=actionRequests?'1':'0';if(action==='research_stop')root.dataset.stopBusy='0';}button.disabled = false;if(livingSnapshot)renderLiving(livingSnapshot); root?.dispatchEvent(new Event('research:controls')); }
-  });
+  }
   root?.addEventListener('click', event => {
     const quick = event.target.closest('[data-keep]');
     if (quick && root.dataset.review === '1') {

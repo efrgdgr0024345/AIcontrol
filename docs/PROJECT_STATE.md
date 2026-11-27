@@ -1283,3 +1283,19 @@ The private diagnostic journal records the HTTP status, provider error code
 and provider request ID when available to the caller. The diagnostic fixture
 exercises synthetic quota and rate-limit responses. Live API billing and
 cPanel activation require independent verification.
+
+
+## Research map idea ticker and voice chat
+
+The map header renders one rotating idea sentence at a time. The project
+title and run status are inside Map Controls. The Voice button opens a
+two-way WebRTC session with GPT-Realtime-2.1 mini and Marin. The assistant
+introduces newly saved ideas, answers follow-up questions with aviation-style
+plain language, and can grow a named or selected branch on a spoken request.
+During automatic growth, it can redirect the next round. Branch growth uses
+the existing Research actions and budget. Voice usage is separate from the
+tracked project cap. The application does not persist voice audio or a transcript.
+
+Browser coverage uses simulated Realtime events and the synthetic research
+provider to verify narration, pathway growth, microphone cleanup and ticker
+layout. This coverage does not exercise OpenAI's live voice service.

@@ -54,7 +54,7 @@
   growRounds.addEventListener('input',()=>screenControls());
   root.addEventListener('research:auto-grow-state',event=>{growthState=event.detail;growProgress.hidden=!growthState.total;growProgress.textContent=growthState.total?`${growthState.completed}/${growthState.total}`:'';growProgress.setAttribute('aria-label',growthState.message||'');growProgress.title=growthState.message||'';screenControls();});
   quickControls.append(runToggle,stopButton,autoGrow,growRounds,growProgress);
-  tray.append(actions,map.querySelector('.mindmap-toolbar'),map.querySelector('[data-map-outcomes]'));
+  tray.append(heading,actions,map.querySelector('.mindmap-toolbar'),map.querySelector('[data-map-outcomes]'));
   const layerControls=el('div',undefined,'map-layer-controls');layerControls.setAttribute('role','group');layerControls.setAttribute('aria-label','Map layers');
   for(const [layer,label] of [[1,'Dim Secondary'],[2,'Dim Tertiary']]){const button=el('button',label,'btn btn-outline-secondary');button.type='button';button.setAttribute('aria-pressed','false');button.addEventListener('click',()=>{dimLayers.has(layer)?dimLayers.delete(layer):dimLayers.add(layer);button.setAttribute('aria-pressed',String(dimLayers.has(layer)));renderCamera(camera.getState());});layerControls.append(button);}
   const activeFocus=el('button','Focus Active','btn btn-outline-secondary');activeFocus.type='button';activeFocus.addEventListener('click',()=>{const node=visible.find(n=>n.type!=='root'&&Number(n.layer||0)===0)||visible[0];if(node){inspect(node.id);world.querySelector(`[data-map-node="${node.id}"] button`)?.focus({preventScroll:true});}});layerControls.append(activeFocus);tray.append(layerControls);
@@ -77,7 +77,11 @@
 
   const live=el('p');live.dataset.liveActivity='1';live.setAttribute('role','status');const clock=el('small');clock.dataset.liveClock='1';clock.setAttribute('aria-live','off');const spend=el('p');spend.dataset.projectSpend='1';
   const history=el('details',undefined,'map-idea-history'),historyTitle=el('summary','Idea history'),historyList=el('ol');history.append(historyTitle,historyList);tray.append(live,clock,spend,map.querySelector('[data-map-evidence-help]'),history);
-  header.append(quickControls,heading,ticker,handle,tray);map.prepend(header);
+  header.append(quickControls,ticker,handle,tray);map.prepend(header);
+  const voice=root.hasAttribute('data-voice-available')&&window.AIcontrolResearchVoice?.mount({
+    root, map, controls:quickControls,
+    getContext:()=>({snapshot, selected, conceptTypes, projectName}),
+  });
   const notification=el('button','','map-state-notice');notification.type='button';notification.hidden=true;notification.setAttribute('aria-label','Review research status');notification.addEventListener('click',()=>controls(true));map.append(notification);
   const mapError=el('p','','map-request-error');mapError.hidden=true;mapError.setAttribute('role','alert');tray.prepend(mapError);
   const focusError=el('p','','map-request-error');focusError.hidden=true;focusError.setAttribute('role','alert');map.querySelector('[data-map-focus]').before(focusError);
@@ -107,7 +111,7 @@
   const side=map.querySelector('[data-map-inspector]');side.hidden=true;const closeSide=el('button','×','map-inspector-close btn');closeSide.type='button';closeSide.setAttribute('aria-label','Close details');closeSide.addEventListener('click',()=>{details(false);viewport.focus();});side.prepend(closeSide);
   let underlay=[],previousFocus=null,manualViewport=false;
   function showView(next) {
-    view=next;map.hidden=view!=='map';if(view!=='map'){root.dispatchEvent(new Event('research:auto-grow-cancel'));clearFlight();camera.cancel();clearTimeout(growthTimer);}root.querySelector('[data-investigate-list]').hidden=view!=='list';
+    view=next;map.hidden=view!=='map';if(view!=='map'){voice?.stop?.();root.dispatchEvent(new Event('research:auto-grow-cancel'));clearFlight();camera.cancel();clearTimeout(growthTimer);}root.querySelector('[data-investigate-list]').hidden=view!=='list';
     root.querySelectorAll('[data-investigate-view]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.investigateView===view)));
     if(view==='map'){
       controls(false);details(false);previousFocus=document.activeElement;document.body.append(map);document.body.classList.add('research-map-open');
@@ -486,6 +490,7 @@
     for(const ancestor of seen)recededBranches.delete(ancestor);
     controls(false);selected=id;details(true);draw();geometry();camera.focus(id);targetPicker.value=id;
     root.dispatchEvent(new CustomEvent('research:interest',{detail:{nodeId:id}}));
+    voice?.focus?.();
   }
   map.addEventListener('research:inspect-concept',event=>inspect(event.detail.nodeId));
   map.addEventListener('research:close-concept',()=>details(false));
