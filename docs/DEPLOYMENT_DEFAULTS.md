@@ -35,6 +35,9 @@ private records persist on the hosting server.
 
 
 Admin appears last in workspace navigation, with the PIN lock link in its group.
+Research chat defaults to direct, short replies. Voice presents model-generated
+map ideas as its own hypotheses and preserves attribution of user notes and sources.
+
 ## Automatic storage policy v1
 
 `AIcontrolInstaller::autoStorage` derives candidates using PHP's actual Unix

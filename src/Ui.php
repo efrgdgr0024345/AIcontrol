@@ -1357,6 +1357,7 @@ window.AIcontrolResearchVoice = (() => {
         return {id:Number(node.id), parent_id:node.parent_id, title:node.title.slice(0,240),
           idea:String(details.idea || details.claim || node.content || '').slice(0,650),
           uncertainty:String(details.uncertainty || '').slice(0,300),
+          origin:node.origin || 'unknown',
           provenance:node.provenance_tag || 'unchecked'};
       };
       const update = {mode, project:projectName.slice(0,240), phase:snapshot.run.phase,
@@ -1377,7 +1378,7 @@ window.AIcontrolResearchVoice = (() => {
       context(session, ideas, 'new saved ideas');
       session.responding = send(session, {type:'response.create', response:{
         metadata:{source:'map'}, tool_choice:'none',
-        instructions:'Briefly introduce one of the new ideas that caught your attention and why it matters. Use the session communication style.',
+        instructions:'Introduce one of the new ideas in at most two short sentences. Present model-generated work as your own hypothesis or proposed check. Credit user-authored material and external sources accurately. State why the idea matters or what you would test. Skip greetings, praise and follow-up questions.',
       }});
     }
 
@@ -1500,7 +1501,7 @@ window.AIcontrolResearchVoice = (() => {
           const current = saved.find(node=>String(node.id)===currentContext.selected);
           context(session,[...new Set([...(current?[current]:[]),...saved.slice(-5)])], 'session started');
           session.responding = send(session,{type:'response.create',response:{metadata:{source:'map'},
-            tool_choice:'none', instructions:'Greet the user in one sentence and invite them to discuss or expand an idea.'}});
+            tool_choice:'none', instructions:'Start with one short sentence about a hypothesis you generated or the next check you would run. Use only the supplied map context and respect its authorship and uncertainty. If it has no ideas yet, say so. Skip greetings, small talk and invitations.'}});
         });
         await peer.setLocalDescription(await peer.createOffer());
         if (active !== session) return;

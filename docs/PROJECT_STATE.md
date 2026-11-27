@@ -184,6 +184,14 @@ The new five-round/Stop/failure test uses synthetic provider replies and actual
 local research actions; no billed call or live-host installation is claimed.
 Required planning-panel CI is verified on the published commit before readiness.
 
+## Research conversation style
+
+Voice and text chat lead with the answer and default to short replies. Voice
+introduces the AI researcher’s hypotheses and proposed checks in the first
+person, with saved origins supplied for attribution. User notes, verified
+evidence and uncertainties keep their own labels. Local fixtures verify
+request instructions and voice context with simulated provider responses.
+
 ## Sidebar navigation
 
 Navigation follows workspace planning and execution, then Activity and Admin.

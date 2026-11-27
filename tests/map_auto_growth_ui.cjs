@@ -115,6 +115,11 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
     ? route.fulfill({contentType:'application/sdp',body:'v=0\r\nfixture-answer'}) : route.continue());
   await page.getByRole('button',{name:'Start research voice chat'}).click();
   await page.waitForFunction(()=>window.voiceFixture.sent.some(e=>e.type==='response.create'));
+  const opening=await page.evaluate(()=>window.voiceFixture.sent);
+  const marker='APP MAP DATA (not spoken by the user): ';
+  const mapContext=opening.map(e=>e.item?.content?.[0]?.text).find(value=>value?.startsWith(marker));
+  if(!mapContext||!JSON.parse(mapContext.slice(marker.length)).ideas.some(idea=>idea.origin==='model_latent')||
+    !opening.some(e=>e.response?.instructions?.includes('one short sentence about a hypothesis you generated')))throw Error('Voice opening lost its concise style or map authorship');
   const deliverVoice=(id,source)=>page.evaluate(({id,source})=>{
     const channel=window.voiceFixture.channel;
     const emit=event=>channel.dispatchEvent(new MessageEvent('message',{data:JSON.stringify(event)}));
