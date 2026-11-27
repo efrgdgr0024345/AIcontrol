@@ -118,7 +118,8 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   const opening=await page.evaluate(()=>window.voiceFixture.sent);
   const marker='APP MAP DATA (not spoken by the user): ';
   const mapContext=opening.map(e=>e.item?.content?.[0]?.text).find(value=>value?.startsWith(marker));
-  if(!mapContext||!JSON.parse(mapContext.slice(marker.length)).ideas.some(idea=>idea.origin==='model_latent')||
+  const voiceContext=mapContext?JSON.parse(mapContext.slice(marker.length)):null;
+  if(!voiceContext?.ideas.some(idea=>idea.origin==='model_latent')||!Array.isArray(voiceContext.related_map_ideas)||voiceContext.related_map_ideas.length>4||
     !opening.some(e=>e.response?.instructions?.includes('one short sentence about a hypothesis you generated')))throw Error('Voice opening lost its concise style or map authorship');
   const deliverVoice=(id,source)=>page.evaluate(({id,source})=>{
     const channel=window.voiceFixture.channel;

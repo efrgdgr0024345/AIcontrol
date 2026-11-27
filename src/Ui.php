@@ -1360,11 +1360,15 @@ window.AIcontrolResearchVoice = (() => {
           origin:node.origin || 'unknown',
           provenance:node.provenance_tag || 'unchecked'};
       };
+      const concepts = snapshot.nodes.filter(node=>conceptTypes.includes(node.type));
+      const selectedNode = concepts.find(node=>String(node.id)===String(selected));
+      const anchor = selectedNode || ideas.at(-1);
+      const nearby = anchor ? concepts.filter(node=>!ideas.includes(node) && node.id!==anchor.id &&
+        (node.id===anchor.parent_id || node.parent_id===anchor.id ||
+          (anchor.parent_id!=null && node.parent_id===anchor.parent_id))).slice(0,4) : [];
       const update = {mode, project:projectName.slice(0,240), phase:snapshot.run.phase,
-        selected:ideas.find(node=>String(node.id)===selected)?.id ||
-          snapshot.nodes.find(node=>String(node.id)===selected &&
-            conceptTypes.includes(node.type))?.id || null,
-        ideas:ideas.map(describe)};
+        selected:selectedNode?.id || null,
+        ideas:ideas.map(describe), related_map_ideas:nearby.map(describe)};
       send(session, {type:'conversation.item.create', item:{type:'message',role:'user',
         content:[{type:'input_text',text:'APP MAP DATA (not spoken by the user): '+JSON.stringify(update)}]}});
     }
@@ -1378,7 +1382,7 @@ window.AIcontrolResearchVoice = (() => {
       context(session, ideas, 'new saved ideas');
       session.responding = send(session, {type:'response.create', response:{
         metadata:{source:'map'}, tool_choice:'none',
-        instructions:'Introduce one of the new ideas in at most two short sentences. Present model-generated work as your own hypothesis or proposed check. Credit user-authored material and external sources accurately. State why the idea matters or what you would test. Skip greetings, praise and follow-up questions.',
+        instructions:'Introduce one of the new ideas in at most two short sentences. Use the supplied map as your main reference and connect it to the selected branch when relevant. Present model-generated work as your own hypothesis or proposed check. Credit user-authored material and external sources accurately. Label any outside idea as a new suggestion. State why the idea matters or what you would test. Skip greetings, praise and follow-up questions.',
       }});
     }
 

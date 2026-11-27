@@ -189,8 +189,10 @@ Required planning-panel CI is verified on the published commit before readiness.
 Voice and text chat lead with the answer and default to short replies. Voice
 introduces the AI researcher’s hypotheses and proposed checks in the first
 person, with saved origins supplied for attribution. User notes, verified
-evidence and uncertainties keep their own labels. Local fixtures verify
-request instructions and voice context with simulated provider responses.
+evidence and uncertainties keep their own labels. The selected branch and
+related saved ideas are the primary context. Outside ideas can clarify a
+branch or suggest a test and are labelled as suggestions. Local fixtures
+verify request instructions and voice context with simulated responses.
 
 ## Sidebar navigation
 

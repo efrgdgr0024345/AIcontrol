@@ -37,6 +37,7 @@ private records persist on the hosting server.
 Admin appears last in workspace navigation, with the PIN lock link in its group.
 Research chat defaults to direct, short replies. Voice presents model-generated
 map ideas as its own hypotheses and preserves attribution of user notes and sources.
+The selected branch provides the main context, with outside ideas labelled as suggestions.
 
 ## Automatic storage policy v1
 
