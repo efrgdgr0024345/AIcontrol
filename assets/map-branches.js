@@ -17,7 +17,7 @@
  const branchToggle=side.querySelector('[data-map-toggle-branch]');
  const chat=make('button',undefined,'btn btn-outline-secondary map-concept-chat-toggle');chat.type='button';chat.dataset.conceptChatToggle='1';chat.setAttribute('aria-label','Chat about this concept');chat.setAttribute('aria-expanded','false');chat.setAttribute('aria-controls','map-concept-conversation');
  const icon=document.createElementNS('http://www.w3.org/2000/svg','svg');icon.setAttribute('viewBox','0 0 24 24');icon.setAttribute('aria-hidden','true');const path=document.createElementNS(icon.namespaceURI,'path');path.setAttribute('d','M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-6 4V6a2 2 0 0 1 2-2ZM7 9h10M7 13h7');icon.append(path);chat.append(icon);
- const currentLabel=make('p','','map-concept-current');actions.append(currentLabel,back,expand,branchToggle,chat);side.insertBefore(actions,content);const problem=side.querySelector('.map-request-error')||make('p','','map-request-error');problem.hidden=true;problem.setAttribute('role','alert');side.insertBefore(problem,content);
+ actions.append(back,expand,branchToggle,chat);side.insertBefore(actions,content);const problem=side.querySelector('.map-request-error')||make('p','','map-request-error');problem.hidden=true;problem.setAttribute('role','alert');side.insertBefore(problem,content);
  const advanced=make('details',undefined,'map-concept-advanced');advanced.dataset.mapAdvanced='1';advanced.append(make('summary','More options · layers, evidence and priority'));
  for(const child of [...side.children])if(child!==content&&child!==actions&&child!==problem&&!child.classList.contains('map-inspector-close'))advanced.append(child);
  side.append(advanced);
@@ -71,7 +71,6 @@
  }
  function updateControls(){
   if(!snapshot)return;const n=snapshot.nodes.find(n=>String(n.id)===selected),valid=!!n&&types.has(n.type),busy=snapshot.run.busy_since!=null||snapshot.requests.some(r=>r.status==='pending')||root.dataset.requestBusy==='1';
-  currentLabel.textContent=n?window.AIcontrolMap.shortNote(n.title):'Concept details';currentLabel.title=n?.title||'';
   const capacity=root.dataset.connected!=='0'&&snapshot.budget?.remaining!==0;
   chat.disabled=!valid;form.elements.node_id.value=valid?selected:'';form.elements.run_id.value=snapshot.run.id;
   const phaseBlocked=['pending','running'].includes(snapshot.run.status)&&!['exploring','verification_review'].includes(snapshot.run.phase);

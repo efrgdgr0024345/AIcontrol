@@ -1309,3 +1309,11 @@ tracked project cap. The application does not persist voice audio or a transcrip
 Browser coverage uses simulated Realtime events and the synthetic research
 provider to verify narration, pathway growth, microphone cleanup and ticker
 layout. This coverage does not exercise OpenAI's live voice service.
+
+## Compact Research map overlays
+
+The canvas extends beneath the branch list and concept reader. Both panels
+shrink to fit short content and scroll when needed. The mobile concept reader
+uses a bottom panel while keeping the canvas visible above and behind it.
+Translucent surfaces and text shadows preserve contrast, with solid panel
+fills when the browser requests increased contrast.

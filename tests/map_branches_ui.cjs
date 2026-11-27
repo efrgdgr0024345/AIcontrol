@@ -12,9 +12,21 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   await page.goto(url+'?view=research&project=1');await page.getByRole('button',{name:'Start research',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('[data-investigation]')?.dataset.phase==='exploring');
   const list=page.locator('[data-branch-list]'),rows=list.locator('[data-branch-id]');await rows.first().waitFor();if(await rows.count()!==2)throw Error('Concept branches missing');
-  const width=await page.locator('[data-branch-browser]').evaluate(n=>n.getBoundingClientRect().width);if(width<350)throw Error('Branch browser is too narrow');
+  const overlayLayout=()=>page.evaluate(()=>{
+    const map=document.querySelector('[data-mindmap]'), canvas=map.querySelector('[data-map-viewport]');
+    const branches=map.querySelector('[data-branch-browser]'), reader=map.querySelector('[data-map-inspector]');
+    const {width,height}=canvas.getBoundingClientRect();
+    const translucent=panel=>getComputedStyle(panel).backgroundColor.startsWith('rgba(');
+    return {width,height,windowWidth:innerWidth,readerWidth:reader.offsetWidth,readerHeight:reader.offsetHeight,
+      branchWidth:branches.offsetWidth,canvasVisible:canvas.checkVisibility({visibilityProperty:true}),
+      translucent:translucent(branches)&&translucent(reader)};
+  });
   const a=await rows.nth(0).getAttribute('data-branch-id'),b=await rows.nth(1).getAttribute('data-branch-id');
   await rows.nth(0).click();await page.locator('[data-map-inspector]').waitFor({state:'visible'});if(await page.locator('[data-map-advanced]').evaluate(n=>n.open))throw Error('Advanced controls crowded the reading window');
+  const desktop=await overlayLayout();
+  if(!desktop.translucent||desktop.width!==desktop.windowWidth||desktop.branchWidth>300||
+    desktop.readerWidth>460||desktop.width-desktop.readerWidth-desktop.branchWidth<desktop.width*.46)
+    throw Error('Desktop panels obscure too much of the canvas');
   const emptyMapPoint=()=>page.locator('.map-viewport').evaluate(viewport=>{const r=viewport.getBoundingClientRect();for(const x of [.08,.2,.4,.6])for(const y of [.2,.6,.8]){const point={x:r.left+r.width*x,y:r.top+r.height*y},target=document.elementFromPoint(point.x,point.y);if(target&&viewport.contains(target)&&!target.closest('[data-map-node],button,input,label,a'))return point;}throw Error('No exposed map background');});
   let point=await emptyMapPoint();await page.mouse.move(point.x,point.y);await page.mouse.down();await page.mouse.move(point.x+35,point.y+12,{steps:5});await page.mouse.up();if(!await page.locator('[data-map-inspector]').isVisible())throw Error('Orbit drag dismissed the concept reader');
   point=await emptyMapPoint();await page.mouse.click(point.x,point.y);await page.locator('[data-map-inspector]').waitFor({state:'hidden'});
@@ -59,7 +71,10 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   const audit=async()=>{await page.waitForTimeout(500);await page.evaluate(require('axe-core').source);const issues=await page.evaluate(async()=>(await axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa','wcag22aa']}})).violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target)})));if(issues.length)throw Error(JSON.stringify(issues));};
   await audit();fs.mkdirSync(path.join(root,'test-artifacts'),{recursive:true});await page.screenshot({path:path.join(root,'test-artifacts','ui-branch-reading-chat-desktop.png')});
   await page.locator('[data-branch-back]').click();await page.screenshot({path:path.join(root,'test-artifacts','ui-branch-list-desktop.png')});
-  await page.setViewportSize({width:390,height:844});await audit();await list.locator(`[data-branch-id="${a}"]`).click();await audit();await page.screenshot({path:path.join(root,'test-artifacts','ui-branch-chat-mobile.png')});
+  await page.setViewportSize({width:390,height:844});await audit();await list.locator(`[data-branch-id="${a}"]`).click();await audit();const mobile=await overlayLayout();
+  if(!mobile.canvasVisible||!mobile.translucent||mobile.width!==mobile.windowWidth||mobile.readerHeight>mobile.height/2)
+    throw Error('Mobile reader obscures too much of the canvas');
+  await page.screenshot({path:path.join(root,'test-artifacts','ui-branch-chat-mobile.png')});
   await page.getByLabel('Your question',{exact:true}).focus();await page.keyboard.press('Escape');if(!await page.locator('[data-map-inspector]').isHidden())throw Error('Escape did not return to branches');
   if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1))throw Error('Branch view overflows mobile');if(errors.length)throw Error(errors.join('\n'));
   console.log('PASS: visible pathway toggle, collapse/restore and stable positions; nested growth and search; map dismissal, chat isolation, desktop/mobile axe and keyboard return (synthetic provider)');
