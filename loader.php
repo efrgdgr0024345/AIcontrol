@@ -4158,7 +4158,7 @@ body.research-map-open { overflow:hidden; }
 .project-desk .app-main { margin-left:var(--desk-rail); }
 .project-desk .app-sidebar .ac-brand {
  padding:4px 5px;
- gap:12px;
+ gap:18px;
  min-height:44px;
  white-space:nowrap;
  color:#272139;
@@ -4168,7 +4168,7 @@ body.research-map-open { overflow:hidden; }
 .project-desk .app-navigation { display:flex; flex:0 0 auto; flex-direction:column; gap:3px; overflow:visible; }
 .project-desk .app-navigation a {
  position:relative;
- gap:12px;
+ gap:18px;
  min-height:44px;
  padding:10px 13px;
  margin:0;
@@ -4195,7 +4195,7 @@ body.research-map-open { overflow:hidden; }
 .project-desk .sidebar-sublist a { font-size:.81rem; }
 .project-desk .sidebar-sublist .icon { width:17px; height:17px; }
 .project-desk .sidebar-foot { display:block; margin-top:auto; white-space:nowrap; }
-.project-desk .sidebar-lock { margin:4px 0 0; padding:8px 12px; color:#514763; }
+.project-desk .sidebar-lock { margin:4px 0 0; padding:8px 12px; gap:18px; color:#514763; }
 .project-desk .sidebar-lock .icon { width:20px; }
 .project-desk .breadcrumbs { color:#514763; }
 .project-desk .desk-menu-toggle { display:none; }
