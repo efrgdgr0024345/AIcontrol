@@ -165,7 +165,9 @@ uses the original brief and selected branch as its scope. The left branch list
 places Possible questions below the saved descendants of each idea. New growth
 includes a question for the new idea and a revised question for the parent. A
 branch picks up more recent substantive work in its descendants. A new attached
-source can also change the suggested check. The question is optional to pursue.
+source can also change the suggested check. Older cards can use their saved
+proposed tests when they have no authored question. The question is optional
+to pursue.
 Concept text and voice use the branch as their main reference and can surface
 one useful connection or saved question when it helps the conversation.
 

@@ -102,6 +102,20 @@ final class ResearchIdeas
         return mb_strimwidth(trim(preg_replace('/\s+/u', ' ', $text) ?? '', " \t\n\r\0\x0B.!?"), 0, $length, '…', 'UTF-8');
     }
 
+    private static function fallbackQuestion(array $node, array $data): string
+    {
+        $test = $data['test'] ?? $data['verify'] ?? null;
+        if (is_string($test)) {
+            $first = preg_split('/(?<=[.!?])\s+(?=[A-Z])|;|\R/u', trim($test), 2)[0] ?? '';
+            $check = self::short($first, 190);
+            if (preg_match('/^(Compare|Measure|Run|Use|Ask|Track|Test|Check|Include|Expose|Collect|Hold|Randomi[sz]e|Conduct|Observe|Match|Assess|Record|Vary)\b(.*)$/iu', $check, $parts)) {
+                return 'What would we learn if we '.strtolower($parts[1]).$parts[2].'?';
+            }
+            if ($check !== '') return 'Which result from “'.$check.'” would change the next step?';
+        }
+        return 'What observation would change your mind about “'.self::short($node['title']).'”?';
+    }
+
     public static function conceptParent(array $node, array $byId): ?int
     {
         $seen = [(int)$node['id'] => true];
@@ -136,15 +150,9 @@ final class ResearchIdeas
         foreach ($parents as $id => $parent) {
             $node = $byId[$id];
             $data = self::data($node);
-            $title = self::short($node['title']);
-            $uncertainty = is_string($data['uncertainty'] ?? null) ? self::short($data['uncertainty']) : '';
-            $test = $data['test'] ?? $data['verify'] ?? '';
-            $own = self::question($data['next_question'] ?? null)
-                ?? ($uncertainty !== '' ? 'What would resolve this uncertainty: '.$uncertainty.'?'
-                    : 'What observation would change your mind about “'.$title.'”?');
-            $basis = is_string($test) && trim($test) !== '' && !self::question($data['next_question'] ?? null) ? $test : $node['title'];
+            $own = self::question($data['next_question'] ?? null) ?? self::fallbackQuestion($node, $data);
             $at = (int)($node['updated_at'] ?? $node['created_at'] ?? 0);
-            $save($id, $at, $id, $own, $basis);
+            $save($id, $at, $id, $own, $node['title']);
             if ($node['status'] !== 'complete' || isset($data['grounding_node_id']) || ($node['type'] === 'question' && self::document($node) === null)) continue;
             $followUp = self::question($data['parent_question'] ?? null) ?? $own;
             $seen = [$id => true];

@@ -123,6 +123,10 @@ try {
         ['id'=>2,'type'=>'model_idea','status'=>'complete','title'=>'Sorting intensity','parent_id'=>1,'updated_at'=>2],
         ['id'=>3,'type'=>'source','status'=>'complete','title'=>'Trial record','parent_id'=>2,'updated_at'=>3],
     ];
+    $nodes[1]['data_json']='{"test":"Compare matched facilities and vary sorting intensity. Check contamination."}';
+    $older=ResearchIdeas::suggestions($nodes,[]);
+    verify($older[1]['text']==='What would we learn if we compare matched facilities and vary sorting intensity?',
+        'Fallback question did not use the saved discriminating test');
     $suggestions = ResearchIdeas::suggestions($nodes,[['node_id'=>3,'title'=>'Field trial of sorting','retrieved_at'=>4]]);
     verify($suggestions[1]['node_id']===3 && str_contains($suggestions[1]['text'],'Field trial of sorting'), 'Branch question did not react to newly available data');
     fwrite(STDOUT, "PASS: $checks idea-only embeddings, consent, exact neighbours, outliers, branch refresh, bounded chat, usage and Stop checks (synthetic provider)\n");
