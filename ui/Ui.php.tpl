@@ -22,10 +22,15 @@ AICONTROL_UI_CSS;
         return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     }
 
-    public static function favicon(): string
+    private static function siteIcon(): string
     {
         $svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="#08132f"/><path d="M16 6v11L6 24m10-7 10 7" fill="none" stroke="#22f1a0" stroke-width="2" stroke-linecap="round"/><g fill="#22f1a0"><circle cx="16" cy="17" r="4.8"/><circle cx="16" cy="6" r="3"/><circle cx="6" cy="24" r="3"/><circle cx="26" cy="24" r="3"/></g></svg>';
-        return '<link rel="icon" href="data:image/svg+xml;base64,' . base64_encode($svg) . '">';
+        return 'data:image/svg+xml;base64,' . base64_encode($svg);
+    }
+
+    public static function favicon(): string
+    {
+        return '<link rel="icon" href="' . self::siteIcon() . '">';
     }
 
     public static function icon(string $name): string
@@ -51,9 +56,12 @@ AICONTROL_UI_CSS;
         return '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' . ($paths[$name] ?? $paths['spark']) . '</svg>';
     }
 
-    public static function brand(string $href): string
+    public static function brand(string $href, bool $legacy = false): string
     {
-        return '<a class="ac-brand" href="' . self::e($href) . '"><span class="ac-mark">' . self::icon('spark') . '</span><span>AIcontrol</span></a>';
+        if ($legacy) {
+            return '<a class="ac-brand" href="' . self::e($href) . '"><span class="ac-mark">' . self::icon('spark') . '</span><span>AIcontrol</span></a>';
+        }
+        return '<a class="ac-brand" href="' . self::e($href) . '"><img class="site-mark" src="' . self::siteIcon() . '" alt="" width="35" height="35"><span>Project Desk</span></a>';
     }
 
     public static function time(string|int $value): string
@@ -71,7 +79,7 @@ AICONTROL_UI_CSS;
         $nonce = base64_encode(random_bytes(18));
         self::$nonce = $nonce;
         header("Content-Security-Policy: default-src 'none'; style-src 'nonce-" . $nonce . "'; script-src 'nonce-" . $nonce . "'; connect-src 'self'; img-src data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
-        echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' . self::e($title) . ' · AIcontrol</title>' . self::favicon() . '<style nonce="' . self::e($nonce) . '">' . self::css() . '</style></head><body><a class="skip-link" href="#main-content">Skip to content</a><div class="auth-layout"><aside class="auth-aside">' . self::brand($entry) . '<div class="auth-story"><h2>Your projects.<br>A clearer picture.</h2><p>A workspace for the brief, the work, and everything that happens along the way.</p><div class="auth-feature">' . self::icon('folder') . 'Projects &amp; tasks</div><div class="auth-feature">' . self::icon('robot') . 'Agent run history</div><div class="auth-feature">' . self::icon('upload') . 'Verified application updates</div></div><div class="auth-caption">YOUR WORKSPACE. YOUR CONTROL.</div></aside><main class="auth-main" id="main-content">';
+        echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' . self::e($title) . ' · Project Desk</title>' . self::favicon() . '<style nonce="' . self::e($nonce) . '">' . self::css() . '</style></head><body><a class="skip-link" href="#main-content">Skip to content</a><div class="auth-layout"><aside class="auth-aside">' . self::brand($entry) . '<div class="auth-story"><h2>Your projects.<br>A clearer picture.</h2><p>A workspace for the brief, the work, and everything that happens along the way.</p><div class="auth-feature">' . self::icon('folder') . 'Projects &amp; tasks</div><div class="auth-feature">' . self::icon('robot') . 'Agent run history</div><div class="auth-feature">' . self::icon('upload') . 'Verified application updates</div></div><div class="auth-caption">YOUR WORKSPACE. YOUR CONTROL.</div></aside><main class="auth-main" id="main-content">';
     }
 
     public static function end(): void

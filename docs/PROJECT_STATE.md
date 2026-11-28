@@ -1327,3 +1327,14 @@ shrink to fit short content and scroll when needed. The mobile concept reader
 uses a bottom panel while keeping the canvas visible above and behind it.
 Translucent surfaces and text shadows preserve contrast, with solid panel
 fills when the browser requests increased contrast.
+
+
+## Project Desk navigation and overview
+
+The display name is Project Desk. Its light workspace shell uses the
+existing site icon and an icon rail that expands on pointer hover or keyboard
+focus. Project and Admin sublists use native disclosures in the same sidebar.
+On narrow screens a Menu button opens the same list. The overview shows a
+flat queue of tasks awaiting review or attention, recent projects, and
+workspace details on demand. The Research route retains its original shell
+and the full-screen research map.

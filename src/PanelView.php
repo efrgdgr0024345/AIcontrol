@@ -60,6 +60,40 @@ final class PanelView
         echo '</tbody></table></div>';
     }
 
+    private static function navLink(string $href, string $name, string $icon, bool $current = false): string
+    {
+        return '<a href="' . Ui::e($href) . '"' . ($current ? ' aria-current="page"' : '') . '>'
+            . Ui::icon($icon) . '<span>' . Ui::e($name) . '</span></a>';
+    }
+
+    private static function navigation(array $views, string $view, array $config): void
+    {
+        foreach ($views as $key => [$label, $icon]) {
+            $links = match ($key) {
+                'projects' => [
+                    ['/loader.php?view=projects#project-list', 'All projects', 'folder'],
+                    ['/loader.php?view=projects#task-list', 'Task proposals', 'task'],
+                    ['/loader.php?view=overview#review-queue', 'Review queue', 'check'],
+                ],
+                'admin' => $config['access_mode'] === 'pin' ? [['/loader.php?pin=manage', 'Lock panel', 'lock']] : [],
+                default => [],
+            };
+            if ($links === []) {
+                echo self::navLink('/loader.php?view=' . $key, $label, $icon, $key === $view);
+                continue;
+            }
+            echo '<div class="sidebar-group sidebar-' . Ui::e($key) . '">'
+                . self::navLink('/loader.php?view=' . $key, $label, $icon, $key === $view)
+                . '<details class="sidebar-group-details"' . ($key === $view ? ' open' : '') . '>'
+                . '<summary aria-label="' . Ui::e($label . ' sublist') . '"><span aria-hidden="true">›</span></summary>'
+                . '<ul class="sidebar-sublist">';
+            foreach ($links as [$href, $name, $childIcon]) {
+                echo '<li>' . self::navLink($href, $name, $childIcon) . '</li>';
+            }
+            echo '</ul></details></div>';
+        }
+    }
+
     public static function render(array $data, string $view, string $csrf, string $error, bool $passwordMode, array $config, bool $authenticated): void
     {
         $views = ['overview' => ['Overview', 'grid'], 'projects' => ['Projects & tasks', 'folder'], 'research' => ['Research projects', 'search'], 'nasa' => ['Engineering', 'grid'], 'systems' => ['Systems', 'plug'], 'runs' => ['Agent runs', 'robot'], 'history' => ['Activity', 'clock'], 'admin' => ['Admin', 'lock']];
@@ -74,8 +108,11 @@ final class PanelView
             'history' => 'The work, the decisions, and what actually happened.',
         ];
         $label = $views[$view][0];
-        echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' . Ui::e($label) . ' · AIcontrol</title>' . Ui::favicon() . '<style nonce="' . Ui::e($data['asset_nonce']) . '">' . Ui::css() . '</style></head><body><a class="skip-link" href="#main-content">Skip to content</a><div class="app-layout"><aside class="app-sidebar">' . Ui::brand('/loader.php') . '<div class="sidebar-label">WORKSPACE</div><nav class="app-navigation" aria-label="Main navigation">';
-        if ($authenticated) {
+        $legacy = $view === 'research';
+        echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' . Ui::e($label) . ' · ' . ($legacy ? 'AIcontrol' : 'Project Desk') . '</title>' . Ui::favicon() . '<style nonce="' . Ui::e($data['asset_nonce']) . '">' . Ui::css() . '</style></head><body><a class="skip-link" href="#main-content">Skip to content</a><div class="app-layout' . ($legacy ? '' : ' project-desk') . '"><aside class="app-sidebar"' . ($legacy ? '' : ' id="workspace-sidebar"') . '>' . Ui::brand('/loader.php', $legacy) . ($legacy ? '<div class="sidebar-label">WORKSPACE</div>' : '') . '<nav class="app-navigation" aria-label="Main navigation">';
+        if ($authenticated && !$legacy) {
+            self::navigation($views, $view, $config);
+        } elseif ($authenticated) {
             foreach ($views as $key => [$name, $icon]) {
                 if ($key === 'admin') echo '<div class="sidebar-admin">';
                 echo '<a href="/loader.php?view=' . $key . '"' . ($key === $view ? ' aria-current="page"' : '') . '>' . Ui::icon($icon) . '<span>' . $name . '</span></a>';
@@ -93,8 +130,11 @@ final class PanelView
                 echo '<div class="sidebar-lock">' . Ui::icon('lock') . '<span>' . ($config['access_mode'] === 'testing' ? 'Testing workspace' : 'Hosting access') . '</span></div>';
             }
         }
-        echo '</div></aside><div class="app-main"><header class="app-topbar"><div class="breadcrumbs">Workspace <span aria-hidden="true">/</span><strong>' . Ui::e($label) . '</strong></div><div class="topbar-right">' . self::pill('Testing release', 'purple');
-        echo '<span class="workspace-avatar" aria-label="Workspace">AC</span></div></header><main class="app-content" id="main-content">';
+        echo '</div></aside><div class="app-main"><header class="app-topbar">';
+        if (!$legacy) echo '<button class="btn desk-menu-toggle" type="button" aria-expanded="false" aria-controls="workspace-sidebar">' . Ui::icon('grid') . 'Menu</button>';
+        echo '<div class="breadcrumbs">' . ($legacy ? 'Workspace' : 'Project Desk') . ' <span aria-hidden="true">/</span><strong>' . Ui::e($label) . '</strong></div>';
+        if ($legacy) echo '<div class="topbar-right">' . self::pill('Testing release', 'purple') . '<span class="workspace-avatar" aria-label="Workspace">AC</span></div>';
+        echo '</header><main class="app-content" id="main-content">';
         if ($error !== '') {
             echo '<div class="alert alert-danger" role="alert">' . Ui::e($error) . '</div>';
         }
@@ -105,7 +145,7 @@ final class PanelView
                 echo '<div class="alert alert-success" role="status">' . Ui::e($_SESSION['flash']) . '</div>';
                 unset($_SESSION['flash']);
             }
-            echo '<div class="page-heading"><div><h1>' . Ui::e($label) . '</h1><p>' . $subtitle[$view] . '</p></div>';
+            echo '<div class="page-heading"><div><h1>' . Ui::e($view === 'overview' ? 'Review queue' : $label) . '</h1>' . ($view === 'overview' ? '' : '<p>' . $subtitle[$view] . '</p>') . '</div>';
             if ($view === 'overview' || $view === 'projects') {
                 echo '<a class="btn btn-primary" href="/loader.php?view=projects#new-project">' . Ui::icon('plus') . 'New project</a>';
             }
@@ -116,25 +156,36 @@ final class PanelView
                 'runs' => self::runs($data), 'systems' => self::systems($data,$csrf), 'history' => self::history($data),
             };
         }
-        echo '<footer class="app-footer"><span>AIcontrol · A place for the work and its evidence.</span><span>Times in AWST</span></footer></main></div></div><script nonce="' . Ui::e($data['asset_nonce']) . '">' . Ui::js() . '</script></body></html>';
+        echo '<footer class="app-footer"><span>' . ($legacy ? 'AIcontrol · A place for the work and its evidence.' : 'Project Desk') . '</span><span>Times in AWST</span></footer></main></div></div><script nonce="' . Ui::e($data['asset_nonce']) . '">' . Ui::js() . '</script></body></html>';
     }
 
     private static function overview(array $data): void
     {
-        $review = count(array_filter($data['tasks'], static fn(array $task): bool => $task['status'] === 'in_review'));
-        echo '<div class="metric-grid">';
-        foreach ([['Projects', count($data['projects']), 'folder', 'Briefs with a place to grow'], ['Task proposals', count($data['tasks']), 'task', 'Work with acceptance criteria'], ['In review', $review, 'robot', 'Results waiting for a decision'], ['Task API estimate', '$'.number_format(array_sum(array_map(static fn(array $p):float=>(float)$p['usage']['estimated_usd'],$data['projects'])),4), 'receipt', 'USD estimated · '.array_sum(array_map(static fn(array $p):int=>(int)$p['usage']['unknown_requests'],$data['projects'])).' unpriced calls']] as [$name, $value, $icon, $caption]) {
-            echo '<section class="card metric-card"><div class="card-body"><div class="metric-top"><span>' . $name . '</span>' . Ui::icon($icon) . '</div><div class="metric-value ' . (is_string($value) ? 'word' : '') . '">' . Ui::e($value) . '</div><div class="metric-caption">' . $caption . '</div></div></section>';
+        $review = array_values(array_filter($data['tasks'], static fn(array $task): bool =>
+            in_array($task['status'], ['in_review', 'outcome_uncertain', 'failed'], true)));
+        echo '<section id="review-queue" aria-label="Review queue" class="desk-section">';
+        if ($review === []) {
+            echo '<p class="muted">No tasks need your attention.</p>';
+        } else {
+            echo '<ul class="desk-list">';
+            foreach ($review as $task) {
+                echo '<li><a href="/loader.php?view=projects#task-' . (int) $task['id'] . '">'
+                    . Ui::icon('task') . '<span class="desk-list-title">' . Ui::e($task['title']) . '<small>' . Ui::e($task['project_name'])
+                    . '</small></span>' . self::status($task['status']) . Ui::icon('arrow') . '</a></li>';
+            }
+            echo '</ul>';
         }
-        echo '</div><div class="dashboard-grid"><div class="stack"><section class="card welcome-card"><div class="card-body"><div class="welcome-tag">' . Ui::icon('spark') . 'PROJECT PLANNING</div><h2>Turn a good brief into the next step.</h2><p>Give your project a home, define a task, and keep the result beside the work that led to it.</p><a class="btn btn-primary" href="/loader.php?view=projects">Manage projects ' . Ui::icon('arrow') . '</a></div></section><section class="card"><div class="card-header"><h2 class="card-title">Your projects</h2><a class="ms-auto muted" href="/loader.php?view=projects">View all</a></div>';
+        echo '</section><section class="desk-section"><div class="section-title"><h2>Recent projects</h2><a href="/loader.php?view=projects#project-list">All projects</a></div>';
         self::projectsTable(array_slice($data['projects'], 0, 5), $data['tasks']);
-        echo '</section></div><div class="stack"><section class="card"><div class="card-header"><h2 class="card-title">Make your first connection</h2></div><div class="card-body"><div class="checklist">';
-        foreach ([['Create a project', 'Start with a brief and an outcome.', '/loader.php?view=projects#new-project', count($data['projects']) > 0], ['Add a task', 'Define what a useful result looks like.', '/loader.php?view=projects#new-task', count($data['tasks']) > 0], ['Configure your AI connection', 'Enable a bounded task response.', '/loader.php?view=systems#openai', AgentRunner::configured()]] as $index => [$title, $hint, $href, $done]) {
-            echo '<div class="checklist-item"><span class="check-circle ' . ($done ? 'done' : '') . '">' . ($done ? Ui::icon('check') : $index + 1) . '</span><div><a href="' . $href . '">' . $title . '</a><p>' . $hint . '</p></div></div>';
-        }
-        echo '</div></div></section><section class="card"><div class="card-header"><h2 class="card-title">Recent activity</h2><a class="ms-auto muted" href="/loader.php?view=history">View all</a></div><div class="card-body pt-1 pb-1">';
-        self::activity(array_slice($data['events'], 0, 3));
-        echo '</div></section></div></div>';
+        echo '</section><details class="desk-section"><summary>Workspace details</summary>';
+        $usage = array_column($data['projects'], 'usage');
+        $cost = number_format(array_sum(array_column($usage, 'estimated_usd')), 4);
+        $unpriced = array_sum(array_column($usage, 'unknown_requests'));
+        echo '<p>' . count($data['projects']) . ' projects · ' . count($data['tasks']) . ' task proposals · $' . $cost
+            . ' USD estimated Task API cost · ' . $unpriced . ' unpriced calls</p>';
+        if (!AgentRunner::configured()) echo '<p><a href="/loader.php?view=systems#openai">Configure your AI connection</a></p>';
+        if ($data['projects'] !== []) echo '<p><a href="/loader.php?view=projects#new-task">Propose a task</a></p>';
+        echo '<p><a href="/loader.php?view=history">View recent activity</a></p></details>';
     }
 
     private static function projects(array $data, string $csrf): void
@@ -147,7 +198,7 @@ final class PanelView
         if ($search !== '') {
             echo '<p class="muted">Results for “' . Ui::e($search) . '” · <a href="/loader.php?view=projects">Clear search</a></p>';
         }
-        echo '<div><div class="section-title"><h2>Projects</h2><span>' . count($projects) . ' projects</span></div><div class="stack">';
+        echo '<div><div class="section-title section-anchor" id="project-list"><h2>Projects</h2><span>' . count($projects) . ' projects</span></div><div class="stack">';
         if ($projects === []) {
             echo '<section class="card">';
             self::empty('folder', $search === '' ? 'No projects yet' : 'No matching projects', $search === '' ? 'Use the new-project form to give your idea a starting point.' : 'Try another name or a word from the project brief.');
@@ -157,7 +208,7 @@ final class PanelView
             $count = count(array_filter($data['tasks'], static fn(array $task): bool => (int) $task['project_id'] === (int) $project['id']));
             echo '<section class="card section-anchor" id="project-' . Ui::e($project['id']) . '"><div class="card-body"><div class="task-meta"><span class="project-avatar">' . Ui::e(mb_strtoupper(mb_substr($project['name'], 0, 1))) . '</span>' . self::pill('Planning', 'purple') . '</div><h3 class="task-title">' . Ui::e($project['name']) . '</h3><p class="task-description preserve">' . Ui::e($project['brief']) . '</p><div class="task-project">' . $count . ' tasks · Created ' . Ui::e(Ui::time($project['created_at'])) . '</div><p class="project-spend">'.Ui::e(UsageMeter::label($project['usage'])).' · '.number_format($project['usage']['total_tokens']).' tokens</p></div></section>';
         }
-        echo '</div></div><div><div class="section-title"><h2>Task proposals</h2><span>' . count($tasks) . ' tasks</span></div><div class="stack">';
+        echo '</div></div><div><div class="section-title section-anchor" id="task-list"><h2>Task proposals</h2><span>' . count($tasks) . ' tasks</span></div><div class="stack">';
         if ($tasks === []) {
             echo '<section class="card">';
             self::empty('task', $search === '' ? 'Nothing in the queue yet' : 'No matching tasks', 'Add a task with acceptance criteria. A proposal does not start an agent automatically.');

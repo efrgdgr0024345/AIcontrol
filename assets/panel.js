@@ -680,3 +680,33 @@ document.addEventListener('submit', event => {
   root.querySelector('[data-project-projection-filter]').addEventListener('change',update);update();
   root.querySelector('[data-download-map-projection]').addEventListener('click',()=>{if(field.value)download(field.value,'projected');});
 })();
+
+// Hover reveals the desktop rail. The menu button provides a persistent touch target.
+(() => {
+  const layout = document.querySelector('.project-desk');
+  if (!layout) return;
+  const sidebar = layout.querySelector('.app-sidebar');
+  const toggle = layout.querySelector('.desk-menu-toggle');
+  const small = matchMedia('(max-width: 650px)');
+  const setOpen = open => {
+    sidebar.toggleAttribute('data-menu-open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+  };
+  layout.dataset.navReady = '';
+  toggle.addEventListener('click', () => {
+    const open = !sidebar.hasAttribute('data-menu-open');
+    setOpen(open);
+    if (open) sidebar.querySelector('.ac-brand').focus();
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Escape' || !sidebar.hasAttribute('data-menu-open')) return;
+    setOpen(false);
+    toggle.focus();
+  });
+  document.addEventListener('pointerdown', event => {
+    if (!sidebar.contains(event.target) && !toggle.contains(event.target)) setOpen(false);
+  });
+  sidebar.addEventListener('click', event => {
+    if (small.matches && event.target.closest('a')) setOpen(false);
+  });
+})();

@@ -1281,3 +1281,104 @@ body.research-map-open { overflow:hidden; }
 .output-explanation-box h4 {color:inherit;font-size:1.1rem;}
 
 [data-original-output]::before {content:"B · Original model output";display:block;font-size:.75rem;line-height:1.5;margin-bottom:8px;color:#bed0df;}
+
+/* Project Desk shell. Research keeps its dedicated workspace layout. */
+.project-desk { --desk-rail:68px; --desk-menu:236px; background:#fcfbfe; }
+.project-desk .app-sidebar {
+ width:var(--desk-rail);
+ padding:16px 10px;
+ overflow-x:hidden;
+ gap:10px;
+ background:#f5f2fc;
+ color:#272139;
+ border-right:1px solid #e2dbee;
+ transition:width 180ms ease;
+}
+.project-desk .app-sidebar:has(:focus-visible),.project-desk .app-sidebar[data-menu-open] {
+ width:min(var(--desk-menu),calc(100vw - 32px));
+ box-shadow:8px 0 24px #2d205418;
+}
+@media(hover:hover) {
+ .project-desk .app-sidebar:hover {
+  width:min(var(--desk-menu),calc(100vw - 32px));
+  box-shadow:8px 0 24px #2d205418;
+ }
+}
+.project-desk .app-main { margin-left:var(--desk-rail); }
+.project-desk .app-sidebar .ac-brand {
+ padding:4px 5px;
+ gap:12px;
+ min-height:44px;
+ white-space:nowrap;
+ color:#272139;
+ font-size:18px;
+}
+.project-desk .site-mark { flex:none; }
+.project-desk .app-navigation { display:flex; flex:0 0 auto; flex-direction:column; gap:3px; overflow:visible; }
+.project-desk .app-navigation a {
+ position:relative;
+ gap:12px;
+ min-height:44px;
+ padding:10px 13px;
+ margin:0;
+ color:#352e48;
+ font-size:.875rem;
+ white-space:nowrap;
+ overflow:hidden;
+}
+.project-desk .app-navigation .icon { width:20px; height:20px; }
+.project-desk .app-navigation a:is(:hover,[aria-current=page]),
+.project-desk .sidebar-group-details summary:hover { color:#34246a; background:#e7defa; }
+.project-desk .app-sidebar :focus-visible { outline-offset:-3px; }
+.project-desk .sidebar-group { position:relative; display:block; margin:0; padding:0; border:0; }
+.project-desk .sidebar-group > a { padding-right:35px; box-sizing:border-box; }
+.project-desk .sidebar-group-details > summary {
+ position:absolute; top:0; left:calc(var(--desk-menu) - 55px); display:grid; place-items:center;
+ list-style:none; width:34px; height:44px; cursor:pointer;
+ color:#4c3a78; border-radius:7px;
+}
+.project-desk .sidebar-group-details > summary::-webkit-details-marker { display:none; }
+.project-desk .sidebar-group-details > summary span { font-size:1.35rem; line-height:1; }
+.project-desk .sidebar-group-details[open] > summary span { transform:rotate(90deg); }
+.project-desk .sidebar-sublist { list-style:none; margin:0; padding:0 0 0 16px; }
+.project-desk .sidebar-sublist a { font-size:.81rem; }
+.project-desk .sidebar-sublist .icon { width:17px; height:17px; }
+.project-desk .sidebar-foot { display:block; margin-top:auto; white-space:nowrap; }
+.project-desk .sidebar-lock { margin:4px 0 0; padding:8px 12px; color:#514763; }
+.project-desk .sidebar-lock .icon { width:20px; }
+.project-desk .breadcrumbs { color:#514763; }
+.project-desk .desk-menu-toggle { display:none; }
+.project-desk .desk-section { margin-bottom:28px; }
+.project-desk .desk-section summary { cursor:pointer; font-weight:600; }
+.project-desk .desk-section summary + p { margin-top:10px; }
+.project-desk .desk-list { padding:0; margin:0; list-style:none; border-top:1px solid #e6e0ee; }
+.project-desk .desk-list li { border-bottom:1px solid #e6e0ee; }
+.project-desk .desk-list a { display:flex; align-items:center; gap:12px; padding:14px 8px; color:#31274a; text-decoration:none; }
+.project-desk .desk-list a:hover { background:#f2edf9; }
+.project-desk .desk-list-title { flex:1; min-width:0; font-weight:600; overflow-wrap:anywhere; }
+.project-desk .desk-list-title small { display:block; color:#626078; font-weight:400; }
+@media(hover:hover) {
+ .project-desk .app-sidebar:not(:hover):not(:has(:focus-visible)):not([data-menu-open]) :is(.sidebar-sublist,.sidebar-foot form) { display:none; }
+}
+@media(hover:none) and (min-width:651px) {
+ .project-desk[data-nav-ready] .desk-menu-toggle { display:inline-flex; }
+ .project-desk:not([data-nav-ready]) { --desk-rail:236px; }
+ .project-desk[data-nav-ready] .app-sidebar:not([data-menu-open]):not(:has(:focus-visible)) :is(.sidebar-sublist,.sidebar-foot form) { display:none; }
+}
+@media(max-width:650px) {
+ .project-desk .app-main { margin-left:0; }
+ .project-desk .app-sidebar {
+  position:static;
+  width:100%;
+  max-height:65dvh;
+  padding:12px 16px;
+  border-right:0;
+  border-bottom:1px solid #e2dbee;
+ }
+ .project-desk[data-nav-ready] .app-sidebar:not([data-menu-open]) { display:none; }
+ .project-desk .app-sidebar:is(:hover,:has(:focus-visible),[data-menu-open]) { width:100%; box-shadow:none; }
+ .project-desk[data-nav-ready] .desk-menu-toggle { display:inline-flex; }
+ .project-desk .sidebar-group-details > summary { right:0; left:auto; }
+ .project-desk .app-topbar { justify-content:flex-start; gap:10px; }
+}
+@media(prefers-reduced-motion:reduce) { .project-desk .app-sidebar { transition:none; } }

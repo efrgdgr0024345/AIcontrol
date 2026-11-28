@@ -10,6 +10,7 @@ private records persist on the hosting server.
 | Release channel | `main` |
 | Required exact-SHA check | `planning-panel` / GitHub Actions |
 | Entry point | One uploaded `loader.php`, including subfolder support |
+| Workspace display | Project Desk with existing favicon, a compact expanding left menu and a flat review queue. Research keeps its dedicated interface. |
 | Interface | Tabler 1.7.4 (MIT), bundled locally; local JS enhances update checks/progress |
 | UI build | `php bin/build-ui.php`, then `php bin/build-manifest.php` |
 | Display timezone | Australia/Perth (AWST); stored timestamps stay UTC |
