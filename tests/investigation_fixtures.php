@@ -9,7 +9,7 @@ namespace AIcontrol {
         public static bool $ok=true;
         public static mixed $observer=null;
     }
-    function curl_init(string $url):object { if($url!=='https://api.openai.com/v1/responses')throw new \RuntimeException('Wrong provider');return new \stdClass(); }
+    function curl_init(string $url):object { if(!in_array($url,['https://api.openai.com/v1/responses','https://api.openai.com/v1/embeddings'],true))throw new \RuntimeException('Wrong provider');return new \stdClass(); }
     function curl_setopt_array(object $c,array $options):bool { InvestigationWire::$options=$options;return true; }
     function curl_exec(object $c):bool {
         $body=json_decode(InvestigationWire::$options[CURLOPT_POSTFIELDS],true);InvestigationWire::$bodies[]=$body;

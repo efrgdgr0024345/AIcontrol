@@ -475,7 +475,6 @@ details[open] summary { margin-bottom: 14px; }
 .map-pathway li + li::before { content:'›'; }
 .map-pathway button { border:0; background:transparent; color:inherit; padding:.2rem 0; text-align:left; text-decoration:underline; overflow-wrap:anywhere; }
 .map-path-note form { margin-top:.35rem; padding-top:0; border:0; }
-.map-next-question { font-weight:600; overflow-wrap:anywhere; }
 .map-inspector-actions { display:flex; flex-wrap:wrap; gap:.4rem; }
 .map-review,.map-evidence-help { margin-top:1rem; padding:1rem; border-radius:.6rem; background:#eee8fa; color:#403557; }
 .map-review p { flex-basis:100%; margin:0; }
@@ -805,6 +804,7 @@ body.research-map-open { overflow:hidden; }
 .map-connections .btn,.map-current-work .btn { display:block; text-align:left; margin:7px 0; width:100%; white-space:normal; }
 .mindmap .map-edge[data-link-kind=knowledge_family] { stroke-dasharray:3 6; }
 .mindmap .map-edge[data-link-kind=idea_match] { stroke-dasharray:1 4; stroke-linecap:round; }
+.mindmap .map-edge[data-link-kind=semantic_similarity] { stroke-dasharray:2 4; }
 .mindmap .map-edge[data-link-kind=shared_source] { stroke-dasharray:8 5; }
 .map-working-now { position:absolute; left:14px; top:72px; z-index:3; max-width:min(60vw,660px); border:1px solid #92d9cf; border-radius:10px; background:#102720; box-shadow:0 4px 18px #0008; }
 .mindmap .map-working-now .btn { background:transparent; color:#d5fff0; border:0; white-space:normal; text-align:left; font-size:12px; padding:9px 12px; }
@@ -1175,6 +1175,12 @@ body.research-map-open { overflow:hidden; }
 .map-branch-item:hover,.map-branch-item[aria-current=true] { background:rgb(38 67 93 / 66%); border-color:#8bb7d1; border-left-color:var(--branch-colour,#9ddcec); }
 .map-branch-item strong { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; font-size:.85rem; line-height:1.35; font-weight:600; overflow-wrap:anywhere; }
 .map-branch-item small { display:block; margin-top:3px; font-size:.72rem; color:#bdd1e5; }
+.map-branch-questions { margin:1px 4px 8px 10px; padding:0 6px; border-left:1px solid #526982; color:#d7e8f8; font-size:.77rem; overflow-wrap:anywhere; }
+.map-branch-questions summary { color:#bde1ff; cursor:pointer; padding:5px 0; }
+.map-branch-questions p { margin:2px 0 4px; }
+.map-branch-questions small { display:block; color:#c0d5eb; }
+.map-idea-classification dt { margin-top:.25rem; }
+.map-idea-classification dd { margin:0; overflow-wrap:anywhere; }
 .map-branch-item:focus-visible,.map-concept-actions .btn:focus-visible { outline:3px solid #b9eaff; outline-offset:2px; }
 .map-branch-empty { color:#c3d0e3; padding:16px 2px; }
 .research-map-open .map-workspace,.research-map-open .map-details-open .map-workspace { margin:0; display:block; }
@@ -1202,7 +1208,7 @@ body.research-map-open { overflow:hidden; }
  .map-conversation-thread { max-height:240px; }
 }
 .research-map-open .map-screen-header { z-index:9; }
-.mindmap .map-concept-context > summary,.mindmap .map-path-note > summary { color:#c5d8ed; min-height:33px; padding:6px 0; font-size:.85rem; line-height:1.5; cursor:pointer; }
+.mindmap .map-concept-context > summary,.mindmap .map-path-note > summary,.mindmap .map-idea-classification > summary { color:#c5d8ed; min-height:33px; padding:6px 0; font-size:.85rem; line-height:1.5; cursor:pointer; }
 .research-map-open .map-working-now,.research-map-open .map-state-notice,.research-map-open .map-star-legend { left:calc(var(--branch-panel-width) + 28px); max-width:calc(100% - var(--branch-panel-width) - 52px); }
 .research-map-open .map-working-now { top:78px; bottom:auto; }
 @media(max-width:700px) {
@@ -1388,3 +1394,11 @@ body.research-map-open { overflow:hidden; }
  .project-desk .app-topbar { justify-content:flex-start; gap:10px; }
 }
 @media(prefers-reduced-motion:reduce) { .project-desk .app-sidebar { transition:none; } }
+
+.mindmap .map-semantic-controls summary { cursor:pointer; color:#d3e5f7; }
+.mindmap .map-semantic-controls p { margin:.35rem 0; }
+.mindmap .map-semantic-actions { display:flex; flex-wrap:wrap; gap:.35rem; }
+.mindmap .map-semantic-actions form { margin:0; }
+.mindmap .map-index-help { font-size:.82rem; color:#c5d8ed; }
+.mindmap .map-node[data-outlier=true] .map-node-button::before { border-radius:2px; outline:1px solid #c5dcff; rotate:45deg; }
+.map-outlier-explanation { color:#c2dcff; font-weight:600; }

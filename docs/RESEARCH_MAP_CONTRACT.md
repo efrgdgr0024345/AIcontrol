@@ -1,5 +1,31 @@
 # Research Map contract
 
+## Meaning layout
+
+Project opt-in permits indexing saved idea statements through the configured
+OpenAI key. Indexing takes up to 24 ideas from the open run per explicit batch.
+Successful growth also indexes new ideas for enabled projects. An unknown or
+failed embedding response leaves the previous index usable and stops automatic
+indexing on that run until a new explicit batch. Provider usage is tracked in
+the existing research budget and project cap. An embeddings response after
+Stop is ignored for layout and still accounts for any confirmed usage.
+
+Vectors are private SQLite BLOBs keyed by node. They have fingerprints that
+cover the version, model, dimensions and text. The store keeps up to four exact
+cosine neighbours per node. New vectors compare with the current run, and
+replaced vectors invalidate affected neighbour lists. Status reads the derived
+links and counts without making a provider call. An edge requires a similarity
+floor and a reciprocal neighbour where the similarity is weaker. Outliers
+require full coverage of at least five ideas and a weak closest neighbour
+relative to the run's typical closest match. Users can inspect related ideas
+and select a distant star in the map navigator.
+
+The optional meaning layout uses a fixed pass that pulls related stars
+together and places outliers farther from the centre. The branch layout keeps
+its own coordinate memory. The meaning layout uses the full displayed run,
+including branches hidden by filters or collapse. Similarity is presentation
+metadata and does not alter the saved branches.
+
 ## Research continuity and path focus (2026-11-22)
 
 Exploration requests include every saved idea branch in the current project,
@@ -104,8 +130,9 @@ limitations and tests, and [the supplied plan](EXPLORATION_FIRST_PLAN.md).
 The Map is a read-mostly projection of a saved investigation. The run, notebook
 and evidence ledger are authoritative; projection, filters, collapse, camera
 and position memory do not write research rows or change the phase machine.
-The stable structural renderer is the only Map path. No graph service, CDN,
-physics loop, background worker or additional provider request is introduced.
+The structural layout and meaning layout share the existing renderer. The meaning
+layout uses the local vector index and does not require a graph service, CDN,
+background worker or continuous physics loop.
 
 ## Snapshot and evidence
 

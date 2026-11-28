@@ -61,6 +61,7 @@ jobs:
           php tests/research_flow.php
           php tests/exploration.php
           php tests/exploration_context.php
+          php tests/idea_vectors.php
           php tests/star_map.php
           php tests/concept_chat.php
           php tests/map_steering.php

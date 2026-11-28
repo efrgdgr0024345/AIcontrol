@@ -1,10 +1,15 @@
 <?php
 // Disposable synthetic transport, never a deployed application entry point.
 namespace AIcontrol {
- function curl_init($url){return new \stdClass();}
+ function curl_init($url){return (object)['url'=>$url];}
  function curl_setopt_array($h,$options){$GLOBALS['exploration_options']=$options;return true;}
  function curl_exec($h){
   $body=json_decode($GLOBALS['exploration_options'][CURLOPT_POSTFIELDS],true);$schema=$body['text']['format']['schema']['properties']??[];$extra=[];
+  if($h->url==='https://api.openai.com/v1/embeddings'){
+   $items=[];
+   foreach($body['input'] as $index=>$input){$embedding=array_fill(0,$body['dimensions'],0);$embedding[str_contains($input,'battery life')?1:0]=1;$items[]=['index'=>$index,'embedding'=>$embedding];}
+   ($GLOBALS['exploration_options'][CURLOPT_WRITEFUNCTION])($h,json_encode(['model'=>$body['model'],'usage'=>['prompt_tokens'=>40],'data'=>array_reverse($items)]));return true;
+  }
   if(str_starts_with($body['input']??'','Saved concept context:')){if(isset($body['tools']))throw new \RuntimeException('Concept chat acquired tools');$value='Synthetic concept reply: inspect the practical trade-offs and assumptions for this selected idea.';}
   elseif(isset($schema['core_claims']))$value=['core_claims'=>[['claim'=>'Local repair hubs could reduce material demand','uncertainty'=>'Throughput','confidence'=>'medium','verify'=>'Measure materials','priority'=>'high'],['claim'=>'Shared storage could extend battery life','uncertainty'=>'Cycling','confidence'=>'low','verify'=>'Measure lifetime','priority'=>'normal']],'competing_angles'=>['Demand reduction'],'least_confident'=>'Transferability','background_assumptions'=>['Available parts']];
   elseif(isset($schema['ideas'])){
@@ -24,8 +29,10 @@ namespace AIcontrol {
   }
   if(isset($value['core_claims']))foreach($value['core_claims'] as &$claim)$claim['next_question']='Which outcome would change the decision?';
   unset($claim);
-  if(isset($value['ideas']))foreach($value['ideas'] as &$idea)$idea+=['connection'=>'This tests one specific mechanism in its parent.','next_question'=>'Would this mechanism change the outcome?'];
+  if(isset($value['ideas']))foreach($value['ideas'] as &$idea)$idea+=['connection'=>'This tests one specific mechanism in its parent.','next_question'=>'Would this mechanism change the outcome?','parent_question'=>'How would '.$idea['title'].' change the parent idea?'];
   unset($idea);
+  foreach(['ideas','core_claims'] as $group)if(isset($value[$group]))foreach($value[$group] as &$row)$row['classification']=['role'=>'mechanism','topics'=>['repair service'],'mechanisms'=>['parts availability'],'outcomes'=>[],'conditions'=>[]];
+  unset($row);
   $content=['type'=>'output_text','text'=>is_string($value)?$value:json_encode($value)];if($extra)$content['annotations']=[['type'=>'url_citation','url'=>'https://example.com/pilot','title'=>'Pilot study']];
   $response=['status'=>'completed','usage'=>['input_tokens'=>20,'output_tokens'=>30],'output'=>array_merge($extra,[['type'=>'message','content'=>[$content]]])];
   ($GLOBALS['exploration_options'][CURLOPT_WRITEFUNCTION])($h,"event: response.completed\ndata: ".json_encode(['type'=>'response.completed','response'=>$response])."\n\n");return true;

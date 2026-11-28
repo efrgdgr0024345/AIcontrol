@@ -113,7 +113,7 @@
       const phase=byId.get(key(request.node_id)),explicit=request.kind==='model_explore'?unique(list(data(phase).ids).map(nearest).filter(id=>id!=='root')):[];
       const targets=explicit.length?explicit.map(id=>conceptsById.get(id)).filter(Boolean):targetId!=='root'?[conceptsById.get(targetId)].filter(Boolean):request.kind==='model_explore'||request.kind==='learn'?[root]:concepts.filter(node=>node.type==='dream_claim'&&![0,'0',false].includes(node.selected));
       if(!targets.length)targets.push(root);
-      const activity=['dream','exploration','model_explore'].includes(request.kind)?'discovery':request.kind==='plan'?'planning':request.kind==='evidence'?'evidence':request.kind==='learn'?'learning':'verification';
+      const activity=['dream','exploration','model_explore'].includes(request.kind)?'discovery':request.kind==='plan'?'planning':request.kind==='evidence'?'evidence':request.kind==='learn'?'learning':request.kind==='idea_index'?'indexing':'verification';
       for(const node of targets)Object.assign(node,{working:true,activity,activity_text:request.activity||request.worker_role||request.kind,working_request_ids:unique([...(node.working_request_ids||[]),String(request.id)]),work_scope:targets.length>1?'shared':'node'});
     }
     const verdicts = new Map();
@@ -188,6 +188,14 @@
       for (let a = 0; a < related.length; a++) for (let b = a + 1; b < related.length; b++) edges.push({from: related[a], to: related[b], kind: 'shared_source', source_id: sourceId(source.id), weight: 25});
     }
     edges.push(...relatedLinks(projected,edges));
+    const semantic = object(snapshot?.semantic);
+    if (semantic.enabled) {
+      edges.push(...similarityLinks(projectedIndex, semantic.edges));
+      for (const id of ids(semantic.outliers)) {
+        const node = projectedIndex.get(id);
+        if (isConcept(node)) node.semantic_outlier = true;
+      }
+    }
     edges.sort((a, b) => compare(a.from, b.from) || compare(a.to, b.to) || compare(a.kind, b.kind) || compare(a.source_id || '', b.source_id || ''));
     const detailCount = filter === 'question' ? selectedConcepts.filter(node => node.type !== 'dream_claim').length : filter === 'dream_claim' ? selectedConcepts.length : filter === 'all' ? selectedConcepts.length : details.length;
     const reasons = {all: review ? 'No concepts have been proposed for review yet.' : 'No selected concepts are available for this run yet.', dream_claim: 'No selected claims are available for this run yet.', question: 'No questions have grown from the selected concepts yet.', source: 'No sources are stored for the selected concepts yet.', passage: 'No passages are stored for the selected concepts yet.', edge: 'No evidence relations are stored for the selected concepts yet.', dead_end: 'No dead ends are stored for the selected concepts yet.', open: 'No open verdicts are stored for the selected concepts yet.'};
@@ -286,6 +294,28 @@
     for(const members of groups.values())chain(members,'knowledge_family',members.every(n=>n.family_basis==='saved_family')?'Same saved knowledge family; not an evidence relation.':'Same concept branch, derived from saved ancestry; not an evidence relation.');
     return out;
   }
+  function similarityLinks(nodes, matches) {
+    const links = [], seen = new Set();
+    for (const match of list(matches)) {
+      const from = key(match?.from), to = key(match?.to), score = match?.score;
+      if (!isConcept(nodes.get(from)) || !isConcept(nodes.get(to)) || from === to ||
+          !Number.isFinite(score) || score <= 0 || score > 1) continue;
+      const pair = [from, to].sort(compare).join('|');
+      if (seen.has(pair)) continue;
+      seen.add(pair);
+      let reason = 'These ideas discuss similar concepts. Read them together to see how their claims differ.';
+      const a = nodes.get(from).classification, b = nodes.get(to).classification;
+      for (const [facet, label] of [['mechanisms','Mechanism'], ['outcomes','Outcome'], ['conditions','Condition'], ['topics','Topic']]) {
+        const other = new Set(list(b?.[facet]).map(value => String(value).normalize('NFKC').toLowerCase()));
+        const shared = list(a?.[facet]).find(value => other.has(String(value).normalize('NFKC').toLowerCase()));
+        if (!shared) continue;
+        reason = 'Both ideas discuss '+String(shared)+' ('+label.toLowerCase()+'). Read them together to see how their claims differ.';
+        break;
+      }
+      links.push({from,to,kind:'semantic_similarity',score,weight:Math.round(score*100),reason,display_only:true});
+    }
+    return links;
+  }
   function constellationLayout(nodes,edges,width,height,previous=new Map()) {
     const rows=records(nodes).map(n=>({...n,id:String(n.id),w:Number(n.w)||194,h:Number(n.h)||100})),byId=new Map(rows.map(n=>[n.id,n]));
     const root=rows.find(n=>n.id==='root'||n.type==='root')||rows[0];if(!root)return {positions:new Map(),width,height,reused:0,new_count:0};
@@ -324,6 +354,74 @@
     for(const [id,p]of result.positions){if(Number.isFinite(p.z))continue;const node=byId.get(id),parent=result.positions.get(String(node?.parent_id));p.z=id==='root'?0:parent&&String(node?.parent_id)!=='root'&&Number.isFinite(parent.z)?parent.z+(hash(id+'depth')%281-140):(hash((node?.knowledge_line_id||id)+'volume')%1601-800)+(hash(id+'depth')%281-140);}
     return result;
   }
+  // A deterministic, bounded layout pass over the saved positions. It never changes the branch layout.
+  function semanticLayout(base, links, outliers) {
+    const positions = new Map([...base].map(([id, point]) => [id, {...point}]));
+    const root = positions.get('root');
+    if (!root) return positions;
+    const edges = links.filter(edge => edge.kind === 'semantic_similarity' && positions.has(edge.from) && positions.has(edge.to));
+    const moving = new Set(edges.flatMap(edge => [edge.from, edge.to]));
+    for (let pass = 0; pass < 12; pass++) {
+      const shifts = new Map([...moving].map(id => [id, {x:0, y:0, z:0, degree:0}]));
+      for (const {from,to,score} of edges) {
+        const a = positions.get(from), b = positions.get(to);
+        const dx = b.x-a.x, dy = b.y-a.y, dz = (b.z||0)-(a.z||0), distance = Math.hypot(dx,dy,dz);
+        const rest = 225 + (1-score)*250;
+        if (distance <= rest) continue;
+        const pull = Math.min(175, (distance-rest)*(0.13+0.15*score))/distance;
+        const left = shifts.get(from), right = shifts.get(to);
+        left.x+=dx*pull;left.y+=dy*pull;left.z+=dz*pull;left.degree++;
+        right.x-=dx*pull;right.y-=dy*pull;right.z-=dz*pull;right.degree++;
+      }
+      for (const [id, shift] of shifts) {
+        const point=positions.get(id), original=base.get(id), weight=1+0.34*Math.max(0,shift.degree-1);
+        point.x+=shift.x/weight+(original.x-point.x)*0.045;
+        point.y+=shift.y/weight+(original.y-point.y)*0.045;
+        point.z=(point.z||0)+shift.z/weight+((original.z||0)-(point.z||0))*0.045;
+      }
+    }
+    const distances = [...moving].map(id=>{
+      const p=positions.get(id);
+      return Math.hypot(p.x-root.x,p.y-root.y,p.z||0);
+    }).sort((a,b)=>a-b);
+    const edgeRadius = Math.max(800,(distances[Math.floor(distances.length*0.85)]||0)+320);
+    for (const id of outliers) {
+      const point=positions.get(String(id));
+      if (!point || moving.has(String(id))) continue;
+      const angle=(hash(id+'edge')%3600)*Math.PI/1800;
+      point.x=root.x+Math.cos(angle)*edgeRadius;
+      point.y=root.y+Math.sin(angle)*edgeRadius*0.8;
+      point.z=(hash(id+'height')%421)-210;
+      moving.add(String(id));
+    }
+    // Leave room for labels without perturbing stars outside the similarity view.
+    const buckets = new Map(), cell = 240;
+    const boxKey = (x,y,z) => x+'|'+y+'|'+z;
+    function reserve(p) {
+      const key=boxKey(Math.floor(p.x/cell),Math.floor(p.y/cell),Math.floor((p.z||0)/cell));
+      if(!buckets.has(key))buckets.set(key,[]);
+      buckets.get(key).push(p);
+    }
+    function overlaps(p) {
+      const x=Math.floor(p.x/cell),y=Math.floor(p.y/cell),z=Math.floor((p.z||0)/cell);
+      for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++)for(let c=-1;c<=1;c++) {
+        if((buckets.get(boxKey(x+a,y+b,z+c))||[]).some(q=>
+          Math.abs((p.z||0)-(q.z||0))<120 && p.x<q.x+q.w+14 && p.x+p.w+14>q.x
+          && p.y<q.y+q.h+14 && p.y+p.h+14>q.y))return true;
+      }
+      return false;
+    }
+    for(const [id,point] of positions) if(!moving.has(id))reserve(point);
+    for(const id of [...moving].sort(compare)) {
+      const point=positions.get(id), x=point.x,y=point.y;
+      for(let offset=1;offset<=45&&overlaps(point);offset++){
+        const radius=Math.sqrt(offset)*48,angle=offset*2.3999632297;
+        point.x=x+Math.cos(angle)*radius;point.y=y+Math.sin(angle)*radius;
+      }
+      reserve(point);
+    }
+    return positions;
+  }
   function starPresentation(nodes,positions,camera,viewport,options={}) {
     const byId=new Map(nodes.map(n=>[String(n.id),n])),focus=byId.get(String(camera.focusNodeId))||byId.get('root'),line=new Set(),seen=new Set();
     // A just-demoted focus recedes during automatic handoff; explicit selection restores the path.
@@ -358,5 +456,5 @@
     add(text) { text = sentence(text); if (!text || this.seen.has(text)) return; this.seen.add(text); this.items.push(text); this.history.push(text); if (this.items.length > 50) this.items.shift(); if (this.history.length > 100) this.history.shift(); }
     tick(now, visible = true) { const elapsed = this.last ? now - this.last : 0; this.last = now; if (!visible || this.paused) { this.until += elapsed; return null; } if (!this.items.length || this.current && now < this.until) return null; this.current = this.items.shift(); this.until = now + Math.max(5000, Math.min(10000, this.current.split(/\s+/).length * 260 + 2000)); return this.current; }
   }
-  return {owner, project, layout, constellationLayout, spatialLayout, starPresentation, familyColour, relatedLinks, sentence,shortNote, ReadingQueue};
+  return {owner, project, layout, constellationLayout, spatialLayout, semanticLayout, starPresentation, familyColour, relatedLinks, sentence,shortNote, ReadingQueue};
 });

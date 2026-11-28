@@ -157,6 +157,33 @@ canvas collapse/restore, stable coordinates, selected-node continuation while
 idle and stopped, the fresh root path, frozen-ledger integrity, and Stop with a
 late response. Chromium checks cover the compact controls on desktop and mobile.
 
+## Research direction, branch questions and idea similarity
+
+[Research direction](RESEARCH_DIRECTION.md) sets the product goal and when to
+bring a proposed departure to the owner before implementation. Exploration
+uses the original brief and selected branch as its scope. The left branch list
+places Possible questions below the saved descendants of each idea. New growth
+includes a question for the new idea and a revised question for the parent. A
+branch picks up more recent substantive work in its descendants. A new attached
+source can also change the suggested check. The question is optional to pursue.
+Concept text and voice use the branch as their main reference and can surface
+one useful connection or saved question when it helps the conversation.
+
+Ideas are classified by contribution role. Topic, mechanism, outcome and
+condition tags describe reusable phrases. Existing cards get a role from
+their saved type where model classification is unavailable. Idea text can be
+indexed with OpenAI for each project from Map controls. SQLite stores versioned
+256-dimensional embeddings and exact nearest neighbours. Questions, notes,
+conversations, sources and suggested tests are excluded from embedding input.
+The branch layout is available alongside the meaning layout. Outliers are
+relative to their map and are a prompt for exploration. Similarity does not
+change authorship, ancestry, research steering, or evidence assessments.
+
+Local tests use synthetic transport to check the request scope, tagging, billing,
+index retention, neighbouring ideas, outliers, refreshed branch questions,
+browser interactions and accessible type and colour. The live installation and
+provider results are checked separately.
+
 ## Research pathways and follow-up questions
 
 The map's idea reader shows clickable breadcrumbs from the research brief to
@@ -747,6 +774,7 @@ php tests/investigation.php
 php tests/rigour.php
 php tests/research_flow.php
 php tests/map_steering.php
+php tests/idea_vectors.php
 python3 -B -m unittest -v tests/investigation_http.py tests/http_smoke.py tests/standalone_smoke.py tests/passwordless_smoke.py tests/pin_smoke.py
 git diff --check
 npm ci --ignore-scripts

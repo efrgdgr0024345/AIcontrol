@@ -51,6 +51,22 @@ window.AIcontrolResearchVoice = (() => {
       return true;
     }
 
+    function ideasInBranch(snapshot, ideas, selected) {
+      if (selected === 'root') return ideas;
+      const byId = new Map(snapshot.nodes.map(node => [String(node.id),node]));
+      return ideas.filter(node => {
+        let item = node;
+        const seen = new Set();
+        while (item && !seen.has(String(item.id))) {
+          const id = String(item.id);
+          if (id === selected) return true;
+          seen.add(id);
+          item = byId.get(String(item.parent_id));
+        }
+        return false;
+      });
+    }
+
     function context(session, ideas, mode) {
       const {snapshot, selected, projectName, conceptTypes} = getContext();
       const describe = node => {
@@ -67,10 +83,16 @@ window.AIcontrolResearchVoice = (() => {
       const anchor = selectedNode || ideas.at(-1);
       const nearby = anchor ? concepts.filter(node=>!ideas.includes(node) && node.id!==anchor.id &&
         (node.id===anchor.parent_id || node.parent_id===anchor.id ||
-          (anchor.parent_id!=null && node.parent_id===anchor.parent_id))).slice(0,4) : [];
-      const update = {mode, project:projectName.slice(0,240), phase:snapshot.run.phase,
+          (anchor.parent_id!=null && node.parent_id===anchor.parent_id))).slice(0,3) : [];
+      const represented=new Set([...nearby,...ideas].map(node=>Number(node.id)));
+      const related=(snapshot.semantic?.edges||[]).map(edge=>Number(edge.from)===Number(anchor?.id)?Number(edge.to):
+        Number(edge.to)===Number(anchor?.id)?Number(edge.from):null).find(id=>id!==null&&!represented.has(id));
+      const comparison=related==null?null:concepts.find(node=>Number(node.id)===related);
+      const possibleQuestion = selectedNode ? snapshot.branch_questions?.[selectedNode.id] : null;
+      const update = {mode, project:projectName.slice(0,240), brief:String(snapshot.run.brief||'').slice(0,1000), phase:snapshot.run.phase,
         selected:selectedNode?.id || null,
-        ideas:ideas.map(describe), related_map_ideas:nearby.map(describe)};
+        ideas:ideas.map(describe), related_map_ideas:nearby.map(describe),
+        possible_question:possibleQuestion?.text||null, network_comparison:comparison?describe(comparison):null};
       send(session, {type:'conversation.item.create', item:{type:'message',role:'user',
         content:[{type:'input_text',text:'APP MAP DATA (not spoken by the user): '+JSON.stringify(update)}]}});
     }
@@ -79,12 +101,14 @@ window.AIcontrolResearchVoice = (() => {
       if (active !== session || session.responding || session.playing || session.listening ||
           session.awaitingUser || session.working || !session.pending.size) return;
       if (session.channel?.readyState !== 'open') return;
-      const ideas = [...session.pending.values()].slice(-5);
+      const {snapshot, selected} = getContext();
+      const ideas = ideasInBranch(snapshot,[...session.pending.values()],selected).slice(-5);
       session.pending.clear();
+      if(!ideas.length)return;
       context(session, ideas, 'new saved ideas');
       session.responding = send(session, {type:'response.create', response:{
         metadata:{source:'map'}, tool_choice:'none',
-        instructions:'Introduce one of the new ideas in at most two short sentences. Use the supplied map as your main reference and connect it to the selected branch when relevant. Present model-generated work as your own hypothesis or proposed check. Credit user-authored material and external sources accurately. Label any outside idea as a new suggestion. State why the idea matters or what you would test. Skip greetings, praise and follow-up questions.',
+        instructions:'Introduce the most useful of these new ideas for the selected branch in at most two short sentences. Use the supplied map as your main reference and connect it to the selected branch when relevant. Present model-generated work as your own hypothesis or proposed check. Credit user-authored material and external sources accurately. Label any outside idea as a new suggestion. State why the idea matters or what you would test. Skip greetings, praise and follow-up questions.',
       }});
     }
 
@@ -205,7 +229,8 @@ window.AIcontrolResearchVoice = (() => {
           const currentContext = getContext();
           const saved = currentContext.snapshot.nodes.filter(node=>conceptTypes.includes(node.type));
           const current = saved.find(node=>String(node.id)===currentContext.selected);
-          context(session,[...new Set([...(current?[current]:[]),...saved.slice(-5)])], 'session started');
+          const relevant = ideasInBranch(currentContext.snapshot,saved,currentContext.selected);
+          context(session,[...new Set([...(current?[current]:[]),...relevant.slice(-4)])], 'session started');
           session.responding = send(session,{type:'response.create',response:{metadata:{source:'map'},
             tool_choice:'none', instructions:'Start with one short sentence about a hypothesis you generated or the next check you would run. Use only the supplied map context and respect its authorship and uncertainty. If it has no ideas yet, say so. Skip greetings, small talk and invitations.'}});
         });

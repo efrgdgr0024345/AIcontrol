@@ -354,7 +354,13 @@ final class Panel
                 try{ResearchHandover::serve($directory,(int)self::input('project_id'),self::input('format')?:'view','<input type="hidden" name="csrf" value="'.self::escape($_SESSION['csrf']).'">',self::entry());}
                 catch(Throwable $failure){http_response_code(422);header('Content-Type: application/json');echo '{"error":"Research handover could not be created. Choose a saved project and try again."}';Diagnostics::record('research.handover.failed',['project_id'=>(int)self::input('project_id')],$failure);}
                 return;
-            } elseif (in_array($action, ['research_path_note','research_concept_chat','research_focus_node','research_explore','research_expand_pathway','research_promote_layer','research_demote_layer','research_park','research_lock_evidence','research_settings','research_rank','research_start','research_continue','research_finish','research_repair','research_step','research_stop','research_learn','research_export'], true)) {
+            } elseif (in_array($action, ['research_index_ideas','research_pause_idea_index','research_path_note','research_concept_chat','research_focus_node','research_explore','research_expand_pathway','research_promote_layer','research_demote_layer','research_park','research_lock_evidence','research_settings','research_rank','research_start','research_continue','research_finish','research_repair','research_step','research_stop','research_learn','research_export'], true)) {
+                if ($config['access_mode']==='testing' && in_array($action,['research_index_ideas','research_pause_idea_index'],true)) {
+                    http_response_code(403);
+                    header('Content-Type: application/json');
+                    echo '{"error":"Idea indexing requires signed-in owner access."}';
+                    return;
+                }
                 // Release this session before provider I/O so polling and Stop can proceed.
                 session_write_close();
                 ResearchApi::action($directory, $action, self::entry(), ($_GET['research_api'] ?? '') === '1');

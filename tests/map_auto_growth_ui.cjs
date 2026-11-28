@@ -119,7 +119,7 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   const marker='APP MAP DATA (not spoken by the user): ';
   const mapContext=opening.map(e=>e.item?.content?.[0]?.text).find(value=>value?.startsWith(marker));
   const voiceContext=mapContext?JSON.parse(mapContext.slice(marker.length)):null;
-  if(!voiceContext?.ideas.some(idea=>idea.origin==='model_latent')||!Array.isArray(voiceContext.related_map_ideas)||voiceContext.related_map_ideas.length>4||
+  if(!voiceContext?.ideas.some(idea=>idea.origin==='model_latent')||!Array.isArray(voiceContext.related_map_ideas)||voiceContext.related_map_ideas.length>3||!voiceContext.brief||
     !opening.some(e=>e.response?.instructions?.includes('one short sentence about a hypothesis you generated')))throw Error('Voice opening lost its concise style or map authorship');
   const deliverVoice=(id,source)=>page.evaluate(({id,source})=>{
     const channel=window.voiceFixture.channel;
@@ -145,7 +145,7 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   await page.evaluate(()=>window.voiceFixture.channel.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({
     type:'response.done',response:{id:'readback',status:'completed',output:[]},
   })})));
-  await page.waitForFunction(()=>window.voiceFixture.sent.some(e=>e.response?.instructions?.includes('one of the new ideas')));
+  await page.waitForFunction(()=>window.voiceFixture.sent.some(e=>e.response?.instructions?.includes('most useful of these new ideas')));
   await page.getByRole('button',{name:'End research voice chat'}).click();
   if(!await page.evaluate(()=>window.voiceFixture.stopped&&window.voiceFixture.closed))throw Error('Ending voice left the mic or call open');
   if(errors.length)throw Error(errors.join('\n'));console.log('PASS: compact Start continues selected ideas in active and stopped runs, root Start, selected-path readability, automatic steering, Stop/stale response, no-retry and desktop/mobile axe, single ticker and simulated Realtime pathway control (synthetic research provider)');

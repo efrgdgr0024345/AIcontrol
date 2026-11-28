@@ -5,6 +5,10 @@ Read `docs/PROJECT_STATE.md`, `docs/DEPLOYMENT_DEFAULTS.md` and
 `docs/TEAM_HANDOVER.md` is the wider production specification; PROJECT_STATE
 records the owner's subsequent testing-stage decisions.
 
+Read [Research direction](docs/RESEARCH_DIRECTION.md) before changing the Research
+tab. If a proposed change substantially shifts that direction, show the owner
+what would change and why and get their agreement before implementing it.
+
 The implementation and release branch is `main`. Use the existing checkout,
 preserve user changes and local commits, and do not create a worktree unless
 requested. `feature/control-panel-foundation` is retained only as a compatibility

@@ -10,6 +10,9 @@ require_once __DIR__.'/UsageMeter.php';
 require_once __DIR__.'/ResponseStream.php';
 require_once __DIR__.'/ResearchFlow.php';
 require_once __DIR__.'/ProviderGate.php';
+require_once __DIR__.'/ResearchIdeas.php';
+require_once __DIR__.'/IdeaVectorIndex.php';
+require_once __DIR__.'/SemanticResearch.php';
 require_once __DIR__.'/ExplorationFlow.php';
 require_once __DIR__.'/ConceptConversation.php';
 
@@ -20,6 +23,7 @@ final class Investigation
     use ResearchFlow;
     use ExplorationFlow;
     use ConceptConversation;
+    use SemanticResearch;
     private PDO $db;
     private string $directory;
     private int $transactionDepth=0;
@@ -66,6 +70,7 @@ final class Investigation
         self::migrateLedger($db);
         self::migrateFlow($db);
         self::migrateExploration($db);
+        IdeaVectorIndex::migrate($db);
         $columns = array_column($db->query('PRAGMA table_info(research_nodes)')->fetchAll(PDO::FETCH_ASSOC), 'name');
         if (!in_array('data_json', $columns, true)) $db->exec("ALTER TABLE research_nodes ADD COLUMN data_json TEXT NOT NULL DEFAULT '{}'");
         if (!in_array('selected', $columns, true)) $db->exec('ALTER TABLE research_nodes ADD COLUMN selected INTEGER NOT NULL DEFAULT 1');
@@ -96,7 +101,7 @@ final class Investigation
     private function execute(string $sql, array $args = []): void { $this->db->prepare($sql)->execute($args); }
     private function run(int $id): array
     {
-        return $this->rows('SELECT r.*,p.name,p.brief,p.spend_cap_usd FROM research_runs r JOIN research_projects p ON p.id=r.project_id WHERE r.id=?', [$id])[0] ?? throw new RuntimeException('Research run not found.');
+        return $this->rows('SELECT r.*,p.name,p.brief,p.spend_cap_usd,p.semantic_index_enabled FROM research_runs r JOIN research_projects p ON p.id=r.project_id WHERE r.id=?', [$id])[0] ?? throw new RuntimeException('Research run not found.');
     }
     private function credentials(): string
     {
@@ -209,7 +214,7 @@ final class Investigation
             $pending = $this->rows("SELECT id FROM research_requests WHERE run_id=? AND status='pending'",[$id]);
             if (!in_array($run['status'],['pending','running'],true) && !$pending) { return; }
             $this->execute("UPDATE research_nodes SET status='uncertain',content='Conversation stopped; provider outcome may be unknown. No automatic retry.',updated_at=? WHERE id IN (SELECT node_id FROM research_requests WHERE run_id=? AND status='pending' AND kind='concept_chat')",[time(),$id]);
-            if(!in_array($run['status'],['pending','running'],true)&&$pending&&!$this->rows("SELECT id FROM research_requests WHERE run_id=? AND status='pending' AND kind<>'concept_chat'",[$id])){
+            if(!in_array($run['status'],['pending','running'],true)&&$pending&&!$this->rows("SELECT id FROM research_requests WHERE run_id=? AND status='pending' AND kind NOT IN ('concept_chat','idea_index')",[$id])){
                 $this->execute("UPDATE research_requests SET status='uncertain' WHERE run_id=? AND status='pending'",[$id]);
                 $this->execute('UPDATE research_runs SET usage_unknown=1 WHERE id=?',[$id]);return;
             }
@@ -236,6 +241,7 @@ final class Investigation
                 $node['source_ids'][]=(int)$source['id'];$meta=json_decode($source['meta_json'],true)??[];
                 $node['linked_claim_ids']=array_values(array_unique(array_merge($claims,array_map('intval',$meta['claim_ids']??(isset($meta['claim_id'])?[$meta['claim_id']]:[])))));
             }
+            if(in_array($node['type'],self::ideaTypes(),true))$node['classification']=ResearchIdeas::classification($node);
             $node['confidence']=$node['type']==='dream_claim'?self::claimData($node)['confidence']:null;
             $node['dead_end_reason']=$node['type']==='dead_end'?$node['content']:null;
             $node['source_ids']=array_values(array_unique($node['source_ids']));
@@ -267,10 +273,12 @@ final class Investigation
                 $this->execute("UPDATE research_requests SET status='uncertain' WHERE run_id=? AND status='pending'",[$id]);
                 $this->execute('UPDATE research_runs SET usage_unknown=1 WHERE id=?',[$id]);
             }
-            $stale = $this->rows("SELECT id,node_id FROM research_requests WHERE run_id=? AND status='pending' AND created_at<?",[$id,time()-120]);
+            $stale = $this->rows("SELECT id,node_id,kind FROM research_requests WHERE run_id=? AND status='pending' AND created_at<?",[$id,time()-120]);
             foreach($stale as $request) {
                 $this->execute("UPDATE research_requests SET status='uncertain' WHERE id=?",[$request['id']]);
-                $this->execute("UPDATE research_nodes SET status='uncertain',content='Provider outcome unknown; no automatic retry.',updated_at=? WHERE id=?",[time(),$request['node_id']]);
+                if ($request['kind']!=='idea_index') {
+                    $this->execute("UPDATE research_nodes SET status='uncertain',content='Provider outcome unknown; no automatic retry.',updated_at=? WHERE id=?",[time(),$request['node_id']]);
+                }
                 $this->execute('UPDATE research_runs SET usage_unknown=1 WHERE id=?',[$id]);
             }
         });
@@ -279,6 +287,7 @@ final class Investigation
         $sources=$this->rows('SELECT * FROM research_sources WHERE run_id=? ORDER BY id',[$id]);
         $requests=$this->rows('SELECT * FROM research_requests WHERE run_id=? ORDER BY id',[$id]);
         return ['ledger'=>$this->getEvidenceLedger($id),'budget'=>$this->requestBudget(),'run'=>$run,'nodes'=>self::mapNodes($nodes,$sources),'sources'=>$sources,
+            'branch_questions'=>ResearchIdeas::suggestions($nodes,$sources),'semantic'=>(new IdeaVectorIndex($this->db))->snapshot($run,$nodes,$requests),
             'requests'=>$requests,'usage'=>$this->usageSnapshot((int)$run['project_id'],$id,$requests,$nodes),'findings'=>$this->findings($id),'server_time'=>time()];
     }
     /** A consistent read snapshot; never runs timeout recovery or advances research. */
@@ -365,8 +374,10 @@ final class Investigation
             'input'=>'Project: '.$run['name']."\nBrief: ".$run['brief']."\nOpted-in notes: ".AgentRunner::sharedContext()];
         $string = ['type'=>'string','maxLength'=>3000];
         if ($phase === 'dream') {
-            $base['instructions'] .= ' Dream phase: map unchecked prior knowledge only, no tools or fabricated searches. Give 2–5 distinct, concrete core hypotheses tailored to the brief, including weak spots and competing explanations. Confidence is prior confidence, not evidence. State testable verification angles, assumptions and the least confident area. For each claim, supply a short next_question whose answer would distinguish competing explanations or change what to do next. Keep strings short to fit the output budget; these are hypotheses, not established findings.';
-            $claim = self::objectSchema(['claim'=>$string,'uncertainty'=>$string,'confidence'=>['type'=>'string','enum'=>['low','medium','high']],'verify'=>$string,'priority'=>['type'=>'string','enum'=>['high','normal']]]);
+            $base['instructions'] .= ' Dream phase: map unchecked prior knowledge only, no tools or fabricated searches. Give 2–5 distinct, concrete core hypotheses tailored to the brief, including weak spots and competing explanations. Confidence is prior confidence, not evidence. State testable verification angles, assumptions and the least confident area. For each claim, supply a short possible next_question whose answer could distinguish competing explanations within the user’s original inquiry. Keep strings short to fit the output budget; these are hypotheses, not established findings. '.ResearchIdeas::classificationInstructions();
+            $claim = self::objectSchema(['claim'=>$string,'uncertainty'=>$string,'confidence'=>['type'=>'string','enum'=>['low','medium','high']],
+                'verify'=>$string,'priority'=>['type'=>'string','enum'=>['high','normal']],
+                'next_question'=>['type'=>'string','minLength'=>1,'maxLength'=>700],'classification'=>ResearchIdeas::classificationSchema()]);
             $list = ['type'=>'array','items'=>$string,'maxItems'=>3];
             $base['text'] = self::jsonText(self::objectSchema(['core_claims'=>['type'=>'array','items'=>$claim,'minItems'=>2,'maxItems'=>5],'competing_angles'=>$list,'least_confident'=>$string,'background_assumptions'=>$list]));
         } elseif ($phase === 'plan') {
@@ -533,6 +544,7 @@ final class Investigation
             $this->execute("UPDATE research_nodes SET status='complete',updated_at=? WHERE id=?",[time(),$job['node']]);
             $this->execute('UPDATE research_runs SET busy=NULL,busy_since=NULL WHERE id=?',[$id]);
         });
+        if ($result['status']==='complete') $this->indexNewIdeas($id,$job);
         return $this->getRunSnapshot($id);
     }
     private function apply(array $job, array $result): void
@@ -552,7 +564,7 @@ final class Investigation
             if (!is_string($data['least_confident']??null) || trim($data['least_confident'])==='' || strlen($data['least_confident'])>3000) throw new RuntimeException('Invalid weak spot.');
             // Validate the entire response before writing any claim nodes.
             foreach ($data['core_claims'] as $c) {
-                if (!is_array($c) || array_diff(array_keys($c), ['claim','uncertainty','confidence','verify','priority','next_question'])) throw new RuntimeException('Invalid claim.');
+                if (!is_array($c) || array_diff(array_keys($c), ['claim','uncertainty','confidence','verify','priority','next_question','classification'])) throw new RuntimeException('Invalid claim.');
                 foreach (['claim','uncertainty','confidence','verify','priority'] as $key) if (!is_string($c[$key]??null) || trim($c[$key])==='' || strlen($c[$key])>3000) throw new RuntimeException('Invalid claim.');
                 if (array_key_exists('next_question',$c) && (!is_string($c['next_question']) || trim($c['next_question'])==='' || strlen($c['next_question'])>2800)) throw new RuntimeException('Invalid next question.');
                 if (!in_array($c['confidence'],['low','medium','high'],true) || !in_array($c['priority'],['high','normal'],true)) throw new RuntimeException('Invalid claim.');
@@ -560,6 +572,7 @@ final class Investigation
             $summary = array_diff_key($data,['core_claims'=>true]);
             $this->execute('UPDATE research_nodes SET content=?,data_json=? WHERE id=?', ["Unchecked prior — not yet checked.\nCompeting angles: ".implode('; ',$data['competing_angles'])."\nLeast confident: ".$data['least_confident']."\nBackground assumptions: ".implode('; ',$data['background_assumptions']),json_encode($summary,JSON_THROW_ON_ERROR),$parent]);
             foreach ($data['core_claims'] as $c) {
+                $c['classification']=ResearchIdeas::normalizeClassification($c['classification']??null,'dream_claim');
                 $node = $this->appendNode($id,$parent,'dream_claim','complete',$c['claim'],"Unchecked prior. Claim: ".$c['claim']."\nConfidence: ".$c['confidence']."\nUncertainty: ".$c['uncertainty']."\nVerify: ".$c['verify']."\nPriority: ".$c['priority']);
                 $this->execute('UPDATE research_nodes SET data_json=?,path_weight=? WHERE id=?',[json_encode($c,JSON_THROW_ON_ERROR),$c['priority']==='high'?85:55,$node]);
             }

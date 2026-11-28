@@ -29,6 +29,7 @@ private records persist on the hosting server.
 | Research bounds | One active investigation/pending request; 30 calls/hour shared with chat/Learn; 3,200 output tokens for new specialist flows, 1,600 for legacy/Learn; 60 seconds |
 | Evidence lock-in | New flow: N selected branches need N+4 available calls (plan, N searches + Challenge, extraction, verifier); searches advance explicitly; one optional repair per round. Saved version-one runs retain prior bounds |
 | Research map | Black star-system canvas; compact translucent overlays, stable knowledge constellations, continuous attention and perspective 3D orbit/flight camera and stable XYZ positions; common-idea links/family colours and real pending-work markers; camera-only Fit and explicit Reset; dim/recede retain ideas; no extra provider calls |
+| Idea similarity | Project opt-in through Map controls. OpenAI text-embedding-3-small, 256 dimensions, up to 24 ideas per batch, with project spend and hourly limits. Private SQLite vector storage and exact same-run cosine neighbours. Original branch view remains selectable. |
 | Research voice | Signed-in Research map on HTTPS with browser microphone permission, GPT-Realtime-2.1 mini with Marin via WebRTC and the existing OpenAI credential. Browser voice sessions end after ten minutes. Voice usage is billed separately from the tracked project cap. Spoken expansion uses the existing model-growth budget. |
 | Research models | Primary/high-impact/verifier GPT-4.1; economy GPT-4.1 mini; new model-only exploration uses the project primary model; saved version-one divergent thinker retains GPT-4.1 nano; server primary-model override retained |
 | Research spend cap | $5 USD tracked per project by default; adjustable in Project menu; saved API-usage estimates + conservative reservations, not an invoice cap |
@@ -39,9 +40,11 @@ Admin appears last in workspace navigation, with the PIN lock link in its group.
 Research chat defaults to direct, short replies. Voice presents model-generated
 map ideas as its own hypotheses and preserves attribution of user notes and sources.
 The selected branch provides the main context, with outside ideas labelled as suggestions.
-The map follows saved parent links for breadcrumbs and supports an optional researcher
-note on an idea. New model ideas include a focused next question. Growth carries the
-questions on the selected path forward using the existing model-only request.
+The map follows saved parent links for breadcrumbs and supports an optional
+researcher note on an idea. Possible questions sit below the descendants of a
+branch and refresh from newer work there. Growth starts from the original brief
+and selected branch. See [Research direction](RESEARCH_DIRECTION.md) before
+proposing substantial changes to this workflow.
 
 ## Automatic storage policy v1
 

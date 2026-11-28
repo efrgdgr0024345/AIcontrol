@@ -27,6 +27,28 @@ function noOverlap(packed) {
 function samePositions(before, after, ids = [...before.positions.keys()]) {
   for (const id of ids) assert.deepEqual(after.positions.get(id), before.positions.get(id), 'Position moved for ' + id);
 }
+check('Meaning layout attracts related claims and saves structural positions', () => {
+  const {semanticLayout}=require('../assets/map-engine.js');
+  const shape=(x,y,z)=>({x,y,z,w:210,h:126});
+  const base=new Map([['root',shape(0,0,0)],['1',shape(-720,40,-300)],['2',shape(620,180,240)],['3',shape(90,225,0)]]);
+  const links=[{from:'1',to:'2',kind:'semantic_similarity',score:.87}];
+  const grouped=semanticLayout(base,links,[3]);
+  const distance=(a,b)=>Math.hypot(b.x-a.x,b.y-a.y,b.z-a.z);
+  assert.ok(distance(grouped.get('1'),grouped.get('2'))<distance(base.get('1'),base.get('2'))*.7);
+  assert.ok(distance(grouped.get('3'),grouped.get('root'))>distance(base.get('3'),base.get('root')));
+  assert.deepEqual(grouped.get('root'),base.get('root'));assert.deepEqual(base.get('1'),shape(-720,40,-300));
+  assert.deepEqual(semanticLayout(base,links,[3]),grouped);
+});
+check('Semantic graph keeps contrasting ideas in their original branches', () => {
+  const classification={mechanisms:['irregular sound']};
+  const snapshot={run:{flow_version:2},nodes:[{id:1,type:'model_idea',title:'Traffic bursts interrupt attention',classification},
+    {id:2,type:'counter',title:'Traffic bursts have no effect over background noise',parent_id:3,classification},
+    {id:3,type:'model_idea',title:'Compare noise and sound quality'}],
+    semantic:{enabled:true,edges:[{from:1,to:2,score:.8},{from:2,to:999,score:.9}],outliers:[3]}};
+  const graph=project(snapshot),links=graph.edges.filter(e=>e.kind==='semantic_similarity');
+  assert.equal(links.length,1);assert.equal(links[0].display_only,true);assert.match(links[0].reason,/irregular sound/);
+  assert.equal(find(graph,2).parent_id,'3');assert.equal(find(graph,3).semantic_outlier,true);
+});
 check('Fixtures are explicitly synthetic contract examples', () => {
   assert.equal(fixtures.length, 5);
   for (const snapshot of fixtures) assert.equal(snapshot._fixture.synthetic, true);

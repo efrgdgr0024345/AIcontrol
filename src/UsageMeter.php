@@ -15,6 +15,7 @@ final class UsageMeter
         'gpt-4.1-mini'=>[0.4,0.1,1.6],
         'gpt-4.1-nano'=>[0.1,0.025,0.4],
         'gpt-5.4-nano'=>[0.2,0.02,1.25],
+        'text-embedding-3-small'=>[0.02,0.02,0.0],
     ];
 
     public static function columns(PDO $db,string $table,array $fields): void
@@ -35,7 +36,7 @@ final class UsageMeter
         if(!isset(self::RATES[$alias]))return null;
         [$input,$cached,$output]=self::RATES[$alias];
         return ['input_per_million'=>$input,'cached_per_million'=>$cached,'output_per_million'=>$output,
-            'preview_search_per_call'=>0.025,'currency'=>'USD','checked_at'=>$alias==='gpt-5.4-nano'?'2026-11-12':self::CHECKED,
+            'preview_search_per_call'=>0.025,'currency'=>'USD','checked_at'=>match($alias){'gpt-5.4-nano'=>'2026-11-12','text-embedding-3-small'=>'2026-11-28',default=>self::CHECKED},
             'source'=>self::SOURCE,'model_source'=>'https://developers.openai.com/api/docs/models/'.$alias];
     }
     private static function count(mixed $value): ?int { return is_int($value)&&$value>=0?$value:null; }
@@ -66,7 +67,7 @@ final class UsageMeter
         // UTF-8 bytes plus schema/format overhead conservatively exceed the text-token count.
         // Preview search content is free; its distinct per-call fee is reserved separately.
         $upper=(strlen(json_encode($body,JSON_THROW_ON_ERROR))+2048)*$rates['input_per_million']/1e6
-            +$body['max_output_tokens']*$rates['output_per_million']/1e6+(isset($body['tools'])?$rates['preview_search_per_call']:0);
+            +($body['max_output_tokens']??0)*$rates['output_per_million']/1e6+(isset($body['tools'])?$rates['preview_search_per_call']:0);
         $query=$db->prepare('SELECT spend_cap_usd FROM research_projects WHERE id=?');$query->execute([$project]);$cap=$query->fetchColumn();
         $query=$db->prepare('SELECT COALESCE(SUM(COALESCE(q.estimated_usd,0)+q.reserved_usd),0) FROM research_requests q JOIN research_runs r ON r.id=q.run_id WHERE r.project_id=?');$query->execute([$project]);$spent=(float)$query->fetchColumn();
         $query=$db->prepare("SELECT COALESCE(SUM(COALESCE(estimated_usd,0)+reserved_usd),0) FROM research_messages WHERE project_id=? AND role='assistant'");$query->execute([$project]);$spent+=(float)$query->fetchColumn();

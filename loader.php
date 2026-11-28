@@ -130,7 +130,7 @@ final class AIcontrolUi
       const phase=byId.get(key(request.node_id)),explicit=request.kind==='model_explore'?unique(list(data(phase).ids).map(nearest).filter(id=>id!=='root')):[];
       const targets=explicit.length?explicit.map(id=>conceptsById.get(id)).filter(Boolean):targetId!=='root'?[conceptsById.get(targetId)].filter(Boolean):request.kind==='model_explore'||request.kind==='learn'?[root]:concepts.filter(node=>node.type==='dream_claim'&&![0,'0',false].includes(node.selected));
       if(!targets.length)targets.push(root);
-      const activity=['dream','exploration','model_explore'].includes(request.kind)?'discovery':request.kind==='plan'?'planning':request.kind==='evidence'?'evidence':request.kind==='learn'?'learning':'verification';
+      const activity=['dream','exploration','model_explore'].includes(request.kind)?'discovery':request.kind==='plan'?'planning':request.kind==='evidence'?'evidence':request.kind==='learn'?'learning':request.kind==='idea_index'?'indexing':'verification';
       for(const node of targets)Object.assign(node,{working:true,activity,activity_text:request.activity||request.worker_role||request.kind,working_request_ids:unique([...(node.working_request_ids||[]),String(request.id)]),work_scope:targets.length>1?'shared':'node'});
     }
     const verdicts = new Map();
@@ -205,6 +205,14 @@ final class AIcontrolUi
       for (let a = 0; a < related.length; a++) for (let b = a + 1; b < related.length; b++) edges.push({from: related[a], to: related[b], kind: 'shared_source', source_id: sourceId(source.id), weight: 25});
     }
     edges.push(...relatedLinks(projected,edges));
+    const semantic = object(snapshot?.semantic);
+    if (semantic.enabled) {
+      edges.push(...similarityLinks(projectedIndex, semantic.edges));
+      for (const id of ids(semantic.outliers)) {
+        const node = projectedIndex.get(id);
+        if (isConcept(node)) node.semantic_outlier = true;
+      }
+    }
     edges.sort((a, b) => compare(a.from, b.from) || compare(a.to, b.to) || compare(a.kind, b.kind) || compare(a.source_id || '', b.source_id || ''));
     const detailCount = filter === 'question' ? selectedConcepts.filter(node => node.type !== 'dream_claim').length : filter === 'dream_claim' ? selectedConcepts.length : filter === 'all' ? selectedConcepts.length : details.length;
     const reasons = {all: review ? 'No concepts have been proposed for review yet.' : 'No selected concepts are available for this run yet.', dream_claim: 'No selected claims are available for this run yet.', question: 'No questions have grown from the selected concepts yet.', source: 'No sources are stored for the selected concepts yet.', passage: 'No passages are stored for the selected concepts yet.', edge: 'No evidence relations are stored for the selected concepts yet.', dead_end: 'No dead ends are stored for the selected concepts yet.', open: 'No open verdicts are stored for the selected concepts yet.'};
@@ -303,6 +311,28 @@ final class AIcontrolUi
     for(const members of groups.values())chain(members,'knowledge_family',members.every(n=>n.family_basis==='saved_family')?'Same saved knowledge family; not an evidence relation.':'Same concept branch, derived from saved ancestry; not an evidence relation.');
     return out;
   }
+  function similarityLinks(nodes, matches) {
+    const links = [], seen = new Set();
+    for (const match of list(matches)) {
+      const from = key(match?.from), to = key(match?.to), score = match?.score;
+      if (!isConcept(nodes.get(from)) || !isConcept(nodes.get(to)) || from === to ||
+          !Number.isFinite(score) || score <= 0 || score > 1) continue;
+      const pair = [from, to].sort(compare).join('|');
+      if (seen.has(pair)) continue;
+      seen.add(pair);
+      let reason = 'These ideas discuss similar concepts. Read them together to see how their claims differ.';
+      const a = nodes.get(from).classification, b = nodes.get(to).classification;
+      for (const [facet, label] of [['mechanisms','Mechanism'], ['outcomes','Outcome'], ['conditions','Condition'], ['topics','Topic']]) {
+        const other = new Set(list(b?.[facet]).map(value => String(value).normalize('NFKC').toLowerCase()));
+        const shared = list(a?.[facet]).find(value => other.has(String(value).normalize('NFKC').toLowerCase()));
+        if (!shared) continue;
+        reason = 'Both ideas discuss '+String(shared)+' ('+label.toLowerCase()+'). Read them together to see how their claims differ.';
+        break;
+      }
+      links.push({from,to,kind:'semantic_similarity',score,weight:Math.round(score*100),reason,display_only:true});
+    }
+    return links;
+  }
   function constellationLayout(nodes,edges,width,height,previous=new Map()) {
     const rows=records(nodes).map(n=>({...n,id:String(n.id),w:Number(n.w)||194,h:Number(n.h)||100})),byId=new Map(rows.map(n=>[n.id,n]));
     const root=rows.find(n=>n.id==='root'||n.type==='root')||rows[0];if(!root)return {positions:new Map(),width,height,reused:0,new_count:0};
@@ -341,6 +371,74 @@ final class AIcontrolUi
     for(const [id,p]of result.positions){if(Number.isFinite(p.z))continue;const node=byId.get(id),parent=result.positions.get(String(node?.parent_id));p.z=id==='root'?0:parent&&String(node?.parent_id)!=='root'&&Number.isFinite(parent.z)?parent.z+(hash(id+'depth')%281-140):(hash((node?.knowledge_line_id||id)+'volume')%1601-800)+(hash(id+'depth')%281-140);}
     return result;
   }
+  // A deterministic, bounded layout pass over the saved positions. It never changes the branch layout.
+  function semanticLayout(base, links, outliers) {
+    const positions = new Map([...base].map(([id, point]) => [id, {...point}]));
+    const root = positions.get('root');
+    if (!root) return positions;
+    const edges = links.filter(edge => edge.kind === 'semantic_similarity' && positions.has(edge.from) && positions.has(edge.to));
+    const moving = new Set(edges.flatMap(edge => [edge.from, edge.to]));
+    for (let pass = 0; pass < 12; pass++) {
+      const shifts = new Map([...moving].map(id => [id, {x:0, y:0, z:0, degree:0}]));
+      for (const {from,to,score} of edges) {
+        const a = positions.get(from), b = positions.get(to);
+        const dx = b.x-a.x, dy = b.y-a.y, dz = (b.z||0)-(a.z||0), distance = Math.hypot(dx,dy,dz);
+        const rest = 225 + (1-score)*250;
+        if (distance <= rest) continue;
+        const pull = Math.min(175, (distance-rest)*(0.13+0.15*score))/distance;
+        const left = shifts.get(from), right = shifts.get(to);
+        left.x+=dx*pull;left.y+=dy*pull;left.z+=dz*pull;left.degree++;
+        right.x-=dx*pull;right.y-=dy*pull;right.z-=dz*pull;right.degree++;
+      }
+      for (const [id, shift] of shifts) {
+        const point=positions.get(id), original=base.get(id), weight=1+0.34*Math.max(0,shift.degree-1);
+        point.x+=shift.x/weight+(original.x-point.x)*0.045;
+        point.y+=shift.y/weight+(original.y-point.y)*0.045;
+        point.z=(point.z||0)+shift.z/weight+((original.z||0)-(point.z||0))*0.045;
+      }
+    }
+    const distances = [...moving].map(id=>{
+      const p=positions.get(id);
+      return Math.hypot(p.x-root.x,p.y-root.y,p.z||0);
+    }).sort((a,b)=>a-b);
+    const edgeRadius = Math.max(800,(distances[Math.floor(distances.length*0.85)]||0)+320);
+    for (const id of outliers) {
+      const point=positions.get(String(id));
+      if (!point || moving.has(String(id))) continue;
+      const angle=(hash(id+'edge')%3600)*Math.PI/1800;
+      point.x=root.x+Math.cos(angle)*edgeRadius;
+      point.y=root.y+Math.sin(angle)*edgeRadius*0.8;
+      point.z=(hash(id+'height')%421)-210;
+      moving.add(String(id));
+    }
+    // Leave room for labels without perturbing stars outside the similarity view.
+    const buckets = new Map(), cell = 240;
+    const boxKey = (x,y,z) => x+'|'+y+'|'+z;
+    function reserve(p) {
+      const key=boxKey(Math.floor(p.x/cell),Math.floor(p.y/cell),Math.floor((p.z||0)/cell));
+      if(!buckets.has(key))buckets.set(key,[]);
+      buckets.get(key).push(p);
+    }
+    function overlaps(p) {
+      const x=Math.floor(p.x/cell),y=Math.floor(p.y/cell),z=Math.floor((p.z||0)/cell);
+      for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++)for(let c=-1;c<=1;c++) {
+        if((buckets.get(boxKey(x+a,y+b,z+c))||[]).some(q=>
+          Math.abs((p.z||0)-(q.z||0))<120 && p.x<q.x+q.w+14 && p.x+p.w+14>q.x
+          && p.y<q.y+q.h+14 && p.y+p.h+14>q.y))return true;
+      }
+      return false;
+    }
+    for(const [id,point] of positions) if(!moving.has(id))reserve(point);
+    for(const id of [...moving].sort(compare)) {
+      const point=positions.get(id), x=point.x,y=point.y;
+      for(let offset=1;offset<=45&&overlaps(point);offset++){
+        const radius=Math.sqrt(offset)*48,angle=offset*2.3999632297;
+        point.x=x+Math.cos(angle)*radius;point.y=y+Math.sin(angle)*radius;
+      }
+      reserve(point);
+    }
+    return positions;
+  }
   function starPresentation(nodes,positions,camera,viewport,options={}) {
     const byId=new Map(nodes.map(n=>[String(n.id),n])),focus=byId.get(String(camera.focusNodeId))||byId.get('root'),line=new Set(),seen=new Set();
     // A just-demoted focus recedes during automatic handoff; explicit selection restores the path.
@@ -375,7 +473,7 @@ final class AIcontrolUi
     add(text) { text = sentence(text); if (!text || this.seen.has(text)) return; this.seen.add(text); this.items.push(text); this.history.push(text); if (this.items.length > 50) this.items.shift(); if (this.history.length > 100) this.history.shift(); }
     tick(now, visible = true) { const elapsed = this.last ? now - this.last : 0; this.last = now; if (!visible || this.paused) { this.until += elapsed; return null; } if (!this.items.length || this.current && now < this.until) return null; this.current = this.items.shift(); this.until = now + Math.max(5000, Math.min(10000, this.current.split(/\s+/).length * 260 + 2000)); return this.current; }
   }
-  return {owner, project, layout, constellationLayout, spatialLayout, starPresentation, familyColour, relatedLinks, sentence,shortNote, ReadingQueue};
+  return {owner, project, layout, constellationLayout, spatialLayout, semanticLayout, starPresentation, familyColour, relatedLinks, sentence,shortNote, ReadingQueue};
 });
 
 /* DOM-free camera. World coordinates are read, never changed. */
@@ -1387,6 +1485,22 @@ window.AIcontrolResearchVoice = (() => {
       return true;
     }
 
+    function ideasInBranch(snapshot, ideas, selected) {
+      if (selected === 'root') return ideas;
+      const byId = new Map(snapshot.nodes.map(node => [String(node.id),node]));
+      return ideas.filter(node => {
+        let item = node;
+        const seen = new Set();
+        while (item && !seen.has(String(item.id))) {
+          const id = String(item.id);
+          if (id === selected) return true;
+          seen.add(id);
+          item = byId.get(String(item.parent_id));
+        }
+        return false;
+      });
+    }
+
     function context(session, ideas, mode) {
       const {snapshot, selected, projectName, conceptTypes} = getContext();
       const describe = node => {
@@ -1403,10 +1517,16 @@ window.AIcontrolResearchVoice = (() => {
       const anchor = selectedNode || ideas.at(-1);
       const nearby = anchor ? concepts.filter(node=>!ideas.includes(node) && node.id!==anchor.id &&
         (node.id===anchor.parent_id || node.parent_id===anchor.id ||
-          (anchor.parent_id!=null && node.parent_id===anchor.parent_id))).slice(0,4) : [];
-      const update = {mode, project:projectName.slice(0,240), phase:snapshot.run.phase,
+          (anchor.parent_id!=null && node.parent_id===anchor.parent_id))).slice(0,3) : [];
+      const represented=new Set([...nearby,...ideas].map(node=>Number(node.id)));
+      const related=(snapshot.semantic?.edges||[]).map(edge=>Number(edge.from)===Number(anchor?.id)?Number(edge.to):
+        Number(edge.to)===Number(anchor?.id)?Number(edge.from):null).find(id=>id!==null&&!represented.has(id));
+      const comparison=related==null?null:concepts.find(node=>Number(node.id)===related);
+      const possibleQuestion = selectedNode ? snapshot.branch_questions?.[selectedNode.id] : null;
+      const update = {mode, project:projectName.slice(0,240), brief:String(snapshot.run.brief||'').slice(0,1000), phase:snapshot.run.phase,
         selected:selectedNode?.id || null,
-        ideas:ideas.map(describe), related_map_ideas:nearby.map(describe)};
+        ideas:ideas.map(describe), related_map_ideas:nearby.map(describe),
+        possible_question:possibleQuestion?.text||null, network_comparison:comparison?describe(comparison):null};
       send(session, {type:'conversation.item.create', item:{type:'message',role:'user',
         content:[{type:'input_text',text:'APP MAP DATA (not spoken by the user): '+JSON.stringify(update)}]}});
     }
@@ -1415,12 +1535,14 @@ window.AIcontrolResearchVoice = (() => {
       if (active !== session || session.responding || session.playing || session.listening ||
           session.awaitingUser || session.working || !session.pending.size) return;
       if (session.channel?.readyState !== 'open') return;
-      const ideas = [...session.pending.values()].slice(-5);
+      const {snapshot, selected} = getContext();
+      const ideas = ideasInBranch(snapshot,[...session.pending.values()],selected).slice(-5);
       session.pending.clear();
+      if(!ideas.length)return;
       context(session, ideas, 'new saved ideas');
       session.responding = send(session, {type:'response.create', response:{
         metadata:{source:'map'}, tool_choice:'none',
-        instructions:'Introduce one of the new ideas in at most two short sentences. Use the supplied map as your main reference and connect it to the selected branch when relevant. Present model-generated work as your own hypothesis or proposed check. Credit user-authored material and external sources accurately. Label any outside idea as a new suggestion. State why the idea matters or what you would test. Skip greetings, praise and follow-up questions.',
+        instructions:'Introduce the most useful of these new ideas for the selected branch in at most two short sentences. Use the supplied map as your main reference and connect it to the selected branch when relevant. Present model-generated work as your own hypothesis or proposed check. Credit user-authored material and external sources accurately. Label any outside idea as a new suggestion. State why the idea matters or what you would test. Skip greetings, praise and follow-up questions.',
       }});
     }
 
@@ -1541,7 +1663,8 @@ window.AIcontrolResearchVoice = (() => {
           const currentContext = getContext();
           const saved = currentContext.snapshot.nodes.filter(node=>conceptTypes.includes(node.type));
           const current = saved.find(node=>String(node.id)===currentContext.selected);
-          context(session,[...new Set([...(current?[current]:[]),...saved.slice(-5)])], 'session started');
+          const relevant = ideasInBranch(currentContext.snapshot,saved,currentContext.selected);
+          context(session,[...new Set([...(current?[current]:[]),...relevant.slice(-4)])], 'session started');
           session.responding = send(session,{type:'response.create',response:{metadata:{source:'map'},
             tool_choice:'none', instructions:'Start with one short sentence about a hypothesis you generated or the next check you would run. Use only the supplied map context and respect its authorship and uncertainty. If it has no ideas yet, say so. Skip greetings, small talk and invitations.'}});
         });
@@ -1613,7 +1736,10 @@ window.AIcontrolResearchVoice = (() => {
   const motion=matchMedia('(prefers-reduced-motion: reduce)');
   const camera=new window.AIcontrolCamera.CameraController({reducedMotion:()=>motion.matches,onChange:(state,extra)=>renderCamera(state,extra)});
   map.camera=camera;
-  let positions=new Map(),layoutSignature='',initialCamera=true;const sizes=new Map(),reading=new Engine.ReadingQueue();
+  const branchPositions=new Map(),sizes=new Map(),reading=new Engine.ReadingQueue();
+  let positions=branchPositions,layoutSignature='',semanticSignature='',semanticPositions=null,semanticPreference=true,initialCamera=true;
+  const byMeaning=()=>semanticPreference&&!!snapshot?.semantic?.enabled&&
+    !!(snapshot.semantic.edges?.length||snapshot.semantic.outliers?.length);
   const debug=new URLSearchParams(location.search).get('map_debug')==='1';
   let snapshot, nodes = [], visible = [], selected = 'root', filter = 'all', scale = 1, width = 600, height = 400, count = -1;
   const mapOption=new URLSearchParams(location.search).get('map');
@@ -1662,9 +1788,43 @@ window.AIcontrolResearchVoice = (() => {
   for(const [name,input]of Object.entries(directions)){const button=el('button',name,'btn btn-outline-secondary');button.type='button';button.dataset.flightDirection=name;button.setAttribute('aria-label','Fly '+name.toLowerCase());button.addEventListener('pointerdown',event=>{event.preventDefault();flightPressed.clear();flightPressed.add(name);button._flightStarted=performance.now();button.setPointerCapture(event.pointerId);syncFlight();});const release=event=>{flightPressed.delete(name);if(button.hasPointerCapture(event.pointerId))button.releasePointerCapture(event.pointerId);syncFlight();if(event.type==='pointerup'&&performance.now()-button._flightStarted<120)camera.flyBy((input.right||0)*90,(input.down||0)*90,(input.forward||0)*90);};button.addEventListener('pointerup',release);button.addEventListener('pointercancel',release);button.addEventListener('lostpointercapture',()=>{flightPressed.delete(name);syncFlight();});button.addEventListener('click',event=>{if(event.detail===0){clearFlight();camera.flyBy((input.right||0)*150,(input.down||0)*150,(input.forward||0)*150);}});flightControls.append(button);}
   const stopMotion=el('button','Stop camera movement','btn btn-outline-secondary');stopMotion.type='button';stopMotion.addEventListener('click',()=>{clearFlight();camera.interact();});flightControls.append(stopMotion);tray.append(flightControls);
   tray.append(el('p','Drag to orbit or look in 3D. Shift-drag pans. W/S fly forward/back, A/D strafe, R/F move up/down; Shift boosts speed. Arrow keys or Q/E turn; 0 resets. On touch, one finger orbits/looks and two fingers pan/pinch. Use Fit to return to the ideas.','map-space-help'));
-  const connectionLegend=el('details',undefined,'map-connection-legend');connectionLegend.append(el('summary','Connection colours and line styles'),el('p','Nodes in the same idea family share a colour. Gold marks Evidence lock-in or sources; grey marks parked ideas. Solid lines are parent/child paths; short dashes share a family; dotted lines match wording; long dashes share a cited source. These links do not establish truth or independent corroboration.'));
+  const connectionLegend=el('details',undefined,'map-connection-legend');connectionLegend.append(el('summary','Connection colours and line styles'),el('p','Nodes in the same idea family share a colour. Gold marks Evidence lock-in or sources; grey marks parked ideas. Solid lines are parent/child paths; short dashes share a family; dotted lines match wording; long dashes share a cited source. Fine blue dashes connect ideas related by meaning. These links do not establish truth or independent corroboration.'));
   const familyLegend=el('ul');familyLegend.dataset.mapFamilyLegend='1';familyLegend.tabIndex=0;familyLegend.setAttribute('aria-label','Idea family colours');connectionLegend.append(familyLegend);
   const relatedToggle=el('button','Show related idea links','btn btn-outline-secondary');relatedToggle.type='button';relatedToggle.setAttribute('aria-pressed','true');relatedToggle.addEventListener('click',()=>{showRelated=!showRelated;relatedToggle.setAttribute('aria-pressed',String(showRelated));renderCamera(camera.getState());});connectionLegend.append(relatedToggle);tray.append(connectionLegend);
+  const semanticControls=el('details',undefined,'map-semantic-controls');
+  semanticControls.append(el('summary','Ideas by meaning'));
+  const semanticStatus=el('p');
+  semanticStatus.setAttribute('role','status');
+  const semanticToggle=el('button','Group related ideas','btn btn-outline-secondary');
+  semanticToggle.type='button';
+  semanticToggle.dataset.mapSemanticToggle='1';
+  semanticToggle.setAttribute('aria-pressed','false');
+  semanticToggle.addEventListener('click',()=>{
+    semanticPreference=!semanticPreference;
+    draw();
+    if(selected==='root')fit(false);else camera.focus(selected);
+  });
+  semanticControls.append(semanticStatus,semanticToggle);
+  const indexForms=[];
+  if(root.hasAttribute('data-idea-index-controls')){
+    semanticControls.append(el('p','Indexing sends idea titles and statements to OpenAI using your configured key and research budget. It also indexes new ideas in this project.','map-index-help'));
+    const actions=el('div',undefined,'map-semantic-actions');
+    for(const [action,label] of [['research_index_ideas','Index ideas with OpenAI'],['research_pause_idea_index','Turn off indexing']]){
+      const form=el('form');
+      form.method='post';
+      form.action=root.dataset.entry||location.pathname;
+      form.dataset.researchAction=action;
+      for(const [name,value] of Object.entries({action,run_id:root.dataset.runId,csrf:root.querySelector('input[name=csrf]').value})){
+        const input=el('input');
+        input.type='hidden';input.name=name;input.value=value;form.append(input);
+      }
+      const button=el('button',label,'btn btn-outline-secondary');
+      button.type='submit';
+      form.append(button);actions.append(form);indexForms.push({form,button});
+    }
+    semanticControls.append(actions);
+  }
+  tray.append(semanticControls);
   const activityPanel=el('details',undefined,'map-current-work'),activitySummary=el('summary','Current model work · idle'),activityList=el('div');activityPanel.append(activitySummary,activityList);tray.append(activityPanel);
   const workingNow=el('div',undefined,'map-working-now');workingNow.dataset.mapWorkingNow='1';workingNow.setAttribute('role','status');workingNow.setAttribute('aria-live','polite');workingNow.hidden=true;const workingButton=el('button','','btn');workingButton.type='button';workingNow.append(workingButton);map.append(workingNow);workingButton.addEventListener('click',()=>{if(workingButton.dataset.nodeId){inspect(workingButton.dataset.nodeId);const context=inspector.querySelector('.map-concept-context');if(context)context.open=true;}else controls(true);});
   const legend=el('p','Brightest: current logic line. Other ideas recede; none are deleted. Drag to orbit/look in 3D · Shift-drag pans · W/A/S/D fly · R/F up/down · wheel moves forward/back. Size and light indicate attention, not truth.','map-star-legend');legend.id='map-star-help';map.append(legend);viewport.setAttribute('aria-describedby','map-star-help');
@@ -1719,8 +1879,34 @@ window.AIcontrolResearchVoice = (() => {
       const back=previousFocus?.isConnected&&previousFocus!==document.body?previousFocus:root.querySelector('[data-investigate-view=list]');back?.focus({preventScroll:true});
     }
   }
+  function updateSemanticControls() {
+    const state=snapshot.semantic;
+    semanticControls.hidden=!state||(!state.eligible&&!state.enabled);
+    if(!state)return;
+    const active=byMeaning();
+    semanticToggle.hidden=!state.enabled||!(state.edges.length||state.outliers.length);
+    semanticToggle.setAttribute('aria-pressed',String(active));
+    let message=state.enabled?`${state.indexed} of ${state.eligible} ideas indexed.`:'Idea indexing is off for this project.';
+    if(state.enabled){
+      if(state.status==='pending')message+=' Indexing ideas…';
+      else if(state.status==='uncertain')message+=' The last indexing request had an unknown outcome. It was not retried.';
+      else if(state.status==='failed')message+=' The last indexing batch failed.';
+      if(state.outliers.length)message+=` ${state.outliers.length} outlier ${state.outliers.length===1?'idea':'ideas'}.`;
+    }
+    if(semanticStatus.textContent!==message)semanticStatus.textContent=message;
+    if(indexForms.length){
+      const [index,pause]=indexForms;
+      index.form.hidden=state.enabled&&state.indexed===state.eligible;
+      index.button.textContent=state.enabled?'Index remaining ideas':'Index ideas with OpenAI';
+      index.button.disabled=!state.eligible||state.status==='pending'||snapshot.requests.some(r=>r.status==='pending')||
+        root.dataset.requestBusy==='1'||root.dataset.connected==='0'||snapshot.budget?.remaining===0;
+      pause.form.hidden=!state.enabled;
+      pause.button.disabled=root.dataset.requestBusy==='1';
+    }
+  }
   function screenControls(){
     if(!snapshot)return;
+    updateSemanticControls();
     const active=['pending','running'].includes(snapshot.run.status),pending=snapshot.requests.some(request=>request.status==='pending');
     const idle=active&&snapshot.run.status==='running'&&!snapshot.run.busy_since&&!pending&&['exploring','verification_review'].includes(snapshot.run.phase),living=Number(snapshot.run.flow_version)>=2;
     const pathway=living&&snapshot.nodes.some(node=>String(node.id)===selected&&conceptTypes.includes(node.type));
@@ -1772,7 +1958,7 @@ window.AIcontrolResearchVoice = (() => {
     if(event.altKey&&event.key.toLowerCase()==='s'){event.preventDefault();root.querySelector('[data-research-action=research_stop]')?.requestSubmit();return;}
     if(event.key==='Escape'){event.preventDefault();if(camera.getState().transitionType==='flight'){clearFlight();camera.interact();viewport.focus({preventScroll:true});return;}if(!tray.hidden){controls(false);handle.focus();}else if(!side.hidden){details(false);viewport.focus();}else showView('list');return;}
     if(event.key!=='Tab')return;
-    const stops=[...map.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],[tabindex="0"]')].filter(node=>node.getClientRects().length&&getComputedStyle(node).visibility!=='hidden');
+    const stops=[...map.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],details > summary,[tabindex="0"]')].filter(node=>node.getClientRects().length&&getComputedStyle(node).visibility!=='hidden');
     const first=stops[0],last=stops.at(-1);
     if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus({preventScroll:true});}
     else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus({preventScroll:true});}
@@ -1850,8 +2036,8 @@ window.AIcontrolResearchVoice = (() => {
       const sx=point.x,sy=point.y;card.style.transform=`translate(${sx-p.x-p.w/2}px, ${sy-p.y-p.h/2}px)`;const obscured=hitBlocked.has(node.id);if(obscured&&document.activeElement===hitButton)viewport.focus({preventScroll:true});hitButton.disabled=obscured;if(!light.logic_line&&!light.working&&(sx < -230||sx>w+230||sy < -150||sy>h+150))continue;if(reviewing()&&node.type==='dream_claim'){light.size_factor=1;light.brightness_factor=1;light.distant=false;}
       card.dataset.selected=String(node.id===state.focusNodeId);card.querySelector('.map-node-button').setAttribute('aria-pressed',String(node.id===state.focusNodeId));if(card._size===undefined||Math.abs(card._size-light.size_factor)>.015){card._size=light.size_factor;card.style.setProperty('--star-size',Math.max(.28,light.size_factor));card.style.setProperty('--star-glyph-size',light.size_factor/Math.max(.28,light.size_factor));}if(card._light===undefined||Math.abs(card._light-light.brightness_factor)>.025){card._light=light.brightness_factor;card.style.setProperty('--star-light',light.brightness_factor);}if(card._colour!==light.colour){card._colour=light.colour;card.style.setProperty('--star-colour',light.colour);}card.dataset.starSize=light.size_factor.toFixed(4);card.dataset.starBrightness=light.brightness_factor.toFixed(4);card.dataset.logicLine=String(light.logic_line);card.dataset.distant=String(light.distant);card.dataset.labelSuppressed=String(labelHidden.has(node.id)&&!light.logic_line);card.style.zIndex=String((depthOrder.get(node.id)||1)+(node.id===state.focusNodeId?1000:0));
     }
-    for(const connection of edgeElements){const {path,edge,gradient,startStop,endStop}=connection,a=presentation.get(edge.from),b=presentation.get(edge.to),pa=positions.get(edge.from),pb=positions.get(edge.to);if(!a||!b||!pa||!pb)continue;const segment=camera.projectSegment({x:pa.x+pa.w/2,y:pa.y+pa.h/2,z:pa.z||0},{x:pb.x+pb.w/2,y:pb.y+pb.h/2,z:pb.z||0});if(!segment){path.style.display='none';continue;}path.setAttribute('d',`M${segment.from.x},${segment.from.y} L${segment.to.x},${segment.to.y}`);if(gradient){gradient.setAttribute('x1',segment.from.x);gradient.setAttribute('y1',segment.from.y);gradient.setAttribute('x2',segment.to.x);gradient.setAttribute('y2',segment.to.y);}const relatedLink=['knowledge_family','idea_match'].includes(edge.kind),active=a.logic_line&&b.logic_line,quiet=map.dataset.detailLevel==='compact'&&state.transitioning&&!(a.logic_line||b.logic_line||a.working||b.working);path.style.display=relatedLink&&(!showRelated||quiet)?'none':'';
-      if(gradient){if(connection.startColour!==a.colour){connection.startColour=a.colour;startStop.setAttribute('stop-color',a.colour);}if(connection.endColour!==b.colour){connection.endColour=b.colour;endStop.setAttribute('stop-color',b.colour);}if(!connection.gradientSet){path.style.stroke=`url(#${gradient.id})`;connection.gradientSet=true;}}else if(connection.colour!==b.colour){connection.colour=b.colour;path.style.stroke=b.colour;}
+    for(const connection of edgeElements){const {path,edge,gradient,startStop,endStop}=connection,a=presentation.get(edge.from),b=presentation.get(edge.to),pa=positions.get(edge.from),pb=positions.get(edge.to);if(!a||!b||!pa||!pb)continue;const segment=camera.projectSegment({x:pa.x+pa.w/2,y:pa.y+pa.h/2,z:pa.z||0},{x:pb.x+pb.w/2,y:pb.y+pb.h/2,z:pb.z||0});if(!segment){path.style.display='none';continue;}path.setAttribute('d',`M${segment.from.x},${segment.from.y} L${segment.to.x},${segment.to.y}`);if(gradient){gradient.setAttribute('x1',segment.from.x);gradient.setAttribute('y1',segment.from.y);gradient.setAttribute('x2',segment.to.x);gradient.setAttribute('y2',segment.to.y);}const relatedLink=['knowledge_family','idea_match','semantic_similarity'].includes(edge.kind),active=a.logic_line&&b.logic_line,quiet=map.dataset.detailLevel==='compact'&&state.transitioning&&!(a.logic_line||b.logic_line||a.working||b.working);path.style.display=relatedLink&&(!showRelated||quiet||edge.kind==='semantic_similarity'&&!byMeaning())?'none':'';
+      if(gradient){if(connection.startColour!==a.colour){connection.startColour=a.colour;startStop.setAttribute('stop-color',a.colour);}if(connection.endColour!==b.colour){connection.endColour=b.colour;endStop.setAttribute('stop-color',b.colour);}if(!connection.gradientSet){path.style.stroke=`url(#${gradient.id})`;connection.gradientSet=true;}}else{const colour=edge.kind==='semantic_similarity'?'#80cfff':b.colour;if(connection.colour!==colour){connection.colour=colour;path.style.stroke=colour;}}
       const opacity=active?.85:Math.max(.06,Math.min(a.brightness_factor,b.brightness_factor)*.55);if(connection.opacity===undefined||Math.abs(connection.opacity-opacity)>.025){connection.opacity=opacity;path.style.opacity=String(opacity);}path.style.strokeWidth=String(active?1.7:1);
     }
     if(pendingKeyboardFocus){const target=sceneCards.get(pendingKeyboardFocus)?.querySelector('.map-node-button');if(document.activeElement!==viewport)pendingKeyboardFocus=null;else if(target&&!target.disabled&&!target.closest('[hidden]')){pendingKeyboardFocus=null;target.focus({preventScroll:true});}}
@@ -1896,17 +2082,17 @@ window.AIcontrolResearchVoice = (() => {
         card = el('article',undefined,'map-node'); card.dataset.mapNode=node.id;
         const button=el('button',undefined,'map-node-button'); button.type='button'; button.append(el('span','','map-node-type'),el('strong','','map-node-title'),el('span','','map-node-status')); card.append(button); world.append(card);
       }
-      card.dataset.locked=String(!!node.locked_at);card.dataset.layer=String(node.layer||0);card.dataset.origin=node.origin||'';card.dataset.type=node.type;card.dataset.working=String(!!node.working&&activityVerified);card.dataset.activity=node.activity||''; card.dataset.status=node.status; card.dataset.path=String(active.has(node.id));
+      card.dataset.outlier=String(!!node.semantic_outlier&&byMeaning());card.dataset.locked=String(!!node.locked_at);card.dataset.layer=String(node.layer||0);card.dataset.origin=node.origin||'';card.dataset.type=node.type;card.dataset.working=String(!!node.working&&activityVerified);card.dataset.activity=node.activity||''; card.dataset.status=node.status; card.dataset.path=String(active.has(node.id));
       const priority=Number(node.path_weight||50);card.dataset.priority=priority>=75?'high':priority<40?'low':'normal';card.dataset.speculative=String(Number(node.speculative||0));
       const button=card.querySelector('button'); button.setAttribute('aria-pressed',String(node.id===selected));
-      button.querySelector('.map-node-type').textContent=(node.type==='dream_claim'?'concept':node.type==='root'?'project':node.type.replaceAll('_',' ')) + (collapsed.has(node.id)?' · collapsed':'');
+      button.querySelector('.map-node-type').textContent=(node.type==='dream_claim'?'concept':node.type==='root'?'project':node.type.replaceAll('_',' ')) + (node.semantic_outlier&&byMeaning()?' · Outlier':'') + (collapsed.has(node.id)?' · collapsed':'');
       if(!button.querySelector('[data-map-work-badge]')){const badge=el('span','','map-node-work-badge');badge.dataset.mapWorkBadge='1';const ring=el('span',undefined,'map-node-work-ring');ring.setAttribute('aria-hidden','true');button.append(badge,ring);}
-      button.querySelector('.map-node-title').textContent=Engine.shortNote(node.title);button.dataset.baseLabel=`${node.title}. ${node.type.replaceAll('_',' ')}. ${node.status}. ${originLabel(node.origin)}. ${provenanceLabel(node.provenance_tag)}`;button.setAttribute('aria-label',button.dataset.baseLabel);
+      button.querySelector('.map-node-title').textContent=Engine.shortNote(node.title);button.dataset.baseLabel=`${node.title}. ${node.type.replaceAll('_',' ')}. ${node.status}. ${originLabel(node.origin)}. ${provenanceLabel(node.provenance_tag)}${node.semantic_outlier?' Outlier idea.':''}`;button.setAttribute('aria-label',button.dataset.baseLabel);
       const source=snapshot.sources.find(source => sourceIds(node).includes(Number(source.id)));
       button.querySelector('.map-node-status').textContent=source?`${source.domain} · ${links(node).map(id=>'claim #'+id).join(', ')}`:`${node.status}${node.confidence?' · '+node.confidence+' prior confidence':''}`;
       if(conceptTypes.includes(node.type))button.querySelector('.map-node-status').textContent+=(node.type==='question'?' · untested':'')+' · priority '+priority;
-      if(node.type==='root'&&node.working)button.querySelector('.map-node-status').textContent=({planning:'Planning concepts',evidence:'Researching',discovery:'Discovering concepts',verification:'Checking findings'}[node.activity]||'Working');
-      if(conceptTypes.includes(node.type)){button.querySelector('.map-node-status').textContent=(node.working?({planning:'Planning',evidence:'Researching',discovery:'Exploring',verification:'Checking'}[node.activity]||'Working')+' · ':node.verdict?node.verdict+' · ':'')+((node.source_ids||[]).length?node.source_ids.length+' sources · ':'')+'priority '+priority+(Number(node.speculative)?' · untested':'');}
+      if(node.type==='root'&&node.working)button.querySelector('.map-node-status').textContent=({planning:'Planning concepts',evidence:'Researching',discovery:'Discovering concepts',verification:'Checking findings',indexing:'Indexing ideas'}[node.activity]||'Working');
+      if(conceptTypes.includes(node.type)){button.querySelector('.map-node-status').textContent=(node.working?({planning:'Planning',evidence:'Researching',discovery:'Exploring',verification:'Checking',indexing:'Indexing'}[node.activity]||'Working')+' · ':node.verdict?node.verdict+' · ':'')+((node.source_ids||[]).length?node.source_ids.length+' sources · ':'')+'priority '+priority+(Number(node.speculative)?' · untested':'');}
       if(Number(snapshot.run.flow_version)>=2&&conceptTypes.includes(node.type)){button.querySelector('.map-node-status').textContent=`${['Active','Secondary','Tertiary'][Number(node.layer)||0]} · ${originLabel(node.origin)} · ${provenanceLabel(node.provenance_tag)}`;}
       if (node.type==='dream_claim' && !card.querySelector('[data-map-claim]')) {
         const label=el('label',undefined,'map-node-check'),input=el('input');input.type='checkbox';input.dataset.mapClaim=node.id;
@@ -1919,22 +2105,35 @@ window.AIcontrolResearchVoice = (() => {
     }
     const relationKeys=new Set();relations=[...overviewGraph.edges,...graph.edges].filter(edge=>{const key=[edge.from,edge.to,edge.kind,edge.source_id||''].join('|');if(relationKeys.has(key))return false;relationKeys.add(key);return true;});
     syncSelection();updateInspector();updateFamilyLegend();
-    const pickerStamp=JSON.stringify([...new Map([...Engine.project(snapshot).nodes,...graph.nodes].map(n=>[n.id,n])).values()].map(n=>[n.id,n.title]));if(targetPicker.dataset.stamp!==pickerStamp){const old=targetPicker.value;targetPicker.replaceChildren();for(const node of [...new Map([...Engine.project(snapshot).nodes,...graph.nodes].map(n=>[n.id,n])).values()]){const option=el('option',node.title);option.value=node.id;option.selected=node.id===old;targetPicker.append(option);}targetPicker.dataset.stamp=pickerStamp;}
+    const pickerStamp=JSON.stringify([...new Map([...Engine.project(snapshot).nodes,...graph.nodes].map(n=>[n.id,n])).values()].map(n=>[n.id,n.title,!!n.semantic_outlier]));if(targetPicker.dataset.stamp!==pickerStamp){const old=targetPicker.value;targetPicker.replaceChildren();for(const node of [...new Map([...Engine.project(snapshot).nodes,...graph.nodes].map(n=>[n.id,n])).values()]){const option=el('option',(node.semantic_outlier?'Outlier · ':'')+node.title);option.value=node.id;option.selected=node.id===old;targetPicker.append(option);}targetPicker.dataset.stamp=pickerStamp;}
     const empty=map.querySelector('[data-map-empty]');if(empty){empty.hidden=!graph.empty;empty.textContent=graph.empty_reason||'No matching records stored for this run yet.';}
     if(map.hidden)return false;
     const cards=new Map([...world.querySelectorAll('[data-map-node]')].map(card=>[card.dataset.mapNode,card]));sceneCards=cards;updateActivity();
     for(const node of visible){let size=sizes.get(node.id);if(!size){const card=cards.get(node.id);size={w:210,h:126};sizes.set(node.id,size);}Object.assign(node,size);}
     const visibleIDs=new Set(visible.map(n=>n.id));const linksToDraw=graph.edges.filter(e=>visibleIDs.has(e.from)&&visibleIDs.has(e.to));
     // Layout inputs are structure and viewport only. Usage, stage badges and title updates do not move cards.
-    const nextLayout=JSON.stringify([visible.map(n=>n.id).sort(),linksToDraw.map(e=>[e.from,e.to,e.kind]).sort(),viewport.clientWidth,viewport.clientHeight]);
+    const structuralLinks=linksToDraw.filter(e=>e.kind!=='semantic_similarity');
+    const nextLayout=JSON.stringify([visible.map(n=>n.id).sort(),structuralLinks.map(e=>[e.from,e.to,e.kind]).sort(),viewport.clientWidth,viewport.clientHeight]);
     const layoutRan=nextLayout!==layoutSignature;
     if(layoutRan){
       layoutSignature=nextLayout;
       const layoutStart=performance.now();
-      const packed=Engine.layout(visible,linksToDraw,Math.max(280,viewport.clientWidth-12),Math.max(260,viewport.clientHeight-(reviewing()?88:12)),positions,{constellations:true,spatial:true});
-      for(const [id,position] of packed.positions)positions.set(id,position);
+      const packed=Engine.layout(visible,structuralLinks,Math.max(280,viewport.clientWidth-12),Math.max(260,viewport.clientHeight-(reviewing()?88:12)),branchPositions,{constellations:true,spatial:true});
+      for(const [id,position] of packed.positions)branchPositions.set(id,position);
       width=packed.width;height=packed.height;
       if(debug)console.debug('Research map layout',JSON.stringify({nodes:visible.length,edges:linksToDraw.length,reused:packed.reused,new_count:packed.new_count,layout_ms:Number((performance.now()-layoutStart).toFixed(2))}));
+    }
+    positions=branchPositions;
+    if(byMeaning()){
+      const signature=JSON.stringify([overviewGraph.nodes.map(n=>n.id),snapshot.semantic.edges,snapshot.semantic.outliers]);
+      if(signature!==semanticSignature){
+        semanticSignature=signature;
+        const shapes=overviewGraph.nodes.map(n=>({...n,w:210,h:126}));
+        const base=Engine.spatialLayout(shapes,overviewGraph.edges,width,height,branchPositions).positions;
+        semanticPositions=Engine.semanticLayout(base,overviewGraph.edges,snapshot.semantic.outliers);
+      }
+      positions=new Map(branchPositions);
+      for(const [id,position] of semanticPositions)positions.set(id,position);
     }
     for(const node of visible){const p=positions.get(node.id);if(!p)continue;Object.assign(node,p);const card=cards.get(node.id);card.style.left=p.x+'px';card.style.top=p.y+'px';card.style.width=p.w+'px';card.style.height=p.h+'px';}
     visible.sort((a,b)=>a.y-b.y||a.x-b.x);world.style.width='1px';world.style.height='1px';geometry();
@@ -1943,12 +2142,12 @@ window.AIcontrolResearchVoice = (() => {
     for(const edge of linksToDraw){const a=positions.get(edge.from),b=positions.get(edge.to);if(!a||!b)continue;const ax=a.x+a.w/2,ay=a.y+a.h/2,bx=b.x+b.w/2,by=b.y+b.h/2;
       const line=document.createElementNS(svg.namespaceURI,'path');line.setAttribute('d',`M${ax},${ay} Q${(ax+bx)/2-(by-ay)*.05},${(ay+by)/2+(bx-ax)*.05} ${bx},${by}`);line.setAttribute('class','map-edge'+(edge.kind==='shared_source'?' map-edge-shared':''));line.dataset.linkKind=edge.kind;
       const title=document.createElementNS(svg.namespaceURI,'title');title.textContent=edge.reason||(edge.kind==='shared_source'?'Shared citation, not independent corroboration.':'Saved parent/child idea path.');line.append(title);
-      let gradient=null,startStop=null,endStop=null;if(edge.kind!=='concept'){gradient=document.createElementNS(svg.namespaceURI,'linearGradient');gradient.id='map-link-'+edgeElements.length;gradient.setAttribute('gradientUnits','userSpaceOnUse');gradient.setAttribute('x1',ax);gradient.setAttribute('y1',ay);gradient.setAttribute('x2',bx);gradient.setAttribute('y2',by);startStop=document.createElementNS(svg.namespaceURI,'stop');startStop.setAttribute('offset','0%');endStop=document.createElementNS(svg.namespaceURI,'stop');endStop.setAttribute('offset','100%');gradient.append(startStop,endStop);defs.append(gradient);}svg.append(line);edgeElements.push({path:line,edge,gradient,startStop,endStop});}
+      let gradient=null,startStop=null,endStop=null;if(edge.kind!=='concept'&&edge.kind!=='semantic_similarity'){gradient=document.createElementNS(svg.namespaceURI,'linearGradient');gradient.id='map-link-'+edgeElements.length;gradient.setAttribute('gradientUnits','userSpaceOnUse');gradient.setAttribute('x1',ax);gradient.setAttribute('y1',ay);gradient.setAttribute('x2',bx);gradient.setAttribute('y2',by);startStop=document.createElementNS(svg.namespaceURI,'stop');startStop.setAttribute('offset','0%');endStop=document.createElementNS(svg.namespaceURI,'stop');endStop.setAttribute('offset','100%');gradient.append(startStop,endStop);defs.append(gradient);}svg.append(line);edgeElements.push({path:line,edge,gradient,startStop,endStop});}
     world.prepend(svg);renderCamera(camera.getState());
     if(debug)console.debug('Research map projection',JSON.stringify({nodes:graph.nodes.length,edges:graph.edges.length,layout_ran:layoutRan,cached_positions:positions.size,total_ms:Number((performance.now()-projectionStart).toFixed(2))}));
     return layoutRan;
   }
-  const activityLabel=node=>({discovery:'model exploration',planning:'planning',evidence:'searching for evidence',verification:'checking evidence',learning:'explaining saved sources'}[node.activity]||'model request');
+  const activityLabel=node=>({discovery:'model exploration',planning:'planning',evidence:'searching for evidence',verification:'checking evidence',learning:'explaining saved sources',indexing:'indexing ideas'}[node.activity]||'model request');
   function updateFamilyLegend(){
     const stamp=JSON.stringify(overviewGraph.nodes.map(n=>[n.id,n.knowledge_line_id,n.title]));if(familyLegend.dataset.stamp===stamp)return;familyLegend.dataset.stamp=stamp;familyLegend.replaceChildren();const seen=new Set();for(const node of overviewGraph.nodes){if(node.type==='root'||seen.has(node.knowledge_line_id))continue;seen.add(node.knowledge_line_id);const item=el('li'),swatch=el('span',undefined,'map-family-swatch');swatch.style.backgroundColor=Engine.familyColour(node.knowledge_line_id);swatch.setAttribute('aria-hidden','true');item.append(swatch,document.createTextNode(node.title));familyLegend.append(item);}
   }
@@ -2010,9 +2209,19 @@ window.AIcontrolResearchVoice = (() => {
     nav.append(list);
     inspector.append(nav);
 
-    const {connection, next_question:nextQuestion} = data(node);
+    if(node.semantic_outlier)inspector.append(el('p','Outlier idea · Its nearest match in this map is weak. It may open a different line of inquiry.','map-outlier-explanation'));
+    const {connection} = data(node);
     if (connection) inspector.append(el('h4','How this follows'),el('p',connection));
-    if (nextQuestion) inspector.append(el('h4','Next question'),el('p',nextQuestion,'map-next-question'));
+    if (node.classification) {
+      const tags=el('details',undefined,'map-idea-classification');
+      tags.append(el('summary','Idea tags'));
+      const labels=el('dl');
+      const fields=[['Role',node.classification.role?.replaceAll('_',' ')],...['topics','mechanisms','outcomes','conditions']
+        .map(name=>[name[0].toUpperCase()+name.slice(1),node.classification[name]?.join(', ')])];
+      for(const [label,value] of fields)if(value)labels.append(el('dt',label),el('dd',value));
+      tags.append(labels);
+      inspector.append(tags);
+    }
 
     const notes = el('details',undefined,'map-path-note');
     notes.append(el('summary','Researcher note'));
@@ -2176,7 +2385,7 @@ window.AIcontrolResearchVoice = (() => {
       if(key==='fit'){manualViewport=false;fit();}
       if(key==='in'){manualViewport=true;setScale(scale*1.2);}
       if(key==='out'){manualViewport=true;setScale(scale/1.2);}
-      if(key==='reset'){positions.clear();sizes.clear();layoutSignature='';manualViewport=false;draw();fit();}
+      if(key==='reset'){branchPositions.clear();sizes.clear();layoutSignature='';semanticSignature='';manualViewport=false;draw();fit();}
       if(key==='collapse'){
         const branches=Number(snapshot.run.flow_version)>=2?recededBranches:collapsed;
         nodes.filter(node=>node.id!=='root').forEach(node=>branches.add(node.id));
@@ -2216,6 +2425,7 @@ window.AIcontrolResearchVoice = (() => {
   });
   root.addEventListener('research:contact',()=>{if(!activityVerified&&snapshot){activityVerified=true;updateActivity();renderCamera(camera.getState());screenControls();}});
   root.addEventListener('research:snapshot',event=>{
+    const wasByMeaning=byMeaning();
     activityVerified=true;const incoming=event.detail,oldFocus=snapshot?.nodes.find(n=>String(n.id)===selected),newFocus=incoming.nodes?.find(n=>String(n.id)===selected);
     const demoted=oldFocus&&newFocus&&Number(newFocus.layer)>Number(oldFocus.layer);
     const oldIDs=new Set(snapshot?.nodes.map(n=>String(n.id))||[]);const growth=!!snapshot&&incoming.nodes.some(n=>!oldIDs.has(String(n.id))&&conceptTypes.includes(n.type));
@@ -2224,6 +2434,7 @@ window.AIcontrolResearchVoice = (() => {
     if(demoted){handoffReceded.add(selected);const here=positions.get(selected);const alternatives=snapshot.nodes.filter(n=>conceptTypes.includes(n.type)&&Number(n.layer||0)===0&&String(n.id)!==selected);alternatives.sort((a,b)=>{const pa=positions.get(String(a.id))||here,pb=positions.get(String(b.id))||here;return here&&pa&&pb?Math.hypot(pa.x-here.x,pa.y-here.y)-Math.hypot(pb.x-here.x,pb.y-here.y):Number(a.id)-Number(b.id);});selected=alternatives.length?String(alternatives[0].id):'root';}
     const handedTo=selected;draw();
     if(!map.hidden&&initialCamera&&visible.length){fit(false);initialCamera=false;}
+    else if(!map.hidden&&!wasByMeaning&&byMeaning()){if(selected==='root')fit(false);else camera.focus(selected);}
     else if(demoted&&!map.hidden){geometry();camera.focus(handedTo);}
     else if(growth&&!map.hidden){geometry();camera.growthFor(visible.map(n=>n.id));queueGrowth();}
 
@@ -2253,7 +2464,7 @@ window.AIcontrolResearchVoice = (() => {
  const make=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;};
  const side=map.querySelector('[data-map-inspector]'),content=side.querySelector('[data-map-inspector-content]');
  let snapshot=null,selected='',verified=true,listStamp='',lastQuery='',threadStamp='',lastTrigger=null,pendingDraft=null;
- const drafts=new Map();
+ const drafts=new Map(),openQuestions=new Set();
  const browser=make('aside',undefined,'map-branch-browser');browser.setAttribute('aria-label','Branches');browser.dataset.branchBrowser='1';
  const heading=make('div',undefined,'map-branch-heading');heading.append(make('h2','Branches'));const count=make('span');count.setAttribute('role','status');heading.append(count);
  const search=make('input',undefined,'form-control');search.type='search';search.placeholder='Find an idea…';search.setAttribute('aria-label','Search branches');
@@ -2282,13 +2493,25 @@ window.AIcontrolResearchVoice = (() => {
  function select(id,trigger){lastTrigger=trigger;map.dispatchEvent(new CustomEvent('research:inspect-concept',{detail:{nodeId:id}}));const title=content.querySelector('h3');if(title){title.tabIndex=-1;title.focus({preventScroll:true});}}
  function renderList(){
   if(!snapshot)return;const all=snapshot.nodes.filter(n=>types.has(n.type));const query=search.value.trim().toLocaleLowerCase();
-  const filtered=all.filter(n=>(n.title+' '+n.content).toLocaleLowerCase().includes(query));
+  const suggestions=snapshot.branch_questions||{},outliers=new Set((snapshot.semantic?.outliers||[]).map(String));
+  const tags=n=>Object.values(n.classification||{}).flat().join(' ');
+  const filtered=all.filter(n=>[n.title,n.content,tags(n),suggestions[n.id]?.text].join(' ').toLocaleLowerCase().includes(query));
   // Old runs may place non-concept records between an idea and its parent.
   const byId=new Map(all.map(n=>[String(n.id),n])),saved=new Map(snapshot.nodes.map(n=>[String(n.id),n])),parents=new Map(),children=new Map();
   for(const n of all){let parent=saved.get(String(n.parent_id));const seen=new Set([String(n.id)]);while(parent&&!seen.has(String(parent.id))&&!byId.has(String(parent.id))){seen.add(String(parent.id));parent=saved.get(String(parent.parent_id));}const id=String(n.id),parentId=parent&&!seen.has(String(parent.id))?String(parent.id):null;parents.set(id,parentId);if(!children.has(parentId))children.set(parentId,[]);children.get(parentId).push(n);}
   const shown=new Set(filtered.map(n=>String(n.id)));if(query)for(const n of filtered){let parent=parents.get(String(n.id));const seen=new Set([String(n.id)]);while(parent&&!seen.has(parent)){seen.add(parent);shown.add(parent);parent=parents.get(parent);}}
-  const stamp=JSON.stringify([query,all.map(n=>[n.id,parents.get(String(n.id)),n.title,n.content,n.layer,n.locked_at]),snapshot.requests.filter(r=>r.status==='pending').map(r=>r.path_node_id)]);
-  if(stamp!==listStamp){listStamp=stamp;const scroll=query===lastQuery?list.scrollTop:0;lastQuery=query;const focused=list.contains(document.activeElement)?document.activeElement.closest('[data-branch-id]')?.dataset.branchId:null;list.replaceChildren();
+  const stamp=JSON.stringify([query,all.map(n=>[n.id,parents.get(String(n.id)),n.title,n.content,n.layer,n.locked_at,tags(n)]),suggestions,[...outliers],snapshot.requests.filter(r=>r.status==='pending').map(r=>r.path_node_id)]);
+  if(stamp!==listStamp){
+   listStamp=stamp;
+   const scroll=query===lastQuery?list.scrollTop:0;
+   lastQuery=query;
+   const active=document.activeElement,focused=list.contains(active)?active.closest('[data-branch-id]')?.dataset.branchId:null;
+   const focusedQuestion=list.contains(active)?active.closest('[data-branch-questions]')?.dataset.branchQuestions:null;
+   for(const details of list.querySelectorAll('[data-branch-questions]')){
+    const id=details.dataset.branchQuestions;
+    if(details.open)openQuestions.add(id);else openQuestions.delete(id);
+   }
+   list.replaceChildren();
    const graph=window.AIcontrolMap.project(snapshot),families=new Map(graph.nodes.map(n=>[String(n.id),n.knowledge_line_id]));
    const placed=new Set(),matches=new Set(filtered.map(n=>String(n.id)));
    // Depth-first DOM order keeps new descendants beside their parent, not at the end.
@@ -2296,13 +2519,28 @@ window.AIcontrolResearchVoice = (() => {
     const row=make('li');row.dataset.branchDepth=String(depth);const button=make('button',undefined,'map-branch-item');button.type='button';button.dataset.branchId=id;button.style.setProperty('--branch-colour',window.AIcontrolMap.familyColour(families.get(id)));
     let title=window.AIcontrolMap.sentence(n.title||n.content).replace(/^(association|counter|reframing|edge case|idea|question|claim)\s*:\s*/i,'')||'Untitled idea';if(title.length>110)title=title.slice(0,107).replace(/\s+\S*$/,'')+'…';button.append(make('strong',title));button.title=n.title;button.setAttribute('aria-label',n.title);
     const working=snapshot.requests.some(r=>r.status==='pending'&&Number(r.path_node_id)===Number(n.id));const state=working?'Thinking…':n.locked_at?'Evidence locked':Number(n.layer)===2?'Parked idea':'Unchecked idea';const related=children.get(id)||[];
-    button.append(make('small',(query&&!matches.has(id)?'Parent branch · ':'')+state+(related.length?' · '+related.length+' related idea'+(related.length===1?'':'s'):'')));button.addEventListener('click',()=>select(id,button));row.append(button);container.append(row);
+    const label=(query&&!matches.has(id)?'Parent branch · ':'')+state+(outliers.has(id)?' · Outlier idea':'')+
+      (related.length?' · '+related.length+' child idea'+(related.length===1?'':'s'):'');
+    button.append(make('small',label));button.addEventListener('click',()=>select(id,button));row.append(button);container.append(row);
     const descendants=related.filter(n=>shown.has(String(n.id))&&!placed.has(String(n.id)));if(descendants.length){const nested=make('ul',undefined,'map-branch-children');if(depth>=4)nested.classList.add('map-branch-deep');row.append(nested);for(let i=descendants.length-1;i>=0;i--)stack.push({node:descendants[i],container:nested,depth:depth+1});}
+    const suggestion=suggestions[id];
+    if(suggestion?.text){
+     const questions=make('details',undefined,'map-branch-questions');
+     questions.dataset.branchQuestions=id;
+     questions.open=openQuestions.has(id);
+     const summary=make('summary','Possible questions');
+     summary.setAttribute('aria-label','Possible questions for '+n.title);
+     questions.append(summary,make('p',suggestion.text));
+     if(String(suggestion.node_id)!==id&&suggestion.basis)questions.append(make('small','Based on '+suggestion.basis));
+     row.append(questions);
+    }
    }};
    for(const n of all)if(!shown.has(parents.get(String(n.id))))appendTree(n);
    // Retain orphaned or cyclic legacy records without duplicating any idea.
    for(const n of all)if(!placed.has(String(n.id)))appendTree(n);
-   list.scrollTop=scroll;if(focused)list.querySelector(`[data-branch-id="${focused}"]`)?.focus({preventScroll:true});
+   list.scrollTop=scroll;
+   if(focused)list.querySelector(`[data-branch-id="${focused}"]`)?.focus({preventScroll:true});
+   if(focusedQuestion)list.querySelector(`[data-branch-questions="${focusedQuestion}"] summary`)?.focus({preventScroll:true});
   }
   for(const button of list.querySelectorAll('[data-branch-id]'))button.setAttribute('aria-current',button.dataset.branchId===selected?'true':'false');
   count.textContent=query?`${filtered.length} / ${all.length}`:String(all.length);count.title=query?'Matching ideas; parent branches are shown for context.':'Saved ideas';empty.hidden=filtered.length>0;empty.textContent=query?'No matching branches. Try another word.':'Research ideas will appear here.';
@@ -3407,7 +3645,6 @@ details[open] summary { margin-bottom: 14px; }
 .map-pathway li + li::before { content:'›'; }
 .map-pathway button { border:0; background:transparent; color:inherit; padding:.2rem 0; text-align:left; text-decoration:underline; overflow-wrap:anywhere; }
 .map-path-note form { margin-top:.35rem; padding-top:0; border:0; }
-.map-next-question { font-weight:600; overflow-wrap:anywhere; }
 .map-inspector-actions { display:flex; flex-wrap:wrap; gap:.4rem; }
 .map-review,.map-evidence-help { margin-top:1rem; padding:1rem; border-radius:.6rem; background:#eee8fa; color:#403557; }
 .map-review p { flex-basis:100%; margin:0; }
@@ -3737,6 +3974,7 @@ body.research-map-open { overflow:hidden; }
 .map-connections .btn,.map-current-work .btn { display:block; text-align:left; margin:7px 0; width:100%; white-space:normal; }
 .mindmap .map-edge[data-link-kind=knowledge_family] { stroke-dasharray:3 6; }
 .mindmap .map-edge[data-link-kind=idea_match] { stroke-dasharray:1 4; stroke-linecap:round; }
+.mindmap .map-edge[data-link-kind=semantic_similarity] { stroke-dasharray:2 4; }
 .mindmap .map-edge[data-link-kind=shared_source] { stroke-dasharray:8 5; }
 .map-working-now { position:absolute; left:14px; top:72px; z-index:3; max-width:min(60vw,660px); border:1px solid #92d9cf; border-radius:10px; background:#102720; box-shadow:0 4px 18px #0008; }
 .mindmap .map-working-now .btn { background:transparent; color:#d5fff0; border:0; white-space:normal; text-align:left; font-size:12px; padding:9px 12px; }
@@ -4107,6 +4345,12 @@ body.research-map-open { overflow:hidden; }
 .map-branch-item:hover,.map-branch-item[aria-current=true] { background:rgb(38 67 93 / 66%); border-color:#8bb7d1; border-left-color:var(--branch-colour,#9ddcec); }
 .map-branch-item strong { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; font-size:.85rem; line-height:1.35; font-weight:600; overflow-wrap:anywhere; }
 .map-branch-item small { display:block; margin-top:3px; font-size:.72rem; color:#bdd1e5; }
+.map-branch-questions { margin:1px 4px 8px 10px; padding:0 6px; border-left:1px solid #526982; color:#d7e8f8; font-size:.77rem; overflow-wrap:anywhere; }
+.map-branch-questions summary { color:#bde1ff; cursor:pointer; padding:5px 0; }
+.map-branch-questions p { margin:2px 0 4px; }
+.map-branch-questions small { display:block; color:#c0d5eb; }
+.map-idea-classification dt { margin-top:.25rem; }
+.map-idea-classification dd { margin:0; overflow-wrap:anywhere; }
 .map-branch-item:focus-visible,.map-concept-actions .btn:focus-visible { outline:3px solid #b9eaff; outline-offset:2px; }
 .map-branch-empty { color:#c3d0e3; padding:16px 2px; }
 .research-map-open .map-workspace,.research-map-open .map-details-open .map-workspace { margin:0; display:block; }
@@ -4134,7 +4378,7 @@ body.research-map-open { overflow:hidden; }
  .map-conversation-thread { max-height:240px; }
 }
 .research-map-open .map-screen-header { z-index:9; }
-.mindmap .map-concept-context > summary,.mindmap .map-path-note > summary { color:#c5d8ed; min-height:33px; padding:6px 0; font-size:.85rem; line-height:1.5; cursor:pointer; }
+.mindmap .map-concept-context > summary,.mindmap .map-path-note > summary,.mindmap .map-idea-classification > summary { color:#c5d8ed; min-height:33px; padding:6px 0; font-size:.85rem; line-height:1.5; cursor:pointer; }
 .research-map-open .map-working-now,.research-map-open .map-state-notice,.research-map-open .map-star-legend { left:calc(var(--branch-panel-width) + 28px); max-width:calc(100% - var(--branch-panel-width) - 52px); }
 .research-map-open .map-working-now { top:78px; bottom:auto; }
 @media(max-width:700px) {
@@ -4320,6 +4564,14 @@ body.research-map-open { overflow:hidden; }
  .project-desk .app-topbar { justify-content:flex-start; gap:10px; }
 }
 @media(prefers-reduced-motion:reduce) { .project-desk .app-sidebar { transition:none; } }
+
+.mindmap .map-semantic-controls summary { cursor:pointer; color:#d3e5f7; }
+.mindmap .map-semantic-controls p { margin:.35rem 0; }
+.mindmap .map-semantic-actions { display:flex; flex-wrap:wrap; gap:.35rem; }
+.mindmap .map-semantic-actions form { margin:0; }
+.mindmap .map-index-help { font-size:.82rem; color:#c5d8ed; }
+.mindmap .map-node[data-outlier=true] .map-node-button::before { border-radius:2px; outline:1px solid #c5dcff; rotate:45deg; }
+.map-outlier-explanation { color:#c2dcff; font-weight:600; }
 
 AICONTROL_UI_CSS;
     }

@@ -22,6 +22,9 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
       translucent:translucent(branches)&&translucent(reader)};
   });
   const a=await rows.nth(0).getAttribute('data-branch-id'),b=await rows.nth(1).getAttribute('data-branch-id');
+  const possible=id=>list.locator(`[data-branch-questions="${id}"]`);
+  await possible(a).locator('summary').click();
+  await possible(a).getByText('Which outcome would change the decision?',{exact:true}).waitFor();
   await rows.nth(0).click();await page.locator('[data-map-inspector]').waitFor({state:'visible'});if(await page.locator('[data-map-advanced]').evaluate(n=>n.open))throw Error('Advanced controls crowded the reading window');
   const desktop=await overlayLayout();
   if(!desktop.translucent||desktop.width!==desktop.windowWidth||desktop.branchWidth>300||
@@ -40,6 +43,11 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   await page.locator('[data-branch-back]').click();await page.getByLabel('Search branches',{exact:true}).fill('no-such-concept');if(await rows.count())throw Error('Search did not filter');await page.getByLabel('Search branches',{exact:true}).fill('');
   await rows.nth(0).click();await page.getByRole('button',{name:'Expand this pathway',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('[data-branch-id]').length>2);
   const child=await list.locator(`[data-branch-id="${a}"]`).evaluate(button=>button.parentElement.querySelector(':scope > ul > li > button')?.dataset.branchId);if(!child)throw Error('Growth was appended outside its parent branch');
+  const placement=await possible(a).evaluate(n=>({open:n.open,last:n.parentElement.lastElementChild===n,previous:n.previousElementSibling.tagName}));
+  if(!placement.open||!placement.last||placement.previous!=='UL')throw Error('Branch question placement changed '+JSON.stringify(placement));
+  await possible(a).getByText(/How would .* repair training change the parent idea/i).waitFor();
+  const bInitial=await possible(b).innerText();
+  if(!bInitial.includes('Possible questions'))throw Error('Sibling branch has no question section');
   let order=await rows.evaluateAll(buttons=>buttons.map(b=>b.dataset.branchId));if(order.indexOf(child)>order.indexOf(b))throw Error('New child appeared after an unrelated root');
   const childStar=page.locator(`[data-map-node="${child}"]`);
   const collapse=page.getByRole('button',{name:'Collapse pathway',exact:true});
@@ -64,7 +72,10 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   const trail=page.getByRole('navigation',{name:'Research pathway'});
   if(await trail.getByRole('listitem').count()!==4)throw Error('Pathway missed a saved ancestor');
   await page.getByText('This tests one specific mechanism in its parent.',{exact:true}).waitFor();
-  await page.getByText('Would this mechanism change the outcome?',{exact:true}).waitFor();
+  await possible(grandchild).locator('summary').click();
+  await possible(grandchild).getByText('Would this mechanism change the outcome?',{exact:true}).waitFor();
+  await page.getByText('Idea tags',{exact:true}).click();
+  await page.getByText('parts availability',{exact:true}).waitFor();
   await page.locator('.map-path-note summary').click();
   const note='Compare failure modes before selecting a pilot.';
   await page.getByLabel('Why keep this branch?').fill(note);
@@ -86,6 +97,21 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   const csrf=await page.locator('input[name=csrf]').first().inputValue();const run=await page.locator('[data-investigation]').getAttribute('data-run-id');
   let response=await page.request.post(url+'?research_api=1',{form:{csrf:'invalid',action:'research_concept_chat',run_id:run,node_id:a,question:'Should fail'}});if(response.status()!==403)throw Error('Chat bypassed CSRF');
   response=await page.request.post(url+'?research_api=1',{form:{csrf,action:'research_concept_chat',run_id:run,node_id:'999999',question:'Should fail'}});if(response.status()!==422)throw Error('Chat accepted another node');
+  if((await page.request.post(url+'?research_api=1',{form:{csrf:'invalid',action:'research_index_ideas',run_id:run}})).status()!==403)throw Error('Embedding index bypassed CSRF');
+  const positions=()=>page.locator('[data-map-node]').evaluateAll(cards=>Object.fromEntries(cards.map(card=>[card.dataset.mapNode,[card.style.left,card.style.top,card.dataset.worldZ]])));
+  const structure=await positions();
+  await page.getByRole('button',{name:'Map controls',exact:true}).click();
+  await page.getByText('Ideas by meaning',{exact:true}).click();
+  await page.getByRole('button',{name:'Index ideas with OpenAI'}).click();
+  await page.getByText('5 of 5 ideas indexed.',{exact:false}).waitFor();
+  if(!await page.locator('[data-link-kind="semantic_similarity"]').count()||!await page.locator('[data-outlier="true"]').count())throw Error('The real map did not get the similarity links and outlier');
+  if(JSON.stringify(await positions())===JSON.stringify(structure))throw Error('Grouping did not move any related ideas or outliers');
+  const group=page.getByRole('button',{name:'Group related ideas'});
+  await group.click();
+  if(await group.getAttribute('aria-pressed')!=='false'||JSON.stringify(await positions())!==JSON.stringify(structure))throw Error('Returning to branch layout did not restore saved coordinates');
+  await group.click();
+  await page.getByRole('button',{name:'Turn off indexing'}).click();
+  await page.getByText('Idea indexing is off for this project.',{exact:true}).waitFor();
   await page.reload();await list.locator(`[data-branch-id="${a}"]`).waitFor();await list.locator(`[data-branch-id="${a}"]`).click();await page.locator('[data-concept-chat-toggle]').click();await page.locator('.map-conversation-turn').getByText(/FIRST-BRANCH-QUESTION/).waitFor();
   const audit=async()=>{await page.waitForTimeout(500);await page.evaluate(require('axe-core').source);const issues=await page.evaluate(async()=>(await axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa','wcag22aa']}})).violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target)})));if(issues.length)throw Error(JSON.stringify(issues));};
   await audit();fs.mkdirSync(path.join(root,'test-artifacts'),{recursive:true});await page.screenshot({path:path.join(root,'test-artifacts','ui-branch-reading-chat-desktop.png')});
@@ -96,6 +122,6 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   await page.screenshot({path:path.join(root,'test-artifacts','ui-branch-chat-mobile.png')});
   await page.getByLabel('Your question',{exact:true}).focus();await page.keyboard.press('Escape');if(!await page.locator('[data-map-inspector]').isHidden())throw Error('Escape did not return to branches');
   if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1))throw Error('Branch view overflows mobile');if(errors.length)throw Error(errors.join('\n'));
-  console.log('PASS: visible pathway toggle, collapse/restore and stable positions; nested growth and search; map dismissal, chat isolation, desktop/mobile axe and keyboard return (synthetic provider)');
+  console.log('PASS: visible pathway toggle, collapse/restore and stable positions; nested growth, saved questions and semantic grouping; map dismissal, chat isolation, desktop/mobile axe and keyboard return (synthetic provider)');
  }finally{if(browser)await browser.close();server.kill();await new Promise(r=>server.exitCode!==null?r():server.once('exit',r));fs.rmSync(tmp,{recursive:true,force:true});}
 })().catch(e=>{console.error(e.stack||e.message);process.exitCode=1;});
