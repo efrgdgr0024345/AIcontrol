@@ -70,7 +70,14 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   // Selecting the project root still offers a fresh run after Stop.
   await focus('root');await page.getByRole('button',{name:'Close details',exact:true}).click();
   await toggle.click();await page.waitForFunction(old=>{const r=document.querySelector('[data-investigation]');return r?.dataset.phase==='exploring'&&r.dataset.status==='running'&&r.dataset.runId!==old;},String(grown.run.id));const fresh=await read();if(fresh.run.id===grown.run.id||fresh.requests.filter(r=>r.kind==='model_explore').length)throw Error('Start toggle did not start a fresh, manual run');
-  await page.setViewportSize({width:390,height:844});await audit();if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1))throw Error('Compact map controls overflow mobile');const b=await toggle.boundingBox();if(!b||b.y>70||b.width>40)throw Error('Start/Stop is not a compact top control');await page.screenshot({path:path.join(root,'test-artifacts/ui-map-auto-grow-mobile.png')});
+  await page.setViewportSize({width:390,height:844});
+  await audit();
+  if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1))throw Error('Compact map controls overflow mobile');
+  const runBounds=await toggle.boundingBox(),headerBounds=await header.boundingBox();
+  if(!runBounds||!headerBounds||runBounds.width<44||runBounds.width>48||runBounds.height<44||
+    runBounds.y<headerBounds.y||runBounds.y+runBounds.height>headerBounds.y+headerBounds.height)
+    throw Error('Start/Stop needs a compact touch target inside the toolbar');
+  await page.screenshot({path:path.join(root,'test-artifacts/ui-map-auto-grow-mobile.png')});
   // Repeated provider output ends a batch after one confirmed call without growing duplicate stars.
   await rounds.fill('1');await page.getByRole('button',{name:'Start automatic growth',exact:true}).click();await page.locator('[data-map-grow-progress]').filter({hasText:'1/1'}).waitFor();await page.waitForFunction(()=>!document.querySelector('[data-map-auto-grow]').disabled);const beforeRepeat=await read(),sentBefore=sent.length;fs.writeFileSync(path.join(home,'repeat-idea-fixture'),'repeat');await rounds.fill('5');await page.getByRole('button',{name:'Start automatic growth',exact:true}).click();await page.waitForFunction(()=>document.querySelector('[data-map-auto-grow]').getAttribute('aria-pressed')==='false');await page.waitForTimeout(350);const afterRepeat=await read();fs.unlinkSync(path.join(home,'repeat-idea-fixture'));if(sent.length!==sentBefore+1||afterRepeat.nodes.filter(n=>n.type==='model_idea').length!==beforeRepeat.nodes.filter(n=>n.type==='model_idea').length||!(await page.locator('[data-map-grow-progress]').getAttribute('title')).includes('no new ideas'))throw Error('Duplicate-only round grew stars or automatically retried');
   // A transport failure ends the sequence, with no automatic retry.
