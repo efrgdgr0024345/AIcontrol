@@ -129,7 +129,9 @@ const {spawn,spawnSync}=require('child_process');
   await page.locator('summary').filter({hasText:'Agent run #1'}).click();
   await page.getByText('UI test fixture only.',{exact:false}).waitFor();
   for(const [name,file] of [['Overview','overview'],['Projects & tasks','projects'],['Agent runs','runs'],['Systems','systems'],['Activity','activity'],['Admin','admin'],['Research projects','research']]){
-   await page.setViewportSize({width:390,height:844});await page.getByRole('link',{name,exact:true}).click();
+   await page.setViewportSize({width:390,height:844});
+   await page.getByRole('button',{name:'Menu',exact:true}).click();
+   await navigation.getByRole('link',{name,exact:true}).click();
    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
    if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth)){
     await page.screenshot({path:path.join(artifacts,'ui-overflow.png'),fullPage:true});
