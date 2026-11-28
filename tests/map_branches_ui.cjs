@@ -121,6 +121,21 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
     throw Error('Mobile reader obscures too much of the canvas');
   await page.screenshot({path:path.join(root,'test-artifacts','ui-branch-chat-mobile.png')});
   await page.getByLabel('Your question',{exact:true}).focus();await page.keyboard.press('Escape');if(!await page.locator('[data-map-inspector]').isHidden())throw Error('Escape did not return to branches');
+  await page.getByRole('button',{name:'Project overview',exact:true}).click();
+  const projectTitle=page.getByRole('heading',{name:'Living map fixture',exact:true});
+  const openMap=page.getByRole('button',{name:'Open map',exact:true});
+  if(!await projectTitle.evaluate(heading=>document.activeElement===heading)||
+    !await openMap.evaluate(button=>button.getBoundingClientRect().bottom<=innerHeight))throw Error('The project overview lost focus or the map entrance is below the mobile fold');
+  await page.locator('.research-brief > summary').click();
+  await page.getByText('How might repair expand our options?',{exact:true}).first().waitFor();
+  await audit();
+  await openMap.focus();await page.keyboard.press('Enter');
+  await page.getByRole('dialog',{name:'Full screen research map'}).waitFor();
+  await page.getByText('Map guide',{exact:true}).click();
+  await page.getByText(/Brighter stars show/).waitFor();
+  await page.keyboard.press('Escape');
+  if(!await page.getByRole('dialog',{name:'Full screen research map'}).isVisible()||await page.locator('#map-star-help').isVisible())
+    throw Error('Escape closed the map instead of its guide');
   if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1))throw Error('Branch view overflows mobile');if(errors.length)throw Error(errors.join('\n'));
   console.log('PASS: visible pathway toggle, collapse/restore and stable positions; nested growth, saved questions and semantic grouping; map dismissal, chat isolation, desktop/mobile axe and keyboard return (synthetic provider)');
  }finally{if(browser)await browser.close();server.kill();await new Promise(r=>server.exitCode!==null?r():server.once('exit',r));fs.rmSync(tmp,{recursive:true,force:true});}

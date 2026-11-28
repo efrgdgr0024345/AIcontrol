@@ -145,11 +145,13 @@ final class PanelView
                 echo '<div class="alert alert-success" role="status">' . Ui::e($_SESSION['flash']) . '</div>';
                 unset($_SESSION['flash']);
             }
-            echo '<div class="page-heading"><div><h1>' . Ui::e($view === 'overview' ? 'Review queue' : $label) . '</h1>' . ($view === 'overview' ? '' : '<p>' . $subtitle[$view] . '</p>') . '</div>';
-            if ($view === 'overview' || $view === 'projects') {
-                echo '<a class="btn btn-primary" href="/loader.php?view=projects#new-project">' . Ui::icon('plus') . 'New project</a>';
+            if ($view !== 'research' || empty($data['research']['workspace']['project'])) {
+                echo '<div class="page-heading"><div><h1>' . Ui::e($view === 'overview' ? 'Review queue' : $label) . '</h1>' . ($view === 'overview' ? '' : '<p>' . $subtitle[$view] . '</p>') . '</div>';
+                if ($view === 'overview' || $view === 'projects') {
+                    echo '<a class="btn btn-primary" href="/loader.php?view=projects#new-project">' . Ui::icon('plus') . 'New project</a>';
+                }
+                echo '</div>';
             }
-            echo '</div>';
             match ($view) {
                 'admin' => WorkspaceView::admin($data['vault'], $csrf), 'research' => WorkspaceView::research($data['research'], $csrf),'nasa'=>NasaView::render($data['nasa'],$csrf),
                 'overview' => self::overview($data), 'projects' => self::projects($data, $csrf),

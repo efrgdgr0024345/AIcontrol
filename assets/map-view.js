@@ -34,22 +34,32 @@
   const reviewing = () => snapshot?.run.status === 'running' && snapshot.run.phase === 'dream_review';
   const home = document.createComment('Map location'); map.before(home);
   const header=el('header',undefined,'map-screen-header');
-  const projectName=document.querySelector('.research-project-brief h2')?.textContent||'Research map';
-  const heading=el('div',undefined,'map-project-label');heading.append(el('strong',projectName),el('span','','map-screen-status'));
+  const projectTitle=document.querySelector('#research-project-title');
+  const projectMapButton=document.querySelector('[data-research-open-map]');
+  const projectName=projectTitle?.textContent||'Research map';
+  const brand=el('div',undefined,'map-project-heading');
+  const overview=el('button',undefined,'btn map-overview-button');overview.type='button';overview.dataset.mapScreenAction='overview';overview.title='Project overview';overview.setAttribute('aria-label','Project overview');
+  const backArrow=el('span','‹');backArrow.setAttribute('aria-hidden','true');overview.append(backArrow);
+  const mapTitle=el('h2',projectName);mapTitle.title=projectName;brand.append(overview,mapTitle);
+  const heading=el('div',undefined,'map-project-label');heading.append(el('strong','Map controls'),el('span','','map-screen-status'));
   heading.querySelector('span').setAttribute('role','status');
   const ticker=el('button',undefined,'map-idea-sentence');ticker.type='button';ticker.dataset.ideaSentence='1';ticker.setAttribute('aria-label','Pause idea rotation');ticker.setAttribute('aria-pressed','false');
-  ticker.append(el('span','Research ideas will appear here as the map develops.'));ticker.querySelector('span').setAttribute('role','status');ticker.querySelector('span').setAttribute('aria-live','polite');
-  const handle=el('button','☰','map-controls-handle btn');handle.type='button';handle.dataset.mapControls='1';handle.setAttribute('aria-label','Map controls');handle.setAttribute('aria-expanded','false');handle.setAttribute('aria-controls','map-controls-tray');
+  const currentIdea=document.querySelector('[data-research-now] [data-idea-sentence] span');
+  ticker.append(el('span',currentIdea?.textContent||'Research ideas will appear here as the map develops.'));ticker.querySelector('span').setAttribute('role','status');ticker.querySelector('span').setAttribute('aria-live','polite');
+  const handle=el('button',undefined,'map-controls-handle btn');handle.type='button';handle.dataset.mapControls='1';handle.setAttribute('aria-label','Map controls');handle.setAttribute('aria-expanded','false');handle.setAttribute('aria-controls','map-controls-tray');
+  handle.append(el('span','Map controls','map-control-label'));
   const tray=el('div',undefined,'map-controls-tray');tray.id='map-controls-tray';tray.hidden=true;tray.setAttribute('role','group');tray.setAttribute('aria-label','Map controls and usage');
   const actions=el('div',undefined,'map-screen-actions');
   const screenButton=(label,action,style='btn-outline-secondary')=>{const button=el('button',label,'btn '+style);button.type='button';button.dataset.mapScreenAction=action;return button;};
   actions.append(screenButton('Continue planned search','step'),screenButton('Finish and freeze','finish','btn-primary'),screenButton('Review gaps once','repair'),screenButton('Project menu','menu'),screenButton('Details','details'),screenButton('Export for chatbot review','handover'),screenButton('List','list'));
   actions.querySelector('[data-map-screen-action=handover]').hidden=!document.querySelector('[data-research-handover]');
   const quickControls=el('div',undefined,'map-quick-controls');quickControls.setAttribute('role','group');quickControls.setAttribute('aria-label','Research and automatic growth');
-  const runToggle=screenButton('▶','start','map-compact-button');runToggle.dataset.mapRunToggle='1';runToggle.setAttribute('aria-label','Start research');runToggle.title='Start research';runToggle.disabled=true;
-  const stopButton=screenButton('■','stop','map-compact-button');
+  const runToggle=screenButton('','start','map-compact-button');runToggle.dataset.mapRunToggle='1';runToggle.setAttribute('aria-label','Start research');runToggle.title='Start research';runToggle.disabled=true;
+  const runLabel=el('span','Start','map-control-label');runToggle.append(runLabel);
+  const stopButton=screenButton('','stop','map-compact-button');stopButton.append(el('span','Stop','map-control-label'));
   stopButton.hidden=true;stopButton.dataset.stopping='true';stopButton.setAttribute('aria-label','Stop research');stopButton.title='Stop research (Alt+S)';stopButton.setAttribute('aria-keyshortcuts','Alt+S');
-  const autoGrow=el('button','✦','btn map-compact-button');autoGrow.type='button';autoGrow.dataset.mapAutoGrow='1';autoGrow.setAttribute('aria-label','Start automatic growth');autoGrow.setAttribute('aria-pressed','false');autoGrow.disabled=true;
+  const autoGrow=el('button',undefined,'btn map-compact-button');autoGrow.type='button';autoGrow.dataset.mapAutoGrow='1';autoGrow.setAttribute('aria-label','Start automatic growth');autoGrow.setAttribute('aria-pressed','false');autoGrow.disabled=true;
+  const autoLabel=el('span','Auto-grow','map-control-label');autoGrow.append(autoLabel);
   const growRounds=el('input',undefined,'map-grow-rounds');growRounds.type='number';growRounds.min='1';growRounds.max='20';growRounds.step='1';growRounds.required=true;growRounds.value='5';growRounds.inputMode='numeric';growRounds.dataset.mapGrowRounds='1';growRounds.setAttribute('aria-label','Automatic growth rounds');growRounds.title='Model-only growth rounds (1–20)';
   const growProgress=el('span','','map-grow-progress');growProgress.dataset.mapGrowProgress='1';growProgress.setAttribute('role','status');growProgress.setAttribute('aria-live','polite');growProgress.hidden=true;
   let growthState={active:false,completed:0,total:0,busy:false};
@@ -110,16 +120,22 @@
   tray.append(semanticControls);
   const activityPanel=el('details',undefined,'map-current-work'),activitySummary=el('summary','Current model work · idle'),activityList=el('div');activityPanel.append(activitySummary,activityList);tray.append(activityPanel);
   const workingNow=el('div',undefined,'map-working-now');workingNow.dataset.mapWorkingNow='1';workingNow.setAttribute('role','status');workingNow.setAttribute('aria-live','polite');workingNow.hidden=true;const workingButton=el('button','','btn');workingButton.type='button';workingNow.append(workingButton);map.append(workingNow);workingButton.addEventListener('click',()=>{if(workingButton.dataset.nodeId){inspect(workingButton.dataset.nodeId);const context=inspector.querySelector('.map-concept-context');if(context)context.open=true;}else controls(true);});
-  const legend=el('p','Brightest: current logic line. Other ideas recede; none are deleted. Drag to orbit/look in 3D · Shift-drag pans · W/A/S/D fly · R/F up/down · wheel moves forward/back. Size and light indicate attention, not truth.','map-star-legend');legend.id='map-star-help';map.append(legend);viewport.setAttribute('aria-describedby','map-star-help');
+  const guide=el('details',undefined,'map-canvas-guide');
+  const legend=el('div',undefined,'map-star-legend');legend.id='map-star-help';
+  legend.append(el('p','Drag to orbit. Scroll or pinch to zoom. Shift-drag to pan. Use arrow keys to turn, W/A/S/D to fly and R/F to move up or down.'),
+    el('p','Brighter stars show where you’re focused. Brightness and size indicate attention, independent of evidence.'));
+  guide.append(el('summary','Map guide'),legend);map.append(guide);viewport.setAttribute('aria-describedby','map-star-help');
 
   const live=el('p');live.dataset.liveActivity='1';live.setAttribute('role','status');const clock=el('small');clock.dataset.liveClock='1';clock.setAttribute('aria-live','off');const spend=el('p');spend.dataset.projectSpend='1';
   const history=el('details',undefined,'map-idea-history'),historyTitle=el('summary','Idea history'),historyList=el('ol');history.append(historyTitle,historyList);tray.append(live,clock,spend,map.querySelector('[data-map-evidence-help]'),history);
-  header.append(quickControls,ticker,handle,tray);map.prepend(header);
+  const notification=el('button','','map-state-notice');notification.type='button';notification.hidden=true;notification.addEventListener('click',()=>{controls(true);tray.querySelector('[data-map-screen-action=details]').focus();});
+  const commandBar=el('div',undefined,'map-command-bar');commandBar.append(quickControls,ticker);
+  const statusControls=el('div',undefined,'map-status-controls');statusControls.append(notification,handle);
+  header.append(brand,commandBar,statusControls,tray);map.prepend(header);
   const voice=root.hasAttribute('data-voice-available')&&window.AIcontrolResearchVoice?.mount({
     root, map, controls:quickControls,
     getContext:()=>({snapshot, selected, conceptTypes, projectName}),
   });
-  const notification=el('button','','map-state-notice');notification.type='button';notification.hidden=true;notification.setAttribute('aria-label','Review research status');notification.addEventListener('click',()=>controls(true));map.append(notification);
   const mapError=el('p','','map-request-error');mapError.hidden=true;mapError.setAttribute('role','alert');tray.prepend(mapError);
   const focusError=el('p','','map-request-error');focusError.hidden=true;focusError.setAttribute('role','alert');map.querySelector('[data-map-focus]').before(focusError);
   let requestError='';
@@ -148,6 +164,7 @@
   const side=map.querySelector('[data-map-inspector]');side.hidden=true;const closeSide=el('button','×','map-inspector-close btn');closeSide.type='button';closeSide.setAttribute('aria-label','Close details');closeSide.addEventListener('click',()=>{details(false);viewport.focus();});side.prepend(closeSide);
   let underlay=[],previousFocus=null,manualViewport=false;
   function showView(next) {
+    const wasOpen=document.body.classList.contains('research-map-open');
     view=next;map.hidden=view!=='map';if(view!=='map'){voice?.stop?.();root.dispatchEvent(new Event('research:auto-grow-cancel'));clearFlight();camera.cancel();clearTimeout(growthTimer);}root.querySelector('[data-investigate-list]').hidden=view!=='list';
     root.querySelectorAll('[data-investigate-view]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.investigateView===view)));
     if(view==='map'){
@@ -159,7 +176,10 @@
     }else{
       underlay.forEach(({node,inert,hidden})=>{node.inert=inert;hidden===null?node.removeAttribute('aria-hidden'):node.setAttribute('aria-hidden',hidden);node.classList.remove('map-underlay');});underlay=[];
       document.body.classList.remove('research-map-open');home.after(map);map.removeAttribute('role');map.removeAttribute('aria-modal');
-      const back=previousFocus?.isConnected&&previousFocus!==document.body?previousFocus:root.querySelector('[data-investigate-view=list]');back?.focus({preventScroll:true});
+      if(wasOpen){
+        const back=previousFocus?.isConnected&&previousFocus!==document.body?previousFocus:projectMapButton||root.querySelector('[data-investigate-view=list]');
+        back?.focus({preventScroll:true});
+      }
     }
   }
   function updateSemanticControls() {
@@ -199,7 +219,7 @@
     const label=stopping?'Stop research':continuing?'Continue from selected pathway':'Start research';
     const blocked=root.dataset.requestBusy==='1'||root.dataset.connected==='0'||growthState.busy||snapshot.budget?.remaining===0;
     runToggle.dataset.mapScreenAction=stopping?'stop':continuing?'continue-pathway':'start';
-    runToggle.textContent=stopping?'■':'▶';runToggle.setAttribute('aria-label',label);runToggle.title=stopping?label+' (Alt+S)':label;
+    runLabel.textContent=stopping?'Stop':continuing?'Continue':'Start';runToggle.setAttribute('aria-label',label);runToggle.title=stopping?label+' (Alt+S)':label;
     runToggle.dataset.stopping=String(stopping);
     runToggle.disabled=stopping?root.dataset.stopBusy==='1':blocked||(continuing&&!activityVerified);
     if(stopping)runToggle.setAttribute('aria-keyshortcuts','Alt+S');else runToggle.removeAttribute('aria-keyshortcuts');
@@ -207,7 +227,7 @@
     const expand=map.querySelector('[data-branch-expand]');
     if(expand){expand.hidden=!pathway;expand.disabled=!continuing||blocked||!activityVerified;}
     autoGrow.disabled=!growthState.active&&(!living||!idle||!activityVerified||growthState.busy||root.dataset.requestBusy==='1'||root.dataset.connected==='0'||!growRounds.checkValidity()||snapshot.budget?.remaining===0);
-    autoGrow.textContent=growthState.active?'Ⅱ':'✦';autoGrow.setAttribute('aria-label',growthState.active?'Pause automatic growth':'Start automatic growth');autoGrow.setAttribute('aria-pressed',String(growthState.active));autoGrow.title=growthState.active?'Pause after the current growth request':!living?'Automatic growth is available in exploration-first runs':!idle?'Start research and wait for idle model exploration':'Run the chosen number of model-only growth rounds; no automatic web Evidence';growRounds.disabled=growthState.active;
+    autoLabel.textContent=growthState.active?'Pause growth':'Auto-grow';autoGrow.setAttribute('aria-label',growthState.active?'Pause automatic growth':'Start automatic growth');autoGrow.setAttribute('aria-pressed',String(growthState.active));autoGrow.title=growthState.active?'Pause after the current growth request':!living?'Automatic growth is available in exploration-first runs':!idle?'Start research and wait for idle model exploration':'Run the chosen number of model-only growth rounds; no automatic web Evidence';growRounds.disabled=growthState.active;
     actions.querySelector('[data-map-screen-action=step]').hidden=!active||!!snapshot.run.busy_since||snapshot.run.phase!=='evidence';
     const verificationReview=active&&snapshot.run.phase==='verification_review';
     map.querySelector('[data-map-command=collapse]').textContent=living?'Recede all':'Collapse all';
@@ -215,8 +235,9 @@
     map.querySelector('[data-map-focus]').hidden=Number(snapshot.run.flow_version)>=2;
     for(const action of ['finish','repair']){const button=actions.querySelector(`[data-map-screen-action=${action}]`);button.hidden=!verificationReview;button.disabled=root.querySelector(`[data-research-action=research_${action}] button`).disabled||pending;}
     map.querySelector('[data-map-evidence-help]').textContent=Number(snapshot.run.flow_version)?'Choose a direction for the next remaining planned search. Priority and model budgets still apply.':Number(snapshot.run.rigour_version)===1?'Choose a direction or continue the planned search. The reserved Challenge always seeks counter-evidence, including when redirected.':'Choose a direction or continue the planned search. Each uses a remaining slot; at most two searches per run.';
-    heading.querySelector('strong').textContent=`${projectName} · #${snapshot.run.id}`;
-    notification.hidden=!requestError&&!['failed','uncertain','incomplete','interrupted'].includes(snapshot.run.status)&&!verificationReview;notification.textContent=requestError?'Research needs attention · open controls':verificationReview?'Verification ready · review':snapshot.run.status+' · open controls';handle.dataset.state=snapshot.run.status;handle.title=active?'Research active · open controls to stop (Alt+S)':'Map controls and usage';
+    notification.hidden=!requestError&&!['failed','uncertain','incomplete','interrupted'].includes(snapshot.run.status)&&!verificationReview;
+    const notice=requestError?'Check status':verificationReview?'Review findings':snapshot.run.status[0].toUpperCase()+snapshot.run.status.slice(1);
+    notification.textContent=notice;notification.setAttribute('aria-label',notice+' · Review research status');handle.dataset.state=snapshot.run.status;handle.title=active?'Research active · open controls to stop (Alt+S)':'Map controls and usage';
     heading.querySelector('span').textContent=`${reviewing()?'Review claims to continue':verificationReview?'Review verification findings · finish or review gaps':snapshot.run.status+' · '+snapshot.run.phase} · ${snapshot.run.token_input} in / ${snapshot.run.token_output} out tokens${snapshot.run.usage_unknown?' · some usage unknown':''}${snapshot.budget?' · '+snapshot.budget.remaining+'/'+(snapshot.budget.limit||10)+' requests remaining':''}`;
   }
   function expandPathway(){
@@ -225,10 +246,11 @@
     form.elements.node_id.value=selected;
     form.requestSubmit();
   }
-  function details(open){map.dataset.readerOpen=String(open);if(open)controls(false);side.hidden=!open;if(open&&!side.contains(document.activeElement))closeSide.focus({preventScroll:true});map.classList.toggle('map-details-open',open);actions.querySelector('[data-map-screen-action=details]').setAttribute('aria-expanded',String(open));if(snapshot&&!map.hidden)renderCamera(camera.getState());}
+  function details(open){map.dataset.readerOpen=String(open);if(open)controls(false);side.hidden=!open;if(open&&!side.contains(document.activeElement))closeSide.focus({preventScroll:true});map.classList.toggle('map-details-open',open);actions.querySelector('[data-map-screen-action=details]').setAttribute('aria-expanded',String(open));if(snapshot&&!map.hidden){geometry();renderCamera(camera.getState());}}
   header.addEventListener('click',event=>{
     const action=event.target.closest('[data-map-screen-action]')?.dataset.mapScreenAction;if(!action)return;
     if(action==='handover'){document.querySelector('[data-research-handover]')?.requestSubmit();return;}
+    if(action==='overview'){showView('list');scrollTo(0,0);projectTitle?.focus({preventScroll:true});return;}
     if(action==='list'){showView('list');return;}
     if(action==='menu'){showView('list');const menu=document.querySelector('[data-project-menu]');menu.open=true;menu.querySelector('summary').focus();menu.scrollIntoView({block:'start'});return;}
     if(action==='details'){details(side.hidden);if(!side.hidden)closeSide.focus();return;}
@@ -239,7 +261,7 @@
   });
   map.addEventListener('keydown',event=>{
     if(event.altKey&&event.key.toLowerCase()==='s'){event.preventDefault();root.querySelector('[data-research-action=research_stop]')?.requestSubmit();return;}
-    if(event.key==='Escape'){event.preventDefault();if(camera.getState().transitionType==='flight'){clearFlight();camera.interact();viewport.focus({preventScroll:true});return;}if(!tray.hidden){controls(false);handle.focus();}else if(!side.hidden){details(false);viewport.focus();}else showView('list');return;}
+    if(event.key==='Escape'){event.preventDefault();if(camera.getState().transitionType==='flight'){clearFlight();camera.interact();viewport.focus({preventScroll:true});return;}if(!tray.hidden){controls(false);handle.focus();}else if(guide.open){guide.open=false;guide.querySelector('summary').focus();}else if(!side.hidden){details(false);viewport.focus();}else showView('list');return;}
     if(event.key!=='Tab')return;
     const stops=[...map.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],details > summary,[tabindex="0"]')].filter(node=>node.getClientRects().length&&getComputedStyle(node).visibility!=='hidden');
     const first=stops[0],last=stops.at(-1);
@@ -266,6 +288,9 @@
   world.addEventListener('focusin',event=>{const card=event.target.closest('[data-map-node]');if(card&&event.target.matches('.map-node-button:focus-visible')&&card.dataset.mapNode!==selected){inspect(card.dataset.mapNode);}});
   root.querySelector('[data-mindmap-switch]').hidden = false;
   root.querySelectorAll('[data-investigate-view]').forEach(button => button.addEventListener('click', () => showView(button.dataset.investigateView)));
+  if(projectMapButton){projectMapButton.hidden=false;projectMapButton.addEventListener('click',()=>showView('map'));}
+  const sheetLayout=matchMedia('(max-width: 760px)');
+  guide.addEventListener('toggle',()=>renderCamera(camera.getState()));
   function normalize() {
     nodes = [{id:'root', parent_id:null, type:'root', status:snapshot.run.status, title:`Investigation #${snapshot.run.id}`, content:snapshot.run.stop_reason || 'Unchecked prior → review → plan → evidence → findings.'}, ...snapshot.nodes.map(node => ({...node,id:String(node.id),parent_id:node.parent_id === null ? 'root' : String(node.parent_id)}))];
     for (const source of snapshot.sources) {
@@ -288,14 +313,21 @@
     for(const edge of snapshot.ledger.edges)if(sourceIds(node).includes(Number(edge.source_id)))ids.add(Number(edge.claim_id));
     return [...ids].filter(id=>persisted.get(String(id))?.type==='dream_claim').sort((a,b)=>a-b);
   }
-  function geometry(){camera.setGeometry(positions,Math.max(280,viewport.clientWidth),Math.max(200,viewport.clientHeight));}
+  function geometry(){
+    let height=viewport.clientHeight;
+    if(sheetLayout.matches){
+      const sheet=side.hidden?map.querySelector('[data-branch-browser]'):side;
+      if(sheet?.getClientRects().length)height=Math.min(height,sheet.getBoundingClientRect().top-viewport.getBoundingClientRect().top-12);
+    }
+    camera.setGeometry(positions,Math.max(280,viewport.clientWidth),Math.max(200,height));
+  }
   function setScale(value){camera.zoomBy(value/camera.getState().scale);}
   function fit(animate=true){clearFlight();if(!map.hidden){geometry();camera.fitGroup(visible.map(n=>n.id),{animate,fitPadding:.1});}}
   function queueGrowth(){clearTimeout(growthTimer);if(camera.pendingGrowth!==null&&!map.hidden)growthTimer=setTimeout(()=>{camera.flushGrowth();if(camera.pendingGrowth!==null)queueGrowth();},4200);}
   function renderCamera(state,extra={}){
     if(map.hidden||!visible.length||visible.some(node=>!positions.has(node.id)))return;
     const paintStarted=performance.now(),gap=paintStarted-lastCameraPaint;lastCameraPaint=paintStarted;if(state.transitioning&&gap>28&&gap<250)framePressure=Math.min(8,framePressure+1);else if(gap<23)framePressure=Math.max(0,framePressure-.25);
-    const viewportRect=viewport.getBoundingClientRect(),blocked=[side,tray,workingNow,notification,map.querySelector('[data-map-review]')].filter(element=>element&&!element.hidden&&element.getClientRects().length).map(element=>{const r=element.getBoundingClientRect();return {left:r.left-viewportRect.left,right:r.right-viewportRect.left,top:r.top-viewportRect.top,bottom:r.bottom-viewportRect.top};});
+    const viewportRect=viewport.getBoundingClientRect(),blocked=[side,tray,workingNow,guide,guide.open?legend:null,map.querySelector('[data-map-review]')].filter(element=>element&&!element.hidden&&element.getClientRects().length).map(element=>{const r=element.getBoundingClientRect();return {left:r.left-viewportRect.left,right:r.right-viewportRect.left,top:r.top-viewportRect.top,bottom:r.bottom-viewportRect.top};});
     scale=state.scale;const w=camera.viewport.width,h=camera.viewport.height;
     const heading=`Yaw ${Math.round(state.yaw*180/Math.PI)}° · Pitch ${Math.round(state.pitch*180/Math.PI)}° · ${state.mode==='fly'?'Fly':'Orbit'}`;if(rotationOutput.textContent!==heading)rotationOutput.textContent=heading;orbitMode.setAttribute('aria-pressed',String(state.mode==='orbit'));flyMode.setAttribute('aria-pressed',String(state.mode==='fly'));viewport.dataset.spaceMode=state.mode;
     world.style.transform='translate(0px, 0px)';world.querySelector('svg')?.style.removeProperty('transform');
@@ -466,13 +498,13 @@
     return trail;
   }
 
-  function addPathway(node, trail) {
+  function addPathway(trail) {
     const nav = el('nav', undefined, 'map-pathway');
     nav.setAttribute('aria-label','Research pathway');
     const list = el('ol');
     for (const step of trail) {
       const item = el('li');
-      if (step.id === node.id) {
+      if (step.id === selected) {
         const current = el('span', 'Current idea');
         current.setAttribute('aria-current','step');
         item.append(current);
@@ -491,7 +523,9 @@
     }
     nav.append(list);
     inspector.append(nav);
+  }
 
+  function addConceptDetails(node) {
     if(node.semantic_outlier)inspector.append(el('p','Outlier idea · Its nearest match in this map is weak. It may open a different line of inquiry.','map-outlier-explanation'));
     const {connection} = data(node);
     if (connection) inspector.append(el('h4','How this follows'),el('p',connection));
@@ -552,13 +586,15 @@
     if(living&&living.dataset.selectedNode!==node.id){living.dataset.selectedNode=node.id;for(const option of living.querySelector('[data-living-nodes]').options)option.selected=option.value===String(node.id);living.dispatchEvent(new Event('change'));}
     const connections=relations.filter(e=>(e.from===node.id||e.to===node.id)&&!(e.kind==='concept'&&(e.from==='root'||e.to==='root')));
     const trail=conceptTypes.includes(node.type)?pathway(node):[];
+    const statusLabel=trail.length&&node.status==='complete'?provenanceLabel(node.provenance_tag):`${node.type.replaceAll('_',' ')} · ${node.status}`;
     const stamp=JSON.stringify([trail.map(step=>[step.id,step.title]),connections,savedNode,sources,passages,edges,stages,[...selectedSources].sort()]);
     if(inspector.dataset.stamp!==stamp){
       const opened=new Set([...inspector.querySelectorAll('details[open]')].map(item=>item.querySelector('summary')?.textContent));
-      const title=el('h3',node.title),detail=el('p',`${node.type.replaceAll('_',' ')} · ${node.status}`,'map-inspector-status');
+      const title=el('h3',node.title),detail=el('p',statusLabel,'map-inspector-status');
       title.setAttribute('aria-label',node.title);title.dataset.originalOutput='1';inspector.replaceChildren(title,detail);
-      if(trail.length)addPathway(node,trail);
+      if(trail.length)addPathway(trail);
       inspector.append(el('p',node.dead_end_reason||node.content||'No details saved yet.','map-inspector-text'));
+      if(trail.length)addConceptDetails(node);
       const primaryCount=inspector.children.length;
       const original=snapshot.nodes.find(item=>String(item.id)===String(node.id));if(original){inspector.dataset.termKind='node';inspector.dataset.termNode=String(original.id);inspector.dataset.termVersion=JSON.stringify([original.updated_at,original.title,original.content,original.data_json]);}else{delete inspector.dataset.termKind;delete inspector.dataset.termNode;delete inspector.dataset.termVersion;}
       if(conceptTypes.includes(node.type))inspector.append(el('p',`Priority ${node.path_weight||50} · ${node.model_tier||'primary'} model tier. ${node.weight_reason||'Priority is separate from evidence strength.'}${Number(node.speculative)?' Untested idea — may be wrong.':''}`));
@@ -591,7 +627,7 @@
       inspector.dataset.stamp=stamp;
     }
     updateNodeActivity(node);
-    inspector.querySelector('.map-inspector-status').textContent=`${node.type.replaceAll('_',' ')} · ${node.status}`;
+    inspector.querySelector('.map-inspector-status').textContent=statusLabel;
     const pathRequests=snapshot.requests.filter(q=>Number(q.path_node_id)===Number(node.id));
     const usage=inspector.querySelector('[data-map-path-usage]');usage.hidden=!pathRequests.length;
     if(pathRequests.length){const input=pathRequests.reduce((sum,q)=>sum+Number(q.token_input||0),0),output=pathRequests.reduce((sum,q)=>sum+Number(q.token_output||0),0),cost=pathRequests.reduce((sum,q)=>sum+Number(q.estimated_usd||0),0);usage.textContent=`${input.toLocaleString()} input / ${output.toLocaleString()} output tokens · $${cost.toFixed(6)} USD known estimate; unknown calls remain in the usage ledger.`;}
@@ -646,6 +682,7 @@
   }
   function inspect(id) {
     pendingKeyboardFocus=null;clearFlight();id=String(id);if(!nodes.some(n=>n.id===id))return;
+    const showTitle=selected!==id||side.hidden;
     handoffReceded.clear();
     let ancestor=nodes.find(n=>n.id===id).parent_id;
     const seen=new Set([id]);
@@ -656,6 +693,7 @@
     if(!visible.some(n=>n.id===id)){filter='all';map.querySelectorAll('[data-map-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.mapFilter==='all')));}
     for(const ancestor of seen)recededBranches.delete(ancestor);
     controls(false);selected=id;details(true);draw();geometry();camera.focus(id);targetPicker.value=id;
+    if(showTitle)side.scrollTop=0;
     root.dispatchEvent(new CustomEvent('research:interest',{detail:{nodeId:id}}));
     voice?.focus?.();
   }

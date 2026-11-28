@@ -75,15 +75,17 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   await rounds.fill('1');await page.getByRole('button',{name:'Start automatic growth',exact:true}).click();await page.locator('[data-map-grow-progress]').filter({hasText:'1/1'}).waitFor();await page.waitForFunction(()=>!document.querySelector('[data-map-auto-grow]').disabled);const beforeRepeat=await read(),sentBefore=sent.length;fs.writeFileSync(path.join(home,'repeat-idea-fixture'),'repeat');await rounds.fill('5');await page.getByRole('button',{name:'Start automatic growth',exact:true}).click();await page.waitForFunction(()=>document.querySelector('[data-map-auto-grow]').getAttribute('aria-pressed')==='false');await page.waitForTimeout(350);const afterRepeat=await read();fs.unlinkSync(path.join(home,'repeat-idea-fixture'));if(sent.length!==sentBefore+1||afterRepeat.nodes.filter(n=>n.type==='model_idea').length!==beforeRepeat.nodes.filter(n=>n.type==='model_idea').length||!(await page.locator('[data-map-grow-progress]').getAttribute('title')).includes('no new ideas'))throw Error('Duplicate-only round grew stars or automatically retried');
   // A transport failure ends the sequence, with no automatic retry.
   let attempts=0;await page.route('**/loader.php?**',async route=>{if((route.request().postData()||'').includes('research_explore')){attempts++;return route.fulfill({status:503,contentType:'application/json',body:'{"error":"Synthetic growth outage"}'});}return route.continue();});await page.getByRole('button',{name:'Start automatic growth',exact:true}).click();await page.locator('[data-map-grow-progress]').filter({hasText:'0/5'}).waitFor();await page.waitForFunction(()=>document.querySelector('[data-map-auto-grow]')?.getAttribute('aria-pressed')==='false');await page.waitForTimeout(500);if(attempts!==1)throw Error('Failed automatic request was retried');
-  // The header has one message slot even when the project title would overflow it.
-  for(const width of [390,1440]){
+  // Project identity and controls fit alongside the reading queue, including with a long title.
+  for(const width of [320,390,820,1440]){
     await page.setViewportSize({width,height:900});
     const clear=await header.evaluate(el=>{
-      const ticker=el.querySelector('.map-idea-sentence'),bounds=ticker.getBoundingClientRect();
-      const controls=el.querySelector('.map-quick-controls').getBoundingClientRect();
-      const handle=el.querySelector('[data-map-controls]').getBoundingClientRect();
-      return bounds.width>0&&bounds.left>=controls.right&&bounds.right<=handle.left&&
-        ticker.querySelectorAll('span').length===1&&!el.querySelector('.map-project-label').checkVisibility();
+      const ticker=el.querySelector('.map-idea-sentence'),bounds=el.getBoundingClientRect();
+      const groups=[...el.querySelectorAll('.map-project-heading, .map-quick-controls, .map-idea-sentence, .map-state-notice, [data-map-controls]')]
+        .filter(group=>!group.hidden).map(group=>group.getBoundingClientRect());
+      const overlaps=(a,b)=>a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top;
+      return groups.every((r,i)=>r.width>0&&r.left>=bounds.left&&r.right<=bounds.right&&r.top>=bounds.top&&r.bottom<=bounds.bottom&&
+        groups.slice(i+1).every(other=>!overlaps(r,other)))&&
+        ticker.querySelectorAll('span').length===1&&el.querySelector('.map-project-heading h2').checkVisibility();
     });
     if(!clear)throw Error('Long project title overlaps the reading queue');
   }

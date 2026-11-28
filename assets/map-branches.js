@@ -12,14 +12,18 @@
  const search=make('input',undefined,'form-control');search.type='search';search.placeholder='Find an idea…';search.setAttribute('aria-label','Search branches');
  const list=make('ul',undefined,'map-branch-list');list.dataset.branchList='1';const empty=make('p','Research ideas will appear here.','map-branch-empty');
  browser.append(heading,search,list,empty);map.append(browser);
- const actions=make('div',undefined,'map-concept-actions');const back=make('button','← Branches','btn btn-outline-secondary');back.type='button';back.dataset.branchBack='1';
+ const readerBar=make('div',undefined,'map-reader-bar');
+ const back=make('button','‹ Branches','btn');back.type='button';back.dataset.branchBack='1';
+ const closeButton=side.querySelector('.map-inspector-close');
+ readerBar.append(back,closeButton);side.prepend(readerBar);
+ const actions=make('div',undefined,'map-concept-actions');actions.setAttribute('role','group');actions.setAttribute('aria-label','Idea actions');
  const expand=make('button','Expand this pathway','btn btn-primary');expand.type='button';expand.dataset.branchExpand='1';expand.title='Generate new ideas under this pathway';expand.disabled=true;expand.hidden=true;
  const branchToggle=side.querySelector('[data-map-toggle-branch]');
  const chat=make('button',undefined,'btn btn-outline-secondary map-concept-chat-toggle');chat.type='button';chat.dataset.conceptChatToggle='1';chat.setAttribute('aria-label','Chat about this concept');chat.setAttribute('aria-expanded','false');chat.setAttribute('aria-controls','map-concept-conversation');
- const icon=document.createElementNS('http://www.w3.org/2000/svg','svg');icon.setAttribute('viewBox','0 0 24 24');icon.setAttribute('aria-hidden','true');const path=document.createElementNS(icon.namespaceURI,'path');path.setAttribute('d','M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-6 4V6a2 2 0 0 1 2-2ZM7 9h10M7 13h7');icon.append(path);chat.append(icon);
- actions.append(back,expand,branchToggle,chat);side.insertBefore(actions,content);const problem=side.querySelector('.map-request-error')||make('p','','map-request-error');problem.hidden=true;problem.setAttribute('role','alert');side.insertBefore(problem,content);
+ const icon=document.createElementNS('http://www.w3.org/2000/svg','svg');icon.setAttribute('viewBox','0 0 24 24');icon.setAttribute('aria-hidden','true');const path=document.createElementNS(icon.namespaceURI,'path');path.setAttribute('d','M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-6 4V6a2 2 0 0 1 2-2ZM7 9h10M7 13h7');icon.append(path);chat.append(icon,'Chat');
+ actions.append(chat,expand,branchToggle);side.insertBefore(actions,content);const problem=side.querySelector('.map-request-error')||make('p','','map-request-error');problem.hidden=true;problem.setAttribute('role','alert');side.insertBefore(problem,content);
  const advanced=make('details',undefined,'map-concept-advanced');advanced.dataset.mapAdvanced='1';advanced.append(make('summary','More options · layers, evidence and priority'));
- for(const child of [...side.children])if(child!==content&&child!==actions&&child!==problem&&!child.classList.contains('map-inspector-close'))advanced.append(child);
+ for(const child of [...side.children])if(child!==content&&child!==actions&&child!==problem&&child!==readerBar)advanced.append(child);
  side.append(advanced);
  const conversation=make('section',undefined,'map-concept-conversation');conversation.id='map-concept-conversation';conversation.hidden=true;conversation.setAttribute('aria-label','Selected concept conversation');
  conversation.append(make('h4','Talk about this concept'),make('p','Ask for an explanation, challenge an assumption, or explore an implication. AI discussion is not verified evidence.','map-conversation-note'));
@@ -60,10 +64,19 @@
    const appendTree=start=>{const stack=[{node:start,container:list,depth:0}];while(stack.length){const {node:n,container,depth}=stack.pop(),id=String(n.id);if(!shown.has(id)||placed.has(id))continue;placed.add(id);
     const row=make('li');row.dataset.branchDepth=String(depth);const button=make('button',undefined,'map-branch-item');button.type='button';button.dataset.branchId=id;button.style.setProperty('--branch-colour',window.AIcontrolMap.familyColour(families.get(id)));
     let title=window.AIcontrolMap.sentence(n.title||n.content).replace(/^(association|counter|reframing|edge case|idea|question|claim)\s*:\s*/i,'')||'Untitled idea';if(title.length>110)title=title.slice(0,107).replace(/\s+\S*$/,'')+'…';button.append(make('strong',title));button.title=n.title;button.setAttribute('aria-label',n.title);
-    const working=snapshot.requests.some(r=>r.status==='pending'&&Number(r.path_node_id)===Number(n.id));const state=working?'Thinking…':n.locked_at?'Evidence locked':Number(n.layer)===2?'Parked idea':'Unchecked idea';const related=children.get(id)||[];
-    const label=(query&&!matches.has(id)?'Parent branch · ':'')+state+(outliers.has(id)?' · Outlier idea':'')+
-      (related.length?' · '+related.length+' child idea'+(related.length===1?'':'s'):'');
-    button.append(make('small',label));button.addEventListener('click',()=>select(id,button));row.append(button);container.append(row);
+    const working=snapshot.requests.some(r=>r.status==='pending'&&Number(r.path_node_id)===Number(n.id));
+    const related=children.get(id)||[],labels=[];
+    if(query&&!matches.has(id))labels.push('Parent branch');
+    if(working)labels.push('Thinking…');else if(n.locked_at)labels.push('Evidence locked');else if(Number(n.layer)===2)labels.push('Parked');
+    if(outliers.has(id))labels.push('Outlier');
+    if(related.length)labels.push(`${related.length} child ${related.length===1?'idea':'ideas'}`);
+    if(labels.length){
+     const status=make('small',labels.join(' · '));
+     status.id='map-branch-status-'+id;
+     button.setAttribute('aria-describedby',status.id);
+     button.append(status);
+    }
+    button.addEventListener('click',()=>select(id,button));row.append(button);container.append(row);
     const descendants=related.filter(n=>shown.has(String(n.id))&&!placed.has(String(n.id)));if(descendants.length){const nested=make('ul',undefined,'map-branch-children');if(depth>=4)nested.classList.add('map-branch-deep');row.append(nested);for(let i=descendants.length-1;i>=0;i--)stack.push({node:descendants[i],container:nested,depth:depth+1});}
     const suggestion=suggestions[id];
     if(suggestion?.text){
@@ -85,7 +98,7 @@
    if(focusedQuestion)list.querySelector(`[data-branch-questions="${focusedQuestion}"] summary`)?.focus({preventScroll:true});
   }
   for(const button of list.querySelectorAll('[data-branch-id]'))button.setAttribute('aria-current',button.dataset.branchId===selected?'true':'false');
-  count.textContent=query?`${filtered.length} / ${all.length}`:String(all.length);count.title=query?'Matching ideas; parent branches are shown for context.':'Saved ideas';empty.hidden=filtered.length>0;empty.textContent=query?'No matching branches. Try another word.':'Research ideas will appear here.';
+  count.textContent=query?`${filtered.length} of ${all.length}`:`${all.length} ${all.length===1?'idea':'ideas'}`;count.title=query?'Matching ideas; parent branches are shown for context.':'Saved ideas';empty.hidden=filtered.length>0;empty.textContent=query?'No matching branches. Try another word.':'Research ideas will appear here.';
  }
  function renderThread(){
   if(!snapshot)return;const notes=snapshot.nodes.filter(n=>{if(n.type!=='learn'||String(n.parent_id)!==selected)return false;try{return JSON.parse(n.data_json).kind==='concept_chat';}catch{return false;}});

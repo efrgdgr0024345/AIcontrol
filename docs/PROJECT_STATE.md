@@ -1351,8 +1351,9 @@ cPanel activation require independent verification.
 
 ## Research map idea ticker and voice chat
 
-The map header renders one rotating idea sentence at a time. The project
-title and run status are inside Map Controls. The Voice button opens a
+The map header shows the project title, one rotating idea sentence, and the
+research controls. Statuses that need attention open Map controls, where the
+full run state and usage are available. The Voice button opens a
 two-way WebRTC session with GPT-Realtime-2.1 mini and Marin. The assistant
 introduces newly saved ideas, answers follow-up questions with aviation-style
 plain language, and can grow a named or selected branch on a spoken request.
@@ -1364,13 +1365,23 @@ Browser coverage uses simulated Realtime events and the synthetic research
 provider to verify narration, pathway growth, microphone cleanup and ticker
 layout. This coverage does not exercise OpenAI's live voice service.
 
-## Compact Research map overlays
+## Research project overview and map layout
 
-The canvas extends beneath the branch list and concept reader. Both panels
-shrink to fit short content and scroll when needed. The mobile concept reader
-uses a bottom panel while keeping the canvas visible above and behind it.
-Translucent surfaces and text shadows preserve contrast, with solid panel
-fills when the browser requests increased contrast.
+The project overview puts the saved title and Open map action first. The brief,
+activity, spend, projects and settings remain available in disclosures. The
+map has a direct return to the overview and fits its title and controls at
+phone widths. Map guide explains navigation and how to interpret brightness.
+
+The canvas extends beneath the branch browser and idea reader. Family colours
+identify branches in the tree, and possible questions follow their descendants.
+The reader shows the current pathway, original output, and actions for chat,
+explanation and growth. On phones the reader sits at the bottom and the camera
+frames the selected idea above it. The panels scroll independently and use
+solid fills when the browser requests increased contrast.
+
+Browser fixtures cover the overview and map round trip, guide dismissal,
+keyboard focus, long titles at 320 to 1440 pixels, and desktop and mobile
+accessibility checks. Research actions in these checks use the synthetic provider.
 
 
 ## Project Desk navigation and overview

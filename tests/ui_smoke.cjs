@@ -283,7 +283,7 @@ const {spawn,spawnSync}=require('child_process');
   await new Promise(resolve=>setTimeout(resolve,3200));
   if(continued||await claims.getByLabel('Include claim #9',{exact:true}).isChecked())throw new Error('Review poll lost selection or auto-continued');
   if(!await claims.getByLabel('Include claim #2',{exact:true}).evaluate(node=>node===document.activeElement))throw new Error('Review poll stole keyboard focus');
-  if(!await page.getByRole('button',{name:'Start research',exact:true}).isDisabled())throw new Error('Active review allowed Start');
+  if(!await page.getByRole('button',{name:'Start new investigation',exact:true}).isDisabled())throw new Error('Active review allowed Start');
   await page.locator('[data-project-menu] > summary').click();
   if(await page.getByRole('link',{name:'Learn',exact:true}).isVisible())throw new Error('Learn visible without sources');
   await audit('Dream claim review');await page.screenshot({path:path.join(artifacts,'ui-dream-review-desktop.png'),fullPage:true});
