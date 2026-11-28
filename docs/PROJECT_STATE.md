@@ -1373,15 +1373,24 @@ map has a direct return to the overview and fits its title and controls at
 phone widths. Map guide explains navigation and how to interpret brightness.
 
 The canvas extends beneath the branch browser and idea reader. Family colours
-identify branches in the tree, and possible questions follow their descendants.
+identify branches in the tree. The current suggested question is visible in
+full after each branch’s descendants and updates as the branch develops.
 The reader shows the current pathway, original output, and actions for chat,
-explanation and growth. On phones the reader sits at the bottom and the camera
-frames the selected idea above it. The panels scroll independently and use
-solid fills when the browser requests increased contrast.
+explanation and growth. Its translucent surface lets the map show through.
+On phones it sits at the bottom and the camera frames the selected idea above
+it. The panels scroll independently and use solid fills when the browser
+requests increased contrast.
+
+The map shows when a request is being sent and when the server confirms
+active work. Newly saved ideas and links unfold from their parent and ease
+into place. Existing stars keep their saved positions during normal growth.
+Grouping changes ease between positions, and hidden branches fade out.
+The map respects the browser's reduced-motion preference.
 
 Browser fixtures cover the overview and map round trip, guide dismissal,
-keyboard focus, long titles at 320 to 1440 pixels, and desktop and mobile
-accessibility checks. Research actions in these checks use the synthetic provider.
+keyboard focus, long titles at 320 to 1440 pixels, desktop and mobile
+accessibility, and growth over successive frames with stable existing stars
+and links. The fixtures use the synthetic provider.
 
 
 ## Project Desk navigation and overview

@@ -1732,7 +1732,14 @@ window.AIcontrolResearchVoice = (() => {
   let lastCameraPaint=0,framePressure=0,activityVerified=true,relations=[],overviewGraph={nodes:[],edges:[]};
   let showRelated=true,pendingKeyboardFocus=null;
   const flightKeys=new Set(),flightPressed=new Set();
-  let sceneCards=new Map(),edgeElements=[],presentation=new Map(),growthTimer=null,skipClick=false;
+  let sceneCards=new Map(),presentation=new Map(),growthTimer=null,skipClick=false;
+  let sceneTargets=new Map(),paintedPositions=new Map(),sceneFrame=null;
+  const sceneMotion=new Map(),edges=new Map();
+  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.setAttribute('width','1');svg.setAttribute('height','1');svg.setAttribute('aria-hidden','true');
+  const defs=document.createElementNS(svg.namespaceURI,'defs');
+  svg.append(defs);world.prepend(svg);
+  let nextGradient=0;
   const motion=matchMedia('(prefers-reduced-motion: reduce)');
   const camera=new window.AIcontrolCamera.CameraController({reducedMotion:()=>motion.matches,onChange:(state,extra)=>renderCamera(state,extra)});
   map.camera=camera;
@@ -1782,7 +1789,7 @@ window.AIcontrolResearchVoice = (() => {
   let growthState={active:false,completed:0,total:0,busy:false};
   autoGrow.addEventListener('click',()=>{if(growthState.active){root.dispatchEvent(new Event('research:auto-grow-cancel'));return;}if(!growRounds.reportValidity())return;root.dispatchEvent(new CustomEvent('research:auto-grow',{detail:{rounds:Number(growRounds.value),focusNodeId:selected}}));});
   growRounds.addEventListener('input',()=>screenControls());
-  root.addEventListener('research:auto-grow-state',event=>{growthState=event.detail;growProgress.hidden=!growthState.total;growProgress.textContent=growthState.total?`${growthState.completed}/${growthState.total}`:'';growProgress.setAttribute('aria-label',growthState.message||'');growProgress.title=growthState.message||'';screenControls();});
+  root.addEventListener('research:auto-grow-state',event=>{growthState=event.detail;growProgress.hidden=!growthState.total;growProgress.textContent=growthState.total?`${growthState.completed}/${growthState.total}`:'';growProgress.setAttribute('aria-label',growthState.message||'');growProgress.title=growthState.message||'';screenControls();updateWorkingBanner();});
   quickControls.append(runToggle,stopButton,autoGrow,growRounds,growProgress);
   tray.append(heading,actions,map.querySelector('.mindmap-toolbar'),map.querySelector('[data-map-outcomes]'));
   const layerControls=el('div',undefined,'map-layer-controls');layerControls.setAttribute('role','group');layerControls.setAttribute('aria-label','Map layers');
@@ -1795,7 +1802,31 @@ window.AIcontrolResearchVoice = (() => {
   const rotationOutput=el('output','3D orbit');rotationOutput.dataset.mapRotation='1';rotationOutput.setAttribute('aria-label','3D camera heading');rotationOutput.setAttribute('aria-live','off');rotationControls.append(rotationOutput);tray.append(rotationControls);
   const flightControls=el('div',undefined,'map-flight-controls');flightControls.setAttribute('role','group');flightControls.setAttribute('aria-label','Fly through space');
   const directions={Forward:{forward:1},Back:{forward:-1},Left:{right:-1},Right:{right:1},Up:{down:-1},Down:{down:1}};
-  for(const [name,input]of Object.entries(directions)){const button=el('button',name,'btn btn-outline-secondary');button.type='button';button.dataset.flightDirection=name;button.setAttribute('aria-label','Fly '+name.toLowerCase());button.addEventListener('pointerdown',event=>{event.preventDefault();flightPressed.clear();flightPressed.add(name);button._flightStarted=performance.now();button.setPointerCapture(event.pointerId);syncFlight();});const release=event=>{flightPressed.delete(name);if(button.hasPointerCapture(event.pointerId))button.releasePointerCapture(event.pointerId);syncFlight();if(event.type==='pointerup'&&performance.now()-button._flightStarted<120)camera.flyBy((input.right||0)*90,(input.down||0)*90,(input.forward||0)*90);};button.addEventListener('pointerup',release);button.addEventListener('pointercancel',release);button.addEventListener('lostpointercapture',()=>{flightPressed.delete(name);syncFlight();});button.addEventListener('click',event=>{if(event.detail===0){clearFlight();camera.flyBy((input.right||0)*150,(input.down||0)*150,(input.forward||0)*150);}});flightControls.append(button);}
+  for(const [name,input] of Object.entries(directions)){
+    const button=el('button',name,'btn btn-outline-secondary');
+    button.type='button';button.dataset.flightDirection=name;button.setAttribute('aria-label','Fly '+name.toLowerCase());
+    let heldFrom=null;
+    button.addEventListener('pointerdown',event=>{
+      event.preventDefault();flightPressed.clear();flightPressed.add(name);
+      heldFrom={...camera.getState(),time:performance.now()};
+      button.setPointerCapture(event.pointerId);syncFlight();
+    });
+    const release=event=>{
+      flightPressed.delete(name);
+      if(button.hasPointerCapture(event.pointerId))button.releasePointerCapture(event.pointerId);
+      syncFlight();
+      if(event.type==='pointerup'&&heldFrom){
+        const {x,y,z}=camera.getState();
+        const travelled=Math.hypot(x-heldFrom.x,y-heldFrom.y,z-heldFrom.z);
+        if(performance.now()-heldFrom.time<120||travelled<20)camera.flyBy((input.right||0)*90,(input.down||0)*90,(input.forward||0)*90);
+      }
+      heldFrom=null;
+    };
+    button.addEventListener('pointerup',release);button.addEventListener('pointercancel',release);
+    button.addEventListener('lostpointercapture',()=>{flightPressed.delete(name);syncFlight();});
+    button.addEventListener('click',event=>{if(event.detail===0){clearFlight();camera.flyBy((input.right||0)*150,(input.down||0)*150,(input.forward||0)*150);}});
+    flightControls.append(button);
+  }
   const stopMotion=el('button','Stop camera movement','btn btn-outline-secondary');stopMotion.type='button';stopMotion.addEventListener('click',()=>{clearFlight();camera.interact();});flightControls.append(stopMotion);tray.append(flightControls);
   tray.append(el('p','Drag to orbit or look in 3D. Shift-drag pans. W/S fly forward/back, A/D strafe, R/F move up/down; Shift boosts speed. Arrow keys or Q/E turn; 0 resets. On touch, one finger orbits/looks and two fingers pan/pinch. Use Fit to return to the ideas.','map-space-help'));
   const connectionLegend=el('details',undefined,'map-connection-legend');connectionLegend.append(el('summary','Connection colours and line styles'),el('p','Nodes in the same idea family share a colour. Gold marks Evidence lock-in or sources; grey marks parked ideas. Solid lines are parent/child paths; short dashes share a family; dotted lines match wording; long dashes share a cited source. Fine blue dashes connect ideas related by meaning. These links do not establish truth or independent corroboration.'));
@@ -1812,7 +1843,7 @@ window.AIcontrolResearchVoice = (() => {
   semanticToggle.addEventListener('click',()=>{
     semanticPreference=!semanticPreference;
     draw();
-    if(selected==='root')fit(false);else camera.focus(selected);
+    if(selected==='root')fit();else camera.focus(selected);
   });
   semanticControls.append(semanticStatus,semanticToggle);
   const indexForms=[];
@@ -2041,25 +2072,88 @@ window.AIcontrolResearchVoice = (() => {
   function setScale(value){camera.zoomBy(value/camera.getState().scale);}
   function fit(animate=true){clearFlight();if(!map.hidden){geometry();camera.fitGroup(visible.map(n=>n.id),{animate,fitPadding:.1});}}
   function queueGrowth(){clearTimeout(growthTimer);if(camera.pendingGrowth!==null&&!map.hidden)growthTimer=setTimeout(()=>{camera.flushGrowth();if(camera.pendingGrowth!==null)queueGrowth();},4200);}
+
+  function updateSceneMotion(){
+    const previous=sceneTargets;
+    sceneTargets=new Map(visible.map(node=>[node.id,positions.get(node.id)]));
+    if(initialCamera||motion.matches||document.hidden)return;
+
+    const now=performance.now(),moving=new Set(sceneMotion.keys());
+    const lastPosition=id=>moving.has(id)?paintedPositions.get(id)||previous.get(id):previous.get(id);
+    let arrivals=0;
+    for(const node of visible){
+      const target=sceneTargets.get(node.id),old=previous.get(node.id);
+      if(!target||old&&old.x===target.x&&old.y===target.y&&(old.z||0)===(target.z||0))continue;
+      const parent=lastPosition(node.parent_id)||sceneMotion.get(node.parent_id)?.from||sceneTargets.get(node.parent_id);
+      const origin=lastPosition(node.id)||parent||target;
+      const from={...origin,x:origin.x+(origin.w-target.w)/2,y:origin.y+(origin.h-target.h)/2};
+      const opacity=old?(sceneMotion.get(node.id)?.opacity??1):0;
+      sceneMotion.set(node.id,{from,target,opacity,startOpacity:opacity,start:now+(old?0:Math.min(arrivals++*70,280)),duration:old?540:760});
+    }
+  }
+
+  function paintScene(now){
+    if(!sceneMotion.size)return positions;
+    const painted=new Map(positions);
+    for(const [id,entry] of sceneMotion){
+      const card=sceneCards.get(id);
+      const elapsed=motion.matches?1:Math.min(1,Math.max(0,(now-entry.start)/entry.duration));
+      if(!card||elapsed===1){
+        sceneMotion.delete(id);
+        if(card){card.style.removeProperty('opacity');delete card.dataset.mapArriving;}
+        continue;
+      }
+      const {from,target}=entry,progress=elapsed*elapsed*(3-2*elapsed);
+      painted.set(id,{...target,x:from.x+(target.x-from.x)*progress,y:from.y+(target.y-from.y)*progress,z:(from.z||0)+((target.z||0)-(from.z||0))*progress});
+      if(entry.startOpacity<1){
+        entry.opacity=entry.startOpacity+(1-entry.startOpacity)*progress;
+        card.style.opacity=String(entry.opacity);
+        card.dataset.mapArriving='true';
+      }
+    }
+    return painted;
+  }
+
+  function queueScenePaint(){
+    if(!sceneMotion.size||sceneFrame!==null||map.hidden||document.hidden)return;
+    sceneFrame=requestAnimationFrame(()=>{
+      sceneFrame=null;
+      const state=camera.getState();
+      if(state.transitioning)queueScenePaint();else renderCamera(state);
+    });
+  }
+
+  function fadeOut(element,key,gradient){
+    const remove=()=>{element.remove();gradient?.remove();};
+    if(initialCamera||map.hidden||motion.matches||document.hidden||element.hidden||element.style.display==='none'){remove();return;}
+    element.removeAttribute(key);
+    element.setAttribute('aria-hidden','true');
+    element.inert=true;
+    element.style.pointerEvents='none';
+    const animation=element.animate([{opacity:element.style.opacity||1},{opacity:0}],{duration:220,easing:'ease-out'});
+    animation.finished.then(remove,remove);
+  }
+
   function renderCamera(state,extra={}){
     if(map.hidden||!visible.length||visible.some(node=>!positions.has(node.id)))return;
     const paintStarted=performance.now(),gap=paintStarted-lastCameraPaint;lastCameraPaint=paintStarted;if(state.transitioning&&gap>28&&gap<250)framePressure=Math.min(8,framePressure+1);else if(gap<23)framePressure=Math.max(0,framePressure-.25);
     const viewportRect=viewport.getBoundingClientRect(),blocked=[side,tray,workingNow,guide,guide.open?legend:null,map.querySelector('[data-map-review]')].filter(element=>element&&!element.hidden&&element.getClientRects().length).map(element=>{const r=element.getBoundingClientRect();return {left:r.left-viewportRect.left,right:r.right-viewportRect.left,top:r.top-viewportRect.top,bottom:r.bottom-viewportRect.top};});
     scale=state.scale;const w=camera.viewport.width,h=camera.viewport.height;
     const heading=`Yaw ${Math.round(state.yaw*180/Math.PI)}° · Pitch ${Math.round(state.pitch*180/Math.PI)}° · ${state.mode==='fly'?'Fly':'Orbit'}`;if(rotationOutput.textContent!==heading)rotationOutput.textContent=heading;orbitMode.setAttribute('aria-pressed',String(state.mode==='orbit'));flyMode.setAttribute('aria-pressed',String(state.mode==='fly'));viewport.dataset.spaceMode=state.mode;
-    world.style.transform='translate(0px, 0px)';world.querySelector('svg')?.style.removeProperty('transform');
+    world.style.transform='translate(0px, 0px)';
     map.dataset.cameraTransition=state.transitionType||'idle';map.dataset.cameraFocus=state.focusNodeId;map.dataset.spaceCamera='perspective-3d';
     if(extra.reducedMotion){world.classList.remove('map-short-crossfade');void world.offsetWidth;world.classList.add('map-short-crossfade');}
     map.dataset.detailLevel=visible.length>300||framePressure>=2?'compact':'full';
-    const projections=new Map(visible.map(n=>{const p=positions.get(n.id);return [n.id,camera.worldToScreen({x:p.x+p.w/2,y:p.y+p.h/2,z:p.z||0})];}));
-    presentation=Engine.starPresentation(visible,positions,state,camera.viewport,{receded,dimLayers,handoffReceded,activityVerified,projections});
+    paintedPositions=paintScene(paintStarted);
+    const projections=new Map(visible.map(n=>[n.id,camera.worldToScreen(camera.centre(paintedPositions.get(n.id)))]));
+    presentation=Engine.starPresentation(visible,paintedPositions,state,camera.viewport,{receded,dimLayers,handoffReceded,activityVerified,projections});
     const depthOrder=new Map([...projections].filter(([,p])=>p.visible).sort((a,b)=>b[1].depth-a[1].depth).map(([id],i)=>[id,i+1]));
     // Perspective can place distant stars behind one another. Keep their light
     // visible, but offer only fully exposed hit targets; the full-size picker
     // and List can still focus every saved idea, including an occluded one.
     const hitBlocked=new Set(),hitBoxes=[];
     const hitOrder=visible.filter(n=>projections.get(n.id)?.visible).sort((a,b)=>(b.id===state.focusNodeId)-(a.id===state.focusNodeId)||projections.get(a.id).depth-projections.get(b.id).depth);
-    for(const node of hitOrder){const point=projections.get(node.id),light=presentation.get(node.id),card=sceneCards.get(node.id);if(!light||!card)continue;const f=Math.max(.28,card._size||0,light.size_factor),box={left:point.x-105*f,right:point.x+105*f,top:point.y-63*f,bottom:point.y+63*f};if(box.left<0||box.top<0||box.right>w||box.bottom>h||[...blocked,...hitBoxes].some(r=>box.left<r.right+2&&box.right+2>r.left&&box.top<r.bottom+2&&box.bottom+2>r.top))hitBlocked.add(node.id);else hitBoxes.push(box);}
+    for(const node of hitOrder){const point=projections.get(node.id),light=presentation.get(node.id),card=sceneCards.get(node.id);if(!light||!card)continue;const f=Math.max(.28,card._size||0,light.size_factor),box={left:point.x-105*f,right:point.x+105*f,top:point.y-63*f,bottom:point.y+63*f};if((sceneMotion.get(node.id)?.opacity??1)<.45||box.left<0||box.top<0||box.right>w||box.bottom>h||[...blocked,...hitBoxes].some(r=>box.left<r.right+2&&box.right+2>r.left&&box.top<r.bottom+2&&box.bottom+2>r.top))hitBlocked.add(node.id);else hitBoxes.push(box);}
     const labelBoxes=[],labelHidden=new Set();
     const labels=visible.filter(n=>{const light=presentation.get(n.id);return light&&!light.distant&&projections.get(n.id)?.visible;}).sort((a,b)=>(b.id===state.focusNodeId)-(a.id===state.focusNodeId)||(presentation.get(b.id).logic_line?1:0)-(presentation.get(a.id).logic_line?1:0)||presentation.get(b.id).size_factor-presentation.get(a.id).size_factor);
     for(const node of labels){const projected=projections.get(node.id),light=presentation.get(node.id),x=projected.x,y=projected.y,f=light.size_factor,box={left:x-115*f,right:x+115*f,top:y+14*f,bottom:y+75*f};if(x < -230||x>w+230||y < -150||y>h+150)continue;if(labelBoxes.some(b=>box.left<b.right+4&&box.right+4>b.left&&box.top<b.bottom+4&&box.bottom+4>b.top))labelHidden.add(node.id);else labelBoxes.push(box);}
@@ -2068,12 +2162,17 @@ window.AIcontrolResearchVoice = (() => {
       const sx=point.x,sy=point.y;card.style.transform=`translate(${sx-p.x-p.w/2}px, ${sy-p.y-p.h/2}px)`;const obscured=hitBlocked.has(node.id);if(obscured&&document.activeElement===hitButton)viewport.focus({preventScroll:true});hitButton.disabled=obscured;if(!light.logic_line&&!light.working&&(sx < -230||sx>w+230||sy < -150||sy>h+150))continue;if(reviewing()&&node.type==='dream_claim'){light.size_factor=1;light.brightness_factor=1;light.distant=false;}
       card.dataset.selected=String(node.id===state.focusNodeId);card.querySelector('.map-node-button').setAttribute('aria-pressed',String(node.id===state.focusNodeId));if(card._size===undefined||Math.abs(card._size-light.size_factor)>.015){card._size=light.size_factor;card.style.setProperty('--star-size',Math.max(.28,light.size_factor));card.style.setProperty('--star-glyph-size',light.size_factor/Math.max(.28,light.size_factor));}if(card._light===undefined||Math.abs(card._light-light.brightness_factor)>.025){card._light=light.brightness_factor;card.style.setProperty('--star-light',light.brightness_factor);}if(card._colour!==light.colour){card._colour=light.colour;card.style.setProperty('--star-colour',light.colour);}card.dataset.starSize=light.size_factor.toFixed(4);card.dataset.starBrightness=light.brightness_factor.toFixed(4);card.dataset.logicLine=String(light.logic_line);card.dataset.distant=String(light.distant);card.dataset.labelSuppressed=String(labelHidden.has(node.id)&&!light.logic_line);card.style.zIndex=String((depthOrder.get(node.id)||1)+(node.id===state.focusNodeId?1000:0));
     }
-    for(const connection of edgeElements){const {path,edge,gradient,startStop,endStop}=connection,a=presentation.get(edge.from),b=presentation.get(edge.to),pa=positions.get(edge.from),pb=positions.get(edge.to);if(!a||!b||!pa||!pb)continue;const segment=camera.projectSegment({x:pa.x+pa.w/2,y:pa.y+pa.h/2,z:pa.z||0},{x:pb.x+pb.w/2,y:pb.y+pb.h/2,z:pb.z||0});if(!segment){path.style.display='none';continue;}path.setAttribute('d',`M${segment.from.x},${segment.from.y} L${segment.to.x},${segment.to.y}`);if(gradient){gradient.setAttribute('x1',segment.from.x);gradient.setAttribute('y1',segment.from.y);gradient.setAttribute('x2',segment.to.x);gradient.setAttribute('y2',segment.to.y);}const relatedLink=['knowledge_family','idea_match','semantic_similarity'].includes(edge.kind),active=a.logic_line&&b.logic_line,quiet=map.dataset.detailLevel==='compact'&&state.transitioning&&!(a.logic_line||b.logic_line||a.working||b.working);path.style.display=relatedLink&&(!showRelated||quiet||edge.kind==='semantic_similarity'&&!byMeaning())?'none':'';
+    for(const connection of edges.values()){const {path,edge,gradient,startStop,endStop}=connection,a=presentation.get(edge.from),b=presentation.get(edge.to),pa=paintedPositions.get(edge.from),pb=paintedPositions.get(edge.to);if(!a||!b||!pa||!pb)continue;const segment=camera.projectSegment(camera.centre(pa),camera.centre(pb));if(!segment){path.style.display='none';continue;}path.setAttribute('d',`M${segment.from.x},${segment.from.y} L${segment.to.x},${segment.to.y}`);if(gradient){gradient.setAttribute('x1',segment.from.x);gradient.setAttribute('y1',segment.from.y);gradient.setAttribute('x2',segment.to.x);gradient.setAttribute('y2',segment.to.y);}const relatedLink=['knowledge_family','idea_match','semantic_similarity'].includes(edge.kind),active=a.logic_line&&b.logic_line,quiet=map.dataset.detailLevel==='compact'&&state.transitioning&&!(a.logic_line||b.logic_line||a.working||b.working);path.style.display=relatedLink&&(!showRelated||quiet||edge.kind==='semantic_similarity'&&!byMeaning())?'none':'';
       if(gradient){if(connection.startColour!==a.colour){connection.startColour=a.colour;startStop.setAttribute('stop-color',a.colour);}if(connection.endColour!==b.colour){connection.endColour=b.colour;endStop.setAttribute('stop-color',b.colour);}if(!connection.gradientSet){path.style.stroke=`url(#${gradient.id})`;connection.gradientSet=true;}}else{const colour=edge.kind==='semantic_similarity'?'#80cfff':b.colour;if(connection.colour!==colour){connection.colour=colour;path.style.stroke=colour;}}
-      const opacity=active?.85:Math.max(.06,Math.min(a.brightness_factor,b.brightness_factor)*.55);if(connection.opacity===undefined||Math.abs(connection.opacity-opacity)>.025){connection.opacity=opacity;path.style.opacity=String(opacity);}path.style.strokeWidth=String(active?1.7:1);
+      const light=active?.85:Math.max(.06,Math.min(a.brightness_factor,b.brightness_factor)*.55);
+      const reveal=Math.min(sceneMotion.get(edge.from)?.opacity??1,sceneMotion.get(edge.to)?.opacity??1),opacity=light*reveal;
+      if(connection.opacity===undefined||reveal!==connection.reveal||Math.abs(connection.opacity-opacity)>.025){connection.opacity=opacity;path.style.opacity=String(opacity);}
+      connection.reveal=reveal;
+      path.style.strokeWidth=String(active?1.7:1);
     }
     if(pendingKeyboardFocus){const target=sceneCards.get(pendingKeyboardFocus)?.querySelector('.map-node-button');if(document.activeElement!==viewport)pendingKeyboardFocus=null;else if(target&&!target.disabled&&!target.closest('[hidden]')){pendingKeyboardFocus=null;target.focus({preventScroll:true});}}
     map.lastCameraPaintMs=performance.now()-paintStarted;
+    queueScenePaint();
   }
   function pathIds(node) {
     const path = new Set([node.id, ...links(node).map(String)]);
@@ -2093,6 +2192,39 @@ window.AIcontrolResearchVoice = (() => {
     map.querySelector('[data-map-selection-count]').textContent = `${checked.size} of ${inputs.length} claims selected · ${Number(snapshot.run.rigour_version)===1?'up to '+snapshot.run.normal_search_limit+' normal searches + 1 challenge':'up to two searches'}`;
     map.querySelector('[data-map-continue]').disabled = !reviewing() || !checked.size;
   }
+  function updateSceneEdges(links) {
+    const stale=new Set(edges.keys());
+    for(const edge of links){
+      const key=[edge.kind,edge.from,edge.to,edge.source_id||''].join('|');
+      stale.delete(key);
+      let connection=edges.get(key);
+      if(!connection){
+        const path=document.createElementNS(svg.namespaceURI,'path');
+        path.setAttribute('class','map-edge'+(edge.kind==='shared_source'?' map-edge-shared':''));
+        path.dataset.linkKind=edge.kind;
+        const title=document.createElementNS(svg.namespaceURI,'title');
+        path.append(title);
+        connection={path,title,edge};
+        if(edge.kind!=='concept'&&edge.kind!=='semantic_similarity'){
+          const gradient=document.createElementNS(svg.namespaceURI,'linearGradient');
+          gradient.id='map-link-'+nextGradient++;
+          gradient.setAttribute('gradientUnits','userSpaceOnUse');
+          const startStop=document.createElementNS(svg.namespaceURI,'stop'),endStop=document.createElementNS(svg.namespaceURI,'stop');
+          startStop.setAttribute('offset','0%');endStop.setAttribute('offset','100%');
+          gradient.append(startStop,endStop);defs.append(gradient);
+          Object.assign(connection,{gradient,startStop,endStop});
+        }
+        edges.set(key,connection);svg.append(path);
+        if(!initialCamera&&!motion.matches&&!document.hidden&&!sceneMotion.has(edge.from)&&!sceneMotion.has(edge.to))
+          path.animate([{strokeOpacity:0},{strokeOpacity:1}],{duration:380,easing:'ease-out'});
+      }
+      connection.edge=edge;
+      const title=edge.reason||(edge.kind==='shared_source'?'Shared citation, not independent corroboration.':'Saved parent/child idea path.');
+      if(connection.title.textContent!==title)connection.title.textContent=title;
+    }
+    for(const key of stale){const {path,gradient}=edges.get(key);edges.delete(key);fadeOut(path,'data-link-kind',gradient);}
+  }
+
   function draw() {
     const projectionStart=performance.now();
     const graph=Engine.project(snapshot,filter),byId=new Map(graph.nodes.map(n=>[n.id,n])),children=new Map(graph.nodes.map(n=>[n.id,[]]));
@@ -2106,13 +2238,15 @@ window.AIcontrolResearchVoice = (() => {
       if(!collapsed.has(node.id))for(const child of children.get(node.id)||[])collect(child,dim||recededBranches.has(node.id));
     }
     collect(byId.get('root'));
-    world.querySelector('svg')?.remove();
-    for (const card of [...world.querySelectorAll('[data-map-node]')]) if (!visible.some(node => node.id === card.dataset.mapNode)) card.remove();
+    const visibleIDs=new Set(visible.map(n=>n.id));
+    const cards=new Map([...world.querySelectorAll('[data-map-node]')].map(card=>[card.dataset.mapNode,card]));
+    for(const [id,card] of cards)if(!visibleIDs.has(id)){cards.delete(id);sceneMotion.delete(id);fadeOut(card,'data-map-node');}
     for (const node of visible) {
-      let card = [...world.querySelectorAll('[data-map-node]')].find(card => card.dataset.mapNode === node.id);
+      let card = cards.get(node.id);
       if (!card) {
         card = el('article',undefined,'map-node'); card.dataset.mapNode=node.id;
         const button=el('button',undefined,'map-node-button'); button.type='button'; button.append(el('span','','map-node-type'),el('strong','','map-node-title'),el('span','','map-node-status')); card.append(button); world.append(card);
+        cards.set(node.id,card);
       }
       card.dataset.outlier=String(!!node.semantic_outlier&&byMeaning());card.dataset.locked=String(!!node.locked_at);card.dataset.layer=String(node.layer||0);card.dataset.origin=node.origin||'';card.dataset.type=node.type;card.dataset.working=String(!!node.working&&activityVerified);card.dataset.activity=node.activity||''; card.dataset.status=node.status; card.dataset.path=String(active.has(node.id));
       const priority=Number(node.path_weight||50);card.dataset.priority=priority>=75?'high':priority<40?'low':'normal';card.dataset.speculative=String(Number(node.speculative||0));
@@ -2140,9 +2274,9 @@ window.AIcontrolResearchVoice = (() => {
     const pickerStamp=JSON.stringify([...new Map([...Engine.project(snapshot).nodes,...graph.nodes].map(n=>[n.id,n])).values()].map(n=>[n.id,n.title,!!n.semantic_outlier]));if(targetPicker.dataset.stamp!==pickerStamp){const old=targetPicker.value;targetPicker.replaceChildren();for(const node of [...new Map([...Engine.project(snapshot).nodes,...graph.nodes].map(n=>[n.id,n])).values()]){const option=el('option',(node.semantic_outlier?'Outlier · ':'')+node.title);option.value=node.id;option.selected=node.id===old;targetPicker.append(option);}targetPicker.dataset.stamp=pickerStamp;}
     const empty=map.querySelector('[data-map-empty]');if(empty){empty.hidden=!graph.empty;empty.textContent=graph.empty_reason||'No matching records stored for this run yet.';}
     if(map.hidden)return false;
-    const cards=new Map([...world.querySelectorAll('[data-map-node]')].map(card=>[card.dataset.mapNode,card]));sceneCards=cards;updateActivity();
+    sceneCards=cards;updateActivity();
     for(const node of visible){let size=sizes.get(node.id);if(!size){const card=cards.get(node.id);size={w:210,h:126};sizes.set(node.id,size);}Object.assign(node,size);}
-    const visibleIDs=new Set(visible.map(n=>n.id));const linksToDraw=graph.edges.filter(e=>visibleIDs.has(e.from)&&visibleIDs.has(e.to));
+    const linksToDraw=graph.edges.filter(e=>visibleIDs.has(e.from)&&visibleIDs.has(e.to));
     // Layout inputs are structure and viewport only. Usage, stage badges and title updates do not move cards.
     const structuralLinks=linksToDraw.filter(e=>e.kind!=='semantic_similarity');
     const nextLayout=JSON.stringify([visible.map(n=>n.id).sort(),structuralLinks.map(e=>[e.from,e.to,e.kind]).sort(),viewport.clientWidth,viewport.clientHeight]);
@@ -2168,14 +2302,9 @@ window.AIcontrolResearchVoice = (() => {
       for(const [id,position] of semanticPositions)positions.set(id,position);
     }
     for(const node of visible){const p=positions.get(node.id);if(!p)continue;Object.assign(node,p);const card=cards.get(node.id);card.style.left=p.x+'px';card.style.top=p.y+'px';card.style.width=p.w+'px';card.style.height=p.h+'px';}
+    updateSceneMotion();
     visible.sort((a,b)=>a.y-b.y||a.x-b.x);world.style.width='1px';world.style.height='1px';geometry();
-    const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('width','1');svg.setAttribute('height','1');svg.setAttribute('aria-hidden','true');edgeElements=[];
-    const defs=document.createElementNS(svg.namespaceURI,'defs');svg.append(defs);
-    for(const edge of linksToDraw){const a=positions.get(edge.from),b=positions.get(edge.to);if(!a||!b)continue;const ax=a.x+a.w/2,ay=a.y+a.h/2,bx=b.x+b.w/2,by=b.y+b.h/2;
-      const line=document.createElementNS(svg.namespaceURI,'path');line.setAttribute('d',`M${ax},${ay} Q${(ax+bx)/2-(by-ay)*.05},${(ay+by)/2+(bx-ax)*.05} ${bx},${by}`);line.setAttribute('class','map-edge'+(edge.kind==='shared_source'?' map-edge-shared':''));line.dataset.linkKind=edge.kind;
-      const title=document.createElementNS(svg.namespaceURI,'title');title.textContent=edge.reason||(edge.kind==='shared_source'?'Shared citation, not independent corroboration.':'Saved parent/child idea path.');line.append(title);
-      let gradient=null,startStop=null,endStop=null;if(edge.kind!=='concept'&&edge.kind!=='semantic_similarity'){gradient=document.createElementNS(svg.namespaceURI,'linearGradient');gradient.id='map-link-'+edgeElements.length;gradient.setAttribute('gradientUnits','userSpaceOnUse');gradient.setAttribute('x1',ax);gradient.setAttribute('y1',ay);gradient.setAttribute('x2',bx);gradient.setAttribute('y2',by);startStop=document.createElementNS(svg.namespaceURI,'stop');startStop.setAttribute('offset','0%');endStop=document.createElementNS(svg.namespaceURI,'stop');endStop.setAttribute('offset','100%');gradient.append(startStop,endStop);defs.append(gradient);}svg.append(line);edgeElements.push({path:line,edge,gradient,startStop,endStop});}
-    world.prepend(svg);renderCamera(camera.getState());
+    updateSceneEdges(linksToDraw);renderCamera(camera.getState());
     if(debug)console.debug('Research map projection',JSON.stringify({nodes:graph.nodes.length,edges:graph.edges.length,layout_ran:layoutRan,cached_positions:positions.size,total_ms:Number((performance.now()-projectionStart).toFixed(2))}));
     return layoutRan;
   }
@@ -2190,11 +2319,24 @@ window.AIcontrolResearchVoice = (() => {
     panel.append(el('h4','Working now · '+activityLabel(node)));
     for(const request of requests)panel.append(el('p',`${request.worker_role||request.kind} · ${request.model||snapshot.run.model||'model not yet reported'} · ${request.activity||'Waiting for provider'}${request.output_chars?' · '+Number(request.output_chars).toLocaleString()+' response characters received':''}${node.work_scope==='shared'?' · one shared request covers the marked branches':''}. Token totals are confirmed after the response.`));
   }
+  function updateWorkingBanner(working=overviewGraph.nodes.filter(node=>node.working)){
+    const verified=activityVerified&&working.length>0;
+    const ids=new Set(working.flatMap(node=>node.working_request_ids||[]));
+    const sending=growthState.active||root.dataset.requestBusy==='1'&&root.dataset.stopBusy!=='1';
+    const progress=!activityVerified?'unverified':verified?'working':sending?'sending':'idle';
+    workingNow.dataset.progress=progress;
+    let text=progress==='unverified'?'Activity unverified · open controls':progress==='sending'?'Sending request…':'';
+    if(verified){
+      const receiving=snapshot.requests.some(request=>ids.has(String(request.id))&&Number(request.output_chars)>0);
+      const scope=working.length===1?working[0].title:working.length+' marked branches · '+ids.size+' shared request'+(ids.size===1?'':'s');
+      text=`Working now: ${activityLabel(working[0])} · ${scope}${receiving?' · Receiving response':''}`;
+    }
+    if(text!==workingButton.textContent)workingButton.textContent=text;workingButton.dataset.nodeId=verified?working[0].id:'';workingNow.hidden=!text;if(workingNow.hidden&&document.activeElement===workingButton)viewport.focus({preventScroll:true});
+  }
   function updateActivity(){
     if(!snapshot)return;const working=overviewGraph.nodes.filter(n=>n.working),verified=activityVerified&&working.length>0;
     const pendingCount=new Set(working.flatMap(n=>n.working_request_ids||[])).size;
-    let text=!activityVerified?'Activity unverified · open controls':verified?`Working now: ${activityLabel(working[0])} · ${working.length===1?working[0].title:working.length+' marked branches · '+pendingCount+' shared request'+(pendingCount===1?'':'s')}`:'';
-    if(text!==workingButton.textContent)workingButton.textContent=text;workingButton.dataset.nodeId=verified?working[0].id:'';workingNow.hidden=!text;if(workingNow.hidden&&document.activeElement===workingButton)viewport.focus({preventScroll:true});
+    updateWorkingBanner(working);
     activitySummary.textContent=activityVerified?(verified?'Current model work · '+pendingCount+' request'+(pendingCount===1?'':'s'):'Current model work · idle'):'Current model work · unverified';
     const stamp=JSON.stringify([activityVerified,working.map(n=>[n.id,n.activity,n.work_scope,n.working_request_ids])]);if(activityList.dataset.stamp!==stamp){activityList.dataset.stamp=stamp;activityList.replaceChildren();if(!activityVerified)activityList.append(el('p','Progress could not be verified. Markers are paused until a successful status check.'));else if(!working.length)activityList.append(el('p','No model request is currently pending.'));else for(const node of working){const button=el('button',node.title+' · '+activityLabel(node),'btn btn-outline-secondary');button.type='button';button.addEventListener('click',()=>inspect(node.id));activityList.append(button);}}
     for(const [id,card]of sceneCards){const node=nodes.find(n=>n.id===id),active=!!node?.working&&activityVerified;card.dataset.working=String(active);const badge=card.querySelector('[data-map-work-badge]');if(badge){const label=active?'Working · '+activityLabel(node):'';badge.hidden=!active;if(badge.textContent!==label)badge.textContent=label;}const button=card.querySelector('.map-node-button');if(button?.dataset.baseLabel)button.setAttribute('aria-label',button.dataset.baseLabel+(active?' Working now: '+activityLabel(node)+'.':''));}
@@ -2472,7 +2614,7 @@ window.AIcontrolResearchVoice = (() => {
     if(demoted){handoffReceded.add(selected);const here=positions.get(selected);const alternatives=snapshot.nodes.filter(n=>conceptTypes.includes(n.type)&&Number(n.layer||0)===0&&String(n.id)!==selected);alternatives.sort((a,b)=>{const pa=positions.get(String(a.id))||here,pb=positions.get(String(b.id))||here;return here&&pa&&pb?Math.hypot(pa.x-here.x,pa.y-here.y)-Math.hypot(pb.x-here.x,pb.y-here.y):Number(a.id)-Number(b.id);});selected=alternatives.length?String(alternatives[0].id):'root';}
     const handedTo=selected;draw();
     if(!map.hidden&&initialCamera&&visible.length){fit(false);initialCamera=false;}
-    else if(!map.hidden&&!wasByMeaning&&byMeaning()){if(selected==='root')fit(false);else camera.focus(selected);}
+    else if(!map.hidden&&!wasByMeaning&&byMeaning()){if(selected==='root')fit();else camera.focus(selected);}
     else if(demoted&&!map.hidden){geometry();camera.focus(handedTo);}
     else if(growth&&!map.hidden){geometry();camera.growthFor(visible.map(n=>n.id));queueGrowth();}
 
@@ -2485,12 +2627,12 @@ window.AIcontrolResearchVoice = (() => {
       const button=el('button',`${verdict}: ${outcomes.length}`,'map-outcome');button.type='button';button.disabled=!outcomes.length;if(outcomes.length)button.dataset.mapJump=outcomes[0].id;strip.append(button);
     }
   });
-  root.addEventListener('research:controls',()=>{if(snapshot){updateInspector();screenControls();}});
+  root.addEventListener('research:controls',()=>{if(snapshot){updateInspector();screenControls();updateWorkingBanner();}});
   root.addEventListener('research:budget',event=>{if(snapshot){snapshot.budget=event.detail;updateInspector();screenControls();}});
   // Initialize after the status request; live processes are never assumed to survive navigation.
   let resizeTimer;new ResizeObserver(()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(!map.hidden&&snapshot){draw();geometry();renderCamera(camera.getState());}},160);}).observe(viewport);
   motion.addEventListener('change',()=>{if(motion.matches&&camera.transition){const state=camera.getState();camera.cancel();if(state.transitionType==='focus'&&positions.has(state.focusNodeId))camera.focus(state.focusNodeId);else camera.restoreState(state);}renderCamera(camera.getState());});
-  document.addEventListener('visibilitychange',()=>{if(document.hidden){clearFlight();camera.cancel();}});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden){clearFlight();camera.cancel();}else renderCamera(camera.getState());});
   showView(view);
 })();
 
@@ -2502,7 +2644,7 @@ window.AIcontrolResearchVoice = (() => {
  const make=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;};
  const side=map.querySelector('[data-map-inspector]'),content=side.querySelector('[data-map-inspector-content]');
  let snapshot=null,selected='',verified=true,listStamp='',lastQuery='',threadStamp='',lastTrigger=null,pendingDraft=null;
- const drafts=new Map(),openQuestions=new Set();
+ const drafts=new Map();
  const browser=make('aside',undefined,'map-branch-browser');browser.setAttribute('aria-label','Branches');browser.dataset.branchBrowser='1';
  const heading=make('div',undefined,'map-branch-heading');heading.append(make('h2','Branches'));const count=make('span');count.setAttribute('role','status');heading.append(count);
  const search=make('input',undefined,'form-control');search.type='search';search.placeholder='Find an idea…';search.setAttribute('aria-label','Search branches');
@@ -2548,11 +2690,7 @@ window.AIcontrolResearchVoice = (() => {
    const scroll=query===lastQuery?list.scrollTop:0;
    lastQuery=query;
    const active=document.activeElement,focused=list.contains(active)?active.closest('[data-branch-id]')?.dataset.branchId:null;
-   const focusedQuestion=list.contains(active)?active.closest('[data-branch-questions]')?.dataset.branchQuestions:null;
-   for(const details of list.querySelectorAll('[data-branch-questions]')){
-    const id=details.dataset.branchQuestions;
-    if(details.open)openQuestions.add(id);else openQuestions.delete(id);
-   }
+   const previousQuestions=new Map([...list.querySelectorAll('[data-branch-questions]')].map(question=>[question.dataset.branchQuestions,question.textContent]));
    list.replaceChildren();
    const graph=window.AIcontrolMap.project(snapshot),families=new Map(graph.nodes.map(n=>[String(n.id),n.knowledge_line_id]));
    const placed=new Set(),matches=new Set(filtered.map(n=>String(n.id)));
@@ -2576,14 +2714,11 @@ window.AIcontrolResearchVoice = (() => {
     const descendants=related.filter(n=>shown.has(String(n.id))&&!placed.has(String(n.id)));if(descendants.length){const nested=make('ul',undefined,'map-branch-children');if(depth>=4)nested.classList.add('map-branch-deep');row.append(nested);for(let i=descendants.length-1;i>=0;i--)stack.push({node:descendants[i],container:nested,depth:depth+1});}
     const suggestion=suggestions[id];
     if(suggestion?.text){
-     const questions=make('details',undefined,'map-branch-questions');
-     questions.dataset.branchQuestions=id;
-     questions.open=openQuestions.has(id);
-     const summary=make('summary','Possible questions');
-     summary.setAttribute('aria-label','Possible questions for '+n.title);
-     questions.append(summary,make('p',suggestion.text));
-     if(String(suggestion.node_id)!==id&&suggestion.basis)questions.append(make('small','Based on '+suggestion.basis));
-     row.append(questions);
+     const question=make('p',suggestion.text,'map-branch-questions');
+     question.dataset.branchQuestions=id;
+     if(String(suggestion.node_id)!==id&&suggestion.basis)question.title='Based on '+suggestion.basis;
+     if(previousQuestions.has(id)&&previousQuestions.get(id)!==suggestion.text)question.classList.add('map-question-updated');
+     row.append(question);
     }
    }};
    for(const n of all)if(!shown.has(parents.get(String(n.id))))appendTree(n);
@@ -2591,7 +2726,6 @@ window.AIcontrolResearchVoice = (() => {
    for(const n of all)if(!placed.has(String(n.id)))appendTree(n);
    list.scrollTop=scroll;
    if(focused)list.querySelector(`[data-branch-id="${focused}"]`)?.focus({preventScroll:true});
-   if(focusedQuestion)list.querySelector(`[data-branch-questions="${focusedQuestion}"] summary`)?.focus({preventScroll:true});
   }
   for(const button of list.querySelectorAll('[data-branch-id]'))button.setAttribute('aria-current',button.dataset.branchId===selected?'true':'false');
   count.textContent=query?`${filtered.length} of ${all.length}`:`${all.length} ${all.length===1?'idea':'ideas'}`;count.title=query?'Matching ideas; parent branches are shown for context.':'Saved ideas';empty.hidden=filtered.length>0;empty.textContent=query?'No matching branches. Try another word.':'Research ideas will appear here.';
@@ -3950,7 +4084,7 @@ body.research-map-open { overflow:hidden; }
 .mindmap .btn-outline-danger { color:#ffbec5; border-color:#c16b7a; background:#30131b; }
 .mindmap .map-request-error,.mindmap .map-state-notice { background:#321c10; color:#ffdbb3; border-color:#d1a069; }
 .mindmap .map-empty { background:#111b29; color:#d2e4fa; border-color:#657c99; top:72%; }
-.mindmap .map-node { width:210px!important; height:126px!important; transform-origin:center; background:transparent!important; border:0!important; border-radius:0; outline:none!important; box-shadow:none!important; pointer-events:none; animation:star-arrive .45s ease-out; }
+.mindmap .map-node { width:210px!important; height:126px!important; transform-origin:center; background:transparent!important; border:0!important; border-radius:0; outline:none!important; box-shadow:none!important; pointer-events:none; }
 .mindmap .map-node::after { display:none; }
 .mindmap .map-node-button,.mindmap .map-node[data-layer] .map-node-button,.mindmap .map-node[data-layer] .map-node-button[aria-pressed=true] { height:100%; width:100%; min-height:0; position:relative; display:block; padding:0; cursor:pointer; pointer-events:auto; background:transparent!important; color:#dcefff!important; border:0; border-radius:50%; transform:scale(var(--star-size,1)); transform-origin:center; transition:transform .42s cubic-bezier(.4,0,.2,1); }
 .mindmap .map-node-button::before { content:""; position:absolute; left:calc(50% - 5px); top:calc(50% - 5px); width:10px; height:10px; border-radius:50%; background:var(--star-colour,#9ddcec); opacity:var(--star-light,1); box-shadow:0 0 10px 3px var(--star-colour,#9ddcec),0 0 28px 4px color-mix(in srgb,var(--star-colour,#9ddcec) 22%,transparent); transition:opacity .42s ease-out; }
@@ -3967,7 +4101,6 @@ body.research-map-open { overflow:hidden; }
 .map-star-navigator { display:grid; gap:6px; margin:12px 0; }.map-star-navigator label { color:#d2e4fa; font-size:.8rem; }
 .map-star-legend { position:absolute; z-index:2; bottom:8px; left:14px; max-width:min(70vw,560px); padding:6px 9px; margin:0; color:#b6c8dd; background:#000c; border-radius:6px; font-size:11px; pointer-events:none; }
 .map-short-crossfade { animation:camera-crossfade .12s ease-out; }
-@keyframes star-arrive { from { opacity:.25; } to { opacity:1; } }
 @keyframes camera-crossfade { from { opacity:.8; } to { opacity:1; } }
 @media(prefers-reduced-motion:reduce) { .mindmap .map-node { animation:none; }.mindmap .map-node-button,.mindmap .map-node-button::before { transition:opacity .12s; } }
 @media(max-width:760px) { .map-star-legend { font-size:10px; max-width:75vw; }.mindmap .map-idea-sentence span { font-size:13px; } }
@@ -3996,7 +4129,7 @@ body.research-map-open { overflow:hidden; }
 .mindmap .btn-outline-danger { color:#ffbec5; border-color:#c16b7a; background:#30131b; }
 .mindmap .map-request-error,.mindmap .map-state-notice { background:#321c10; color:#ffdbb3; border-color:#d1a069; }
 .mindmap .map-empty { background:#111b29; color:#d2e4fa; border-color:#657c99; top:72%; }
-.mindmap .map-node { width:210px!important; height:126px!important; transform-origin:center; background:transparent!important; border:0!important; border-radius:0; outline:none!important; box-shadow:none!important; pointer-events:none; animation:star-arrive .45s ease-out; }
+.mindmap .map-node { width:210px!important; height:126px!important; transform-origin:center; background:transparent!important; border:0!important; border-radius:0; outline:none!important; box-shadow:none!important; pointer-events:none; }
 .mindmap .map-node::after { display:none; }
 .mindmap .map-node-button,.mindmap .map-node[data-layer] .map-node-button,.mindmap .map-node[data-layer] .map-node-button[aria-pressed=true] { height:100%; width:100%; min-height:0; position:relative; display:block; padding:0; cursor:pointer; pointer-events:auto; background:transparent!important; color:#dcefff!important; border:0; border-radius:50%; transform:scale(var(--star-size,1)); transform-origin:center; transition:transform .42s cubic-bezier(.4,0,.2,1); }
 .mindmap .map-node-button::before { content:""; position:absolute; left:calc(50% - 5px); top:calc(50% - 5px); width:10px; height:10px; border-radius:50%; background:var(--star-colour,#9ddcec); opacity:var(--star-light,1); box-shadow:0 0 10px 3px var(--star-colour,#9ddcec),0 0 28px 4px color-mix(in srgb,var(--star-colour,#9ddcec) 22%,transparent); transition:opacity .42s ease-out; }
@@ -4013,7 +4146,6 @@ body.research-map-open { overflow:hidden; }
 .map-star-navigator { display:grid; gap:6px; margin:12px 0; }.map-star-navigator label { color:#d2e4fa; font-size:.8rem; }
 .map-star-legend { position:absolute; z-index:2; bottom:8px; left:14px; max-width:min(70vw,560px); padding:6px 9px; margin:0; color:#b6c8dd; background:#000c; border-radius:6px; font-size:11px; pointer-events:none; }
 .map-short-crossfade { animation:camera-crossfade .12s ease-out; }
-@keyframes star-arrive { from { opacity:.25; } to { opacity:1; } }
 @keyframes camera-crossfade { from { opacity:.8; } to { opacity:1; } }
 @media(prefers-reduced-motion:reduce) { .mindmap .map-node { animation:none; }.mindmap .map-node-button,.mindmap .map-node-button::before { transition:opacity .12s; } }
 @media(max-width:760px) { .map-star-legend { font-size:10px; max-width:75vw; }.mindmap .map-idea-sentence span { font-size:13px; } }
@@ -4388,6 +4520,8 @@ body.research-map-open { overflow:hidden; }
  --branch-panel-width:clamp(220px,21vw,300px);
  --map-panel:rgb(24 27 34 / 83%);
  --map-reading-surface:rgb(26 29 37 / 93%);
+ --map-reader-surface:rgb(26 29 37 / 78%);
+ --map-reader-field:rgb(35 39 50 / 82%);
  --map-line:#363d4c;
  --map-copy:#edf0f6;
  --map-muted:#b9c1d2;
@@ -4403,6 +4537,7 @@ body.research-map-open { overflow:hidden; }
  box-shadow:0 12px 30px #0007;
 }
 .research-map-open .mindmap :is(.map-inspector,.map-controls-tray,.map-review,.term-help-panel) { background:var(--map-reading-surface); }
+.research-map-open .mindmap .map-inspector { background:var(--map-reader-surface); backdrop-filter:blur(2px); }
 .research-map-open .mindmap[data-detail-level=compact] :is(.map-branch-browser,.map-inspector) { backdrop-filter:none; }
 .research-map-open .map-screen-header {
  z-index:9;
@@ -4583,11 +4718,7 @@ body.research-map-open { overflow:hidden; }
 .map-branch-item[aria-current=true] { background:#2e3d50; border-color:#7186a0; }
 .map-branch-item strong { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; font-size:.84rem; line-height:1.35; font-weight:570; overflow-wrap:anywhere; }
 .map-branch-item small { display:block; margin-top:3px; font-size:.72rem; color:var(--map-muted); }
-.map-branch-questions { margin:0 4px 5px 10px; padding:0 8px; color:var(--map-copy); font-size:.78rem; overflow-wrap:anywhere; }
-.map-branch-questions summary { color:var(--map-muted); cursor:pointer; padding:7px 0; }
-.map-branch-questions[open] { background:#232c3a; border-radius:8px; padding-bottom:8px; }
-.map-branch-questions p { margin:2px 0 4px; line-height:1.5; }
-.map-branch-questions small { display:block; color:var(--map-muted); }
+.map-branch-questions { margin:3px 5px 11px 23px; padding:2px 0 2px 9px; border-inline-start:1px solid #526078; color:var(--map-muted); font-size:.8rem; line-height:1.5; overflow-wrap:anywhere; }
 .map-idea-classification dt { margin-top:.25rem; }
 .map-idea-classification dd { margin:0; overflow-wrap:anywhere; }
 .map-branch-item:focus-visible,.map-concept-actions .btn:focus-visible { outline:2px solid var(--map-highlight); outline-offset:1px; }
@@ -4611,6 +4742,14 @@ body.research-map-open { overflow:hidden; }
 .mindmap .map-pathway li { font-size:.79rem; color:var(--map-muted); }
 .mindmap .map-pathway button { color:var(--map-highlight); text-underline-offset:3px; }
 .mindmap .map-inspector .map-inspector-text { color:var(--map-copy); font-size:.92rem; line-height:1.62; padding:8px 0 13px; margin-bottom:5px; }
+.research-map-open .mindmap .map-inspector textarea.form-control { background:var(--map-reader-field); }
+.map-working-now:is([data-progress=sending],[data-progress=working]) .btn::before { content:''; display:inline-block; width:6px; height:6px; margin-inline-end:6px; border-radius:50%; background:#a5eddd; vertical-align:2px; }
+@keyframes map-status-pulse { 50% { opacity:.5; } }
+@keyframes map-reading-appear { from { opacity:.4; } }
+@media(prefers-reduced-motion:no-preference) {
+ .map-inspector:not([hidden]),.map-question-updated { animation:map-reading-appear .24s ease-out; }
+ .map-working-now:is([data-progress=sending],[data-progress=working]) .btn::before { animation:map-status-pulse 1.8s ease-in-out infinite; }
+}
 .map-concept-advanced { margin-top:8px; border-top:1px solid var(--map-line); }
 .map-concept-advanced > summary { color:var(--map-muted); font-size:.84rem; cursor:pointer; min-height:38px; padding:9px 0; }
 .mindmap :is(.map-concept-context,.map-path-note,.map-idea-classification) > summary { color:var(--map-copy); min-height:38px; padding:9px 0; font-size:.83rem; line-height:1.45; cursor:pointer; }
@@ -4649,7 +4788,7 @@ body.research-map-open { overflow:hidden; }
  .map-canvas-guide .map-star-legend { inset:calc(100% + 8px) 0 auto auto; }
 }
 @media(prefers-contrast:more) {
- .research-map-open .mindmap { --map-panel:#181b22; --map-reading-surface:#1a1d25; --map-line:#687287; }
+ .research-map-open .mindmap { --map-panel:#181b22; --map-reading-surface:#1a1d25; --map-reader-surface:#1a1d25; --map-reader-field:#232732; --map-line:#687287; }
 }
 
 /* Guided VPS operations keep plans and protected values distinct. */

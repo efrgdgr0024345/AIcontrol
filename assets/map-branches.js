@@ -6,7 +6,7 @@
  const make=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;};
  const side=map.querySelector('[data-map-inspector]'),content=side.querySelector('[data-map-inspector-content]');
  let snapshot=null,selected='',verified=true,listStamp='',lastQuery='',threadStamp='',lastTrigger=null,pendingDraft=null;
- const drafts=new Map(),openQuestions=new Set();
+ const drafts=new Map();
  const browser=make('aside',undefined,'map-branch-browser');browser.setAttribute('aria-label','Branches');browser.dataset.branchBrowser='1';
  const heading=make('div',undefined,'map-branch-heading');heading.append(make('h2','Branches'));const count=make('span');count.setAttribute('role','status');heading.append(count);
  const search=make('input',undefined,'form-control');search.type='search';search.placeholder='Find an idea…';search.setAttribute('aria-label','Search branches');
@@ -52,11 +52,7 @@
    const scroll=query===lastQuery?list.scrollTop:0;
    lastQuery=query;
    const active=document.activeElement,focused=list.contains(active)?active.closest('[data-branch-id]')?.dataset.branchId:null;
-   const focusedQuestion=list.contains(active)?active.closest('[data-branch-questions]')?.dataset.branchQuestions:null;
-   for(const details of list.querySelectorAll('[data-branch-questions]')){
-    const id=details.dataset.branchQuestions;
-    if(details.open)openQuestions.add(id);else openQuestions.delete(id);
-   }
+   const previousQuestions=new Map([...list.querySelectorAll('[data-branch-questions]')].map(question=>[question.dataset.branchQuestions,question.textContent]));
    list.replaceChildren();
    const graph=window.AIcontrolMap.project(snapshot),families=new Map(graph.nodes.map(n=>[String(n.id),n.knowledge_line_id]));
    const placed=new Set(),matches=new Set(filtered.map(n=>String(n.id)));
@@ -80,14 +76,11 @@
     const descendants=related.filter(n=>shown.has(String(n.id))&&!placed.has(String(n.id)));if(descendants.length){const nested=make('ul',undefined,'map-branch-children');if(depth>=4)nested.classList.add('map-branch-deep');row.append(nested);for(let i=descendants.length-1;i>=0;i--)stack.push({node:descendants[i],container:nested,depth:depth+1});}
     const suggestion=suggestions[id];
     if(suggestion?.text){
-     const questions=make('details',undefined,'map-branch-questions');
-     questions.dataset.branchQuestions=id;
-     questions.open=openQuestions.has(id);
-     const summary=make('summary','Possible questions');
-     summary.setAttribute('aria-label','Possible questions for '+n.title);
-     questions.append(summary,make('p',suggestion.text));
-     if(String(suggestion.node_id)!==id&&suggestion.basis)questions.append(make('small','Based on '+suggestion.basis));
-     row.append(questions);
+     const question=make('p',suggestion.text,'map-branch-questions');
+     question.dataset.branchQuestions=id;
+     if(String(suggestion.node_id)!==id&&suggestion.basis)question.title='Based on '+suggestion.basis;
+     if(previousQuestions.has(id)&&previousQuestions.get(id)!==suggestion.text)question.classList.add('map-question-updated');
+     row.append(question);
     }
    }};
    for(const n of all)if(!shown.has(parents.get(String(n.id))))appendTree(n);
@@ -95,7 +88,6 @@
    for(const n of all)if(!placed.has(String(n.id)))appendTree(n);
    list.scrollTop=scroll;
    if(focused)list.querySelector(`[data-branch-id="${focused}"]`)?.focus({preventScroll:true});
-   if(focusedQuestion)list.querySelector(`[data-branch-questions="${focusedQuestion}"] summary`)?.focus({preventScroll:true});
   }
   for(const button of list.querySelectorAll('[data-branch-id]'))button.setAttribute('aria-current',button.dataset.branchId===selected?'true':'false');
   count.textContent=query?`${filtered.length} of ${all.length}`:`${all.length} ${all.length===1?'idea':'ideas'}`;count.title=query?'Matching ideas; parent branches are shown for context.':'Saved ideas';empty.hidden=filtered.length>0;empty.textContent=query?'No matching branches. Try another word.':'Research ideas will appear here.';

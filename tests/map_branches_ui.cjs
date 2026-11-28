@@ -23,8 +23,9 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   });
   const a=await rows.nth(0).getAttribute('data-branch-id'),b=await rows.nth(1).getAttribute('data-branch-id');
   const possible=id=>list.locator(`[data-branch-questions="${id}"]`);
-  await possible(a).locator('summary').click();
-  await possible(a).getByText('Which outcome would change the decision?',{exact:true}).waitFor();
+  await possible(a).waitFor({state:'visible'});
+  if(await possible(a).textContent()!=='Which outcome would change the decision?'||
+    await possible(a).evaluate(n=>n.tagName!=='P'))throw Error('A branch question is hidden behind a disclosure');
   await rows.nth(0).click();await page.locator('[data-map-inspector]').waitFor({state:'visible'});if(await page.locator('[data-map-advanced]').evaluate(n=>n.open))throw Error('Advanced controls crowded the reading window');
   const desktop=await overlayLayout();
   if(!desktop.translucent||desktop.width!==desktop.windowWidth||desktop.branchWidth>300||
@@ -41,13 +42,48 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   await page.getByLabel('Your question',{exact:true}).fill('Draft for second concept');await page.locator('[data-branch-back]').click();await rows.nth(0).click();if(!(await page.locator('.map-conversation-thread').innerText()).includes('FIRST-BRANCH-QUESTION'))throw Error('Saved thread lost');
   await page.locator('[data-branch-back]').click();await rows.nth(1).click();if(await page.getByLabel('Your question',{exact:true}).inputValue()!=='Draft for second concept')throw Error('Switching lost draft');
   await page.locator('[data-branch-back]').click();await page.getByLabel('Search branches',{exact:true}).fill('no-such-concept');if(await rows.count())throw Error('Search did not filter');await page.getByLabel('Search branches',{exact:true}).fill('');
-  await rows.nth(0).click();await page.getByRole('button',{name:'Expand this pathway',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('[data-branch-id]').length>2);
+  await page.emulateMedia({reducedMotion:'no-preference'});
+  await rows.nth(0).click();
+  await page.waitForFunction(()=>!document.querySelector('[data-mindmap]').camera.getState().transitioning);
+  await page.evaluate(parentId=>{
+    const world=document.querySelector('[data-map-world]');
+    const parent=world.querySelector(`[data-map-node="${parentId}"]`);
+    const existingStars=[...world.querySelectorAll('[data-map-node]')].map(node=>[node,node.style.left,node.style.top,node.dataset.worldZ]);
+    const existingLinks=[...world.querySelectorAll('[data-link-kind]')];
+    window.branchMotion=new Promise(resolve=>{
+      const observer=new MutationObserver(()=>{
+        const star=world.querySelector('[data-map-arriving=true]');
+        if(!star)return;
+        observer.disconnect();
+        const centre=node=>{const r=node.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2];};
+        const first=centre(star),origin=centre(parent);
+        const initialOpacity=Number(star.style.opacity);
+        let visibleFrames=0;
+        const sample=()=>{
+          if(star.dataset.mapArriving){if(Number(star.style.opacity)>.1)visibleFrames++;requestAnimationFrame(sample);return;}
+          const last=centre(star);
+          resolve({initialOpacity,fromParent:Math.hypot(first[0]-origin[0],first[1]-origin[1])<5,
+            travelled:Math.hypot(last[0]-first[0],last[1]-first[1]),visibleFrames,
+            existingStarsStable:existingStars.every(([node,x,y,z])=>node.isConnected&&node.style.left===x&&node.style.top===y&&node.dataset.worldZ===z),
+            existingLinksStable:existingLinks.every(link=>link.isConnected)});
+        };
+        requestAnimationFrame(sample);
+      });
+      observer.observe(world,{subtree:true,attributes:true,attributeFilter:['data-map-arriving']});
+    });
+  },a);
+  await page.getByRole('button',{name:'Expand this pathway',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelectorAll('[data-branch-id]').length>2);
+  const motion=await page.evaluate(()=>Promise.race([window.branchMotion,new Promise((_,reject)=>setTimeout(()=>reject(Error('Growth never transitioned')),5000))]));
+  if(motion.initialOpacity>=.2||!motion.fromParent||motion.travelled<15||motion.visibleFrames<3||!motion.existingStarsStable||!motion.existingLinksStable)
+    throw Error('New idea did not unfold smoothly from its parent '+JSON.stringify(motion));
+  await page.emulateMedia({reducedMotion:'reduce'});
   const child=await list.locator(`[data-branch-id="${a}"]`).evaluate(button=>button.parentElement.querySelector(':scope > ul > li > button')?.dataset.branchId);if(!child)throw Error('Growth was appended outside its parent branch');
-  const placement=await possible(a).evaluate(n=>({open:n.open,last:n.parentElement.lastElementChild===n,previous:n.previousElementSibling.tagName}));
-  if(!placement.open||!placement.last||placement.previous!=='UL')throw Error('Branch question placement changed '+JSON.stringify(placement));
-  await possible(a).getByText(/How would .* repair training change the parent idea/i).waitFor();
+  const placement=await possible(a).evaluate(n=>({last:n.parentElement.lastElementChild===n,previous:n.previousElementSibling.tagName}));
+  if(!placement.last||placement.previous!=='UL')throw Error('Branch question placement changed '+JSON.stringify(placement));
+  if(!/How would .* repair training change the parent idea/i.test(await possible(a).textContent()))throw Error('The parent question did not update with growth');
   const bInitial=await possible(b).innerText();
-  if(!bInitial.includes('Possible questions'))throw Error('Sibling branch has no question section');
+  if(!bInitial.endsWith('?'))throw Error('Sibling branch has no visible question');
   let order=await rows.evaluateAll(buttons=>buttons.map(b=>b.dataset.branchId));if(order.indexOf(child)>order.indexOf(b))throw Error('New child appeared after an unrelated root');
   const childStar=page.locator(`[data-map-node="${child}"]`);
   const collapse=page.getByRole('button',{name:'Collapse pathway',exact:true});
@@ -72,8 +108,7 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   const trail=page.getByRole('navigation',{name:'Research pathway'});
   if(await trail.getByRole('listitem').count()!==4)throw Error('Pathway missed a saved ancestor');
   await page.getByText('This tests one specific mechanism in its parent.',{exact:true}).waitFor();
-  await possible(grandchild).locator('summary').click();
-  await possible(grandchild).getByText('Would this mechanism change the outcome?',{exact:true}).waitFor();
+  if(await possible(grandchild).textContent()!=='Would this mechanism change the outcome?')throw Error('Descendant question is missing');
   await page.getByText('Idea tags',{exact:true}).click();
   await page.getByText('parts availability',{exact:true}).waitFor();
   await page.locator('.map-path-note summary').click();
@@ -137,6 +172,6 @@ const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=re
   if(!await page.getByRole('dialog',{name:'Full screen research map'}).isVisible()||await page.locator('#map-star-help').isVisible())
     throw Error('Escape closed the map instead of its guide');
   if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1))throw Error('Branch view overflows mobile');if(errors.length)throw Error(errors.join('\n'));
-  console.log('PASS: visible pathway toggle, collapse/restore and stable positions; nested growth, saved questions and semantic grouping; map dismissal, chat isolation, desktop/mobile axe and keyboard return (synthetic provider)');
+  console.log('PASS: visible pathway controls, smooth growth, stable positions and links, inline branch questions and semantic grouping; chat isolation, desktop/mobile axe and keyboard return (synthetic provider)');
  }finally{if(browser)await browser.close();server.kill();await new Promise(r=>server.exitCode!==null?r():server.once('exit',r));fs.rmSync(tmp,{recursive:true,force:true});}
 })().catch(e=>{console.error(e.stack||e.message);process.exitCode=1;});
