@@ -452,9 +452,10 @@ const {spawn,spawnSync}=require('child_process');
   const stableCoordinates=await coordinates();
   // The full-size work marker retrieves its star even if another star occludes it.
   await page.locator('[data-map-working-now] button').click();
-  await page.locator('[data-map-inspector-content] details > summary').filter({hasText:'Planning, evidence and findings history'}).click();
+  const historySummary=page.locator('[data-map-inspector-content] details > summary').filter({hasText:'Planning, evidence and findings history'});
+  await historySummary.click();
   await page.waitForFunction(()=>!document.querySelector('[data-mindmap]').camera.getState().transitioning);
-  await page.evaluate(()=>{const engine=window.AIcontrolMap,layout=engine.layout;window.mapLayoutCalls=0;engine.layout=(...args)=>{window.mapLayoutCalls++;return layout(...args);};window.stableSummary=document.querySelector('[data-map-inspector-content] details > summary');window.mapCameraPose=()=>{const c=document.querySelector('[data-mindmap]').camera.getState();return JSON.stringify([c.x,c.y,c.z,c.yaw,c.pitch,c.distance]);};window.stableCamera=window.mapCameraPose();window.stableSummary.focus();});
+  await historySummary.evaluate(summary=>{const engine=window.AIcontrolMap,layout=engine.layout;window.mapLayoutCalls=0;engine.layout=(...args)=>{window.mapLayoutCalls++;return layout(...args);};window.stableSummary=summary;window.mapCameraPose=()=>{const c=document.querySelector('[data-mindmap]').camera.getState();return JSON.stringify([c.x,c.y,c.z,c.yaw,c.pitch,c.distance]);};window.stableCamera=window.mapCameraPose();window.stableSummary.focus();});
   investigation.run.token_input+=17;investigation.requests.at(-1).token_input=17;investigation.requests.at(-1).heartbeat_at+=1;investigation.requests.at(-1).activity='Inspecting captured evidence';
   await page.waitForFunction(()=>document.querySelector('[data-map-path-usage]').textContent.includes('117 input'));
   if(JSON.stringify(await coordinates())!==JSON.stringify(stableCoordinates))throw new Error('Usage/activity poll moved existing map cards');
