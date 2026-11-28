@@ -348,6 +348,21 @@ final class Panel
                 setcookie(session_name(), '', ['expires' => time() - 3600, 'path' => '/', 'secure' => $secure, 'httponly' => true, 'samesite' => 'Strict']);
                 header('Location: ' . self::entry(), true, 303);
                 return;
+            } elseif ($action === 'research_prepare_bandwidth') {
+                if ($config['access_mode'] !== 'pin' || getenv('AICONTROL_PIN_VERIFIED') !== '1') {
+                    http_response_code(403);
+                    return;
+                }
+                try {
+                    BandwidthPreview::prepare($directory, self::entry(), $_SERVER['SCRIPT_FILENAME'] ?? null);
+                    $_SESSION['flash'] = 'Bandwidth installer prepared.';
+                    header('Location: ' . BandwidthPreview::ENTRY . '?view=research', true, 303);
+                    return;
+                } catch (RuntimeException $failure) {
+                    Diagnostics::record('research.bandwidth.prepare.failed', [], $failure);
+                    $error = $failure->getMessage();
+                    http_response_code(422);
+                }
             } elseif ($action==='research_handover') {
                 if($config['access_mode']==='testing'){http_response_code(403);header('Content-Type: application/json');echo '{"error":"Owner access is required for a complete project export."}';return;}
                 session_write_close();

@@ -3,6 +3,7 @@ declare(strict_types=1);
 namespace AIcontrol;
 use AIcontrolWorkspaceUi as Ui;
 require_once __DIR__.'/BriefSuggestions.php';
+require_once __DIR__.'/BandwidthPreview.php';
 final class ResearchView
 {
     private static bool $ownerControls=false;
@@ -193,12 +194,30 @@ final class ResearchView
         foreach($starters as $label=>$text)echo '<dt>'.Ui::e($label).'</dt><dd>'.Ui::e($text).'</dd>';
         echo '</dl></details><section class="brief-live" data-brief-live hidden aria-labelledby="brief-live-title"><div class="brief-live-heading"><h3 id="brief-live-title">Suggestions for a sharper brief</h3><label class="form-check"><input type="checkbox" class="form-check-input" data-brief-enabled'.(AgentRunner::configured()?' checked':' disabled').'><span class="form-check-label">Automatic suggestions while typing</span></label></div><p>Suggestions update after a 2-second typing pause, or 1 second after mouse or scroll activity. Activity updates are combined and spaced at least 8 seconds apart. Choosing an alternative requests one replacement; Refresh suggestions requests a full new set. Uses API credits, up to 20 requests and $0.01 USD per rolling hour across this workspace. Suggestions never start research.</p><p data-brief-allowance>'.Ui::e($allowance).'</p><p role="status" aria-live="polite" data-brief-status>Type at least 16 characters for live suggestions.</p><pre class="brief-stream" data-brief-stream hidden aria-label="Suggestion being received"></pre><div class="brief-suggestions" data-brief-suggestions role="region" aria-label="Suggested briefs" aria-live="polite"></div><button type="button" class="btn btn-sm btn-outline-secondary" data-brief-refresh>Refresh suggestions</button></section><button class="btn btn-primary mt-3" data-create-submit>Create and start research</button><p class="form-hint">Saves your brief, opens the map and starts model-based exploration. API credits apply. Use Stop on the map to pause; web Evidence still requires your explicit branch selection.</p></form><aside class="brief-coach"><details open data-brief-tips><summary>What makes a strong brief</summary><p>Give your investigation four things to work with.</p><ul class="brief-checklist"><li data-quality="question">A clear, specific question</li><li data-quality="context">A relevant place, timeframe or audience</li><li data-quality="evidence">Evidence that could change the answer</li><li data-quality="focus">A focused scope, rather than everything about a topic</li></ul><p class="form-hint">These are writing prompts, not a score. They never prevent you from creating a project.</p><h3>From broad to testable</h3><p><strong>Broad:</strong> Research solar power.</p><p><strong>Focused:</strong> Is rooftop solar worthwhile for a Perth household in 2026? Compare payback under current tariffs with independent data. Out of scope: commercial systems.</p></details></aside></div></div></section>';
     }
+    private static function bandwidthPreview(string $entry, string $csrf): void
+    {
+        $directory = BandwidthPreview::destination($entry, $_SERVER['SCRIPT_FILENAME'] ?? null);
+        if (!self::$ownerControls || $directory === null) {
+            return;
+        }
+        echo '<div class="mb-3" role="group" aria-label="Bandwidth preview">';
+        if (is_file($directory . '/index.html')) {
+            echo '<a class="btn btn-outline-secondary me-2" href="'.BandwidthPreview::PATH.'" target="_blank" rel="noopener noreferrer">Open Bandwidth preview</a>';
+        }
+        if (is_file($directory . '/loader.php')) {
+            echo '<a class="btn btn-outline-secondary" href="'.BandwidthPreview::PATH.'loader.php" target="_blank" rel="noopener noreferrer">Bandwidth installer</a>';
+        } elseif (getenv('AICONTROL_PIN_VERIFIED') === '1') {
+            echo '<form method="post" action="'.BandwidthPreview::ENTRY.'?view=research">'.$csrf.'<button class="btn btn-outline-secondary" name="action" value="research_prepare_bandwidth">Prepare Bandwidth installer</button></form>';
+        }
+        echo '</div>';
+    }
     public static function render(array $data,string $csrf):void
     {
         $workspace=$data['workspace'];$project=$workspace['project'];self::$ownerControls=(bool)($data['owner_controls']??false);self::$researchProject=(int)($project['id']??0);$snapshot=$workspace['snapshot'];$run=$snapshot['run']??null;
         $review=$run && $run['status']==='running' && $run['phase']==='dream_review';
         $entry=$_SERVER['SCRIPT_NAME']??'/loader.php';
         if(!preg_match('~^/[A-Za-z0-9_./-]+\.php$~D',$entry))$entry='/loader.php';
+        self::bandwidthPreview($entry, $csrf);
         if($project&&self::$ownerControls)echo '<div hidden data-term-help-config data-entry="'.Ui::e($entry).'" data-project-id="'.(int)$project['id'].'"></div>';
         if(!$project)self::createCard($csrf,$data['create_values']??[]);
         else {

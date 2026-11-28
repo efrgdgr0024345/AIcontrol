@@ -1,5 +1,14 @@
 # AIcontrol — current project state
 
+## Bandwidth preview in Research (2026-11-28)
+
+The owner’s Research workspace at /aiadmin/ exposes the Bandwidth installer and
+opens the standalone preview once installed. The authenticated preparation
+action can place the pinned, SHA-256-verified first loader in an empty
+/aiadmin/bandwidth/ folder. An existing child loader is preserved. Preparation
+uses the existing PIN and CSRF checks. The website and its subsequent updates
+use the separate Bandwidth installer and its own state.
+
 ## Click-only research term definitions (2026-11-25)
 
 Local phrase/acronym/long-word heuristics add dotted term buttons to research
