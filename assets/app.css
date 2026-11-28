@@ -1349,7 +1349,7 @@ body.research-map-open { overflow:hidden; }
 .project-desk .breadcrumbs { color:#514763; }
 .project-desk .desk-menu-toggle { display:none; }
 .project-desk .desk-section { margin-bottom:28px; }
-.project-desk .desk-section summary { cursor:pointer; font-weight:600; }
+.project-desk .desk-section > summary { cursor:pointer; font-weight:600; color:#514079; }
 .project-desk .desk-section summary + p { margin-top:10px; }
 .project-desk .desk-list { padding:0; margin:0; list-style:none; border-top:1px solid #e6e0ee; }
 .project-desk .desk-list li { border-bottom:1px solid #e6e0ee; }
