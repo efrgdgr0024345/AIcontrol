@@ -157,6 +157,20 @@ canvas collapse/restore, stable coordinates, selected-node continuation while
 idle and stopped, the fresh root path, frozen-ledger integrity, and Stop with a
 late response. Chromium checks cover the compact controls on desktop and mobile.
 
+## Research pathways and follow-up questions
+
+The map's idea reader shows clickable breadcrumbs from the research brief to
+the selected idea. They follow saved parent links and skip request markers.
+A researcher can save or clear a note on an idea to record why they kept it.
+Saving a note uses no model request.
+
+New first-pass hypotheses include a question that could distinguish plausible
+explanations or change the next decision. New branches also say what they add
+or challenge in the previous idea. Model-only growth carries the questions on
+the selected path forward, within the existing request and spend limits.
+Previously saved ideas retain their original content and can still use
+breadcrumbs and notes. The project handover includes saved notes and questions.
+
 ## Compact map controls and automatic growth (2026-11-21 AWST)
 
 Map's top bar now has one 36px Start/Stop toggle and a separate Auto-grow/Pause

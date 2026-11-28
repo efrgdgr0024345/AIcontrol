@@ -1969,6 +1969,83 @@ window.AIcontrolResearchVoice = (() => {
     for(const [id,card]of sceneCards){const node=nodes.find(n=>n.id===id),active=!!node?.working&&activityVerified;card.dataset.working=String(active);const badge=card.querySelector('[data-map-work-badge]');if(badge){const label=active?'Working · '+activityLabel(node):'';badge.hidden=!active;if(badge.textContent!==label)badge.textContent=label;}const button=card.querySelector('.map-node-button');if(button?.dataset.baseLabel)button.setAttribute('aria-label',button.dataset.baseLabel+(active?' Working now: '+activityLabel(node)+'.':''));}
     updateNodeActivity(nodes.find(n=>n.id===selected)||nodes[0]);
   }
+  function pathway(node) {
+    const saved = new Map(snapshot.nodes.map(item => [String(item.id), item]));
+    const trail = [node], seen = new Set([node.id]);
+    let parent = saved.get(node.id)?.parent_id;
+    while (parent != null && !seen.has(String(parent))) {
+      const item = saved.get(String(parent));
+      if (!item) break;
+      seen.add(String(parent));
+      if (conceptTypes.includes(item.type)) trail.unshift({...item, id:String(item.id)});
+      parent = item.parent_id;
+    }
+    trail.unshift({id:'root', title:'Research brief'});
+    return trail;
+  }
+
+  function addPathway(node, trail) {
+    const nav = el('nav', undefined, 'map-pathway');
+    nav.setAttribute('aria-label','Research pathway');
+    const list = el('ol');
+    for (const step of trail) {
+      const item = el('li');
+      if (step.id === node.id) {
+        const current = el('span', 'Current idea');
+        current.setAttribute('aria-current','step');
+        item.append(current);
+      } else {
+        const button = el('button', step.title);
+        button.type = 'button';
+        button.addEventListener('click', () => {
+          inspect(step.id);
+          const heading = inspector.querySelector('h3');
+          heading.tabIndex = -1;
+          heading.focus();
+        });
+        item.append(button);
+      }
+      list.append(item);
+    }
+    nav.append(list);
+    inspector.append(nav);
+
+    const {connection, next_question:nextQuestion} = data(node);
+    if (connection) inspector.append(el('h4','How this follows'),el('p',connection));
+    if (nextQuestion) inspector.append(el('h4','Next question'),el('p',nextQuestion,'map-next-question'));
+
+    const notes = el('details',undefined,'map-path-note');
+    notes.append(el('summary','Researcher note'));
+    if (node.path_note) notes.append(el('p',node.path_note,'map-inspector-text'));
+    const form = el('form');
+    form.method = 'post';
+    const destination = new URL(root.dataset.entry,location.href);
+    destination.searchParams.set('view','research');
+    form.action = destination;
+    form.dataset.researchAction = 'research_path_note';
+    for (const [name,value] of [['action','research_path_note'],['node_id',node.id],
+      ['run_id',root.dataset.runId],['csrf',root.querySelector('input[name=csrf]').value]]) {
+      const input = el('input');
+      input.type = 'hidden';
+      input.name = name;
+      input.value = value;
+      form.append(input);
+    }
+    const label = el('label','Why keep this branch?');
+    label.htmlFor = 'pathway-note';
+    const field = el('textarea',undefined,'form-control');
+    field.id = 'pathway-note';
+    field.name = 'path_note';
+    field.rows = 2;
+    field.maxLength = 1000;
+    field.value = node.path_note || '';
+    const submit = el('button','Save note','btn btn-outline-secondary');
+    submit.type = 'submit';
+    form.append(label,field,submit);
+    notes.append(form);
+    inspector.append(notes);
+  }
+
   function updateInspector() {
     const node=nodes.find(node=>node.id===selected)||nodes[0];
     screenControls();
@@ -1982,11 +2059,15 @@ window.AIcontrolResearchVoice = (() => {
     const living=map.querySelector('[data-living-controls]');
     if(living&&living.dataset.selectedNode!==node.id){living.dataset.selectedNode=node.id;for(const option of living.querySelector('[data-living-nodes]').options)option.selected=option.value===String(node.id);living.dispatchEvent(new Event('change'));}
     const connections=relations.filter(e=>(e.from===node.id||e.to===node.id)&&!(e.kind==='concept'&&(e.from==='root'||e.to==='root')));
-    const stamp=JSON.stringify([connections,savedNode,sources,passages,edges,stages,[...selectedSources].sort()]);
+    const trail=conceptTypes.includes(node.type)?pathway(node):[];
+    const stamp=JSON.stringify([trail.map(step=>[step.id,step.title]),connections,savedNode,sources,passages,edges,stages,[...selectedSources].sort()]);
     if(inspector.dataset.stamp!==stamp){
       const opened=new Set([...inspector.querySelectorAll('details[open]')].map(item=>item.querySelector('summary')?.textContent));
       const title=el('h3',node.title),detail=el('p',`${node.type.replaceAll('_',' ')} · ${node.status}`,'map-inspector-status');
-      title.setAttribute('aria-label',node.title);title.dataset.originalOutput='1';inspector.replaceChildren(title,detail,el('p',node.dead_end_reason||node.content||'No details saved yet.','map-inspector-text'));
+      title.setAttribute('aria-label',node.title);title.dataset.originalOutput='1';inspector.replaceChildren(title,detail);
+      if(trail.length)addPathway(node,trail);
+      inspector.append(el('p',node.dead_end_reason||node.content||'No details saved yet.','map-inspector-text'));
+      const primaryCount=inspector.children.length;
       const original=snapshot.nodes.find(item=>String(item.id)===String(node.id));if(original){inspector.dataset.termKind='node';inspector.dataset.termNode=String(original.id);inspector.dataset.termVersion=JSON.stringify([original.updated_at,original.title,original.content,original.data_json]);}else{delete inspector.dataset.termKind;delete inspector.dataset.termNode;delete inspector.dataset.termVersion;}
       if(conceptTypes.includes(node.type))inspector.append(el('p',`Priority ${node.path_weight||50} · ${node.model_tier||'primary'} model tier. ${node.weight_reason||'Priority is separate from evidence strength.'}${Number(node.speculative)?' Untested idea — may be wrong.':''}`));
       if(Number(snapshot.run.flow_version)>=2)inspector.append(el('p',`${['Active','Secondary','Tertiary'][Number(node.layer)||0]} · ${originLabel(node.origin)} · ${provenanceLabel(node.provenance_tag)}${node.park_reason?' · Park reason: '+node.park_reason:''}`));
@@ -2012,7 +2093,7 @@ window.AIcontrolResearchVoice = (() => {
       if(listID){const jump=el('button','Jump to List entry','btn btn-outline-secondary');jump.type='button';jump.dataset.mapListNode=String(listID);inspector.append(jump);}
       if(conceptTypes.includes(node.type)){
         const more=el('details',undefined,'map-concept-context');more.append(el('summary','Connections, sources and activity'));
-        while(inspector.children.length>3)more.append(inspector.children[3]);inspector.append(more);
+        while(inspector.children.length>primaryCount)more.append(inspector.children[primaryCount]);inspector.append(more);
       }
       for(const detail of inspector.querySelectorAll('details'))if(opened.has(detail.querySelector('summary')?.textContent))detail.open=true;
       inspector.dataset.stamp=stamp;
@@ -3321,6 +3402,12 @@ details[open] summary { margin-bottom: 14px; }
 .map-inspector form { margin-top:1rem; padding-top:1rem; border-top:1px solid #e3dfeb; }
 .map-inspector .btn { margin-top:.5rem; font-size:.8rem; }
 .map-inspector .research-source h4 { font-size:.95rem; }
+.map-pathway ol { display:flex; flex-wrap:wrap; align-items:baseline; gap:.2rem .5rem; padding:0; margin:.6rem 0; list-style:none; }
+.map-pathway li { display:flex; align-items:baseline; gap:.5rem; max-width:100%; min-width:0; font-size:.8rem; }
+.map-pathway li + li::before { content:'›'; }
+.map-pathway button { border:0; background:transparent; color:inherit; padding:.2rem 0; text-align:left; text-decoration:underline; overflow-wrap:anywhere; }
+.map-path-note form { margin-top:.35rem; padding-top:0; border:0; }
+.map-next-question { font-weight:600; overflow-wrap:anywhere; }
 .map-inspector-actions { display:flex; flex-wrap:wrap; gap:.4rem; }
 .map-review,.map-evidence-help { margin-top:1rem; padding:1rem; border-radius:.6rem; background:#eee8fa; color:#403557; }
 .map-review p { flex-basis:100%; margin:0; }
@@ -4047,7 +4134,7 @@ body.research-map-open { overflow:hidden; }
  .map-conversation-thread { max-height:240px; }
 }
 .research-map-open .map-screen-header { z-index:9; }
-.mindmap .map-concept-context > summary { color:#c5d8ed; min-height:33px; padding:6px 0; font-size:.85rem; line-height:1.5; cursor:pointer; }
+.mindmap .map-concept-context > summary,.mindmap .map-path-note > summary { color:#c5d8ed; min-height:33px; padding:6px 0; font-size:.85rem; line-height:1.5; cursor:pointer; }
 .research-map-open .map-working-now,.research-map-open .map-state-notice,.research-map-open .map-star-legend { left:calc(var(--branch-panel-width) + 28px); max-width:calc(100% - var(--branch-panel-width) - 52px); }
 .research-map-open .map-working-now { top:78px; bottom:auto; }
 @media(max-width:700px) {

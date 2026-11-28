@@ -39,6 +39,9 @@ Admin appears last in workspace navigation, with the PIN lock link in its group.
 Research chat defaults to direct, short replies. Voice presents model-generated
 map ideas as its own hypotheses and preserves attribution of user notes and sources.
 The selected branch provides the main context, with outside ideas labelled as suggestions.
+The map follows saved parent links for breadcrumbs and supports an optional researcher
+note on an idea. New model ideas include a focused next question. Growth carries the
+questions on the selected path forward using the existing model-only request.
 
 ## Automatic storage policy v1
 

@@ -22,6 +22,10 @@ namespace AIcontrol {
    $ledger=json_decode(explode('Evidence ledger: ',$body['input'])[1],true);$assessments=array_map(fn($n)=>['claim_id'=>(int)$n['id'],'status'=>'open','rationale'=>'Unresolved pilot scope','strength'=>null],$ledger['claims']);
    $value=isset($schema['edges'])?['edges'=>[],'assessments'=>array_values($assessments)]:['assessments'=>array_values($assessments),'defects'=>[],'calculations'=>[]];
   }
+  if(isset($value['core_claims']))foreach($value['core_claims'] as &$claim)$claim['next_question']='Which outcome would change the decision?';
+  unset($claim);
+  if(isset($value['ideas']))foreach($value['ideas'] as &$idea)$idea+=['connection'=>'This tests one specific mechanism in its parent.','next_question'=>'Would this mechanism change the outcome?'];
+  unset($idea);
   $content=['type'=>'output_text','text'=>is_string($value)?$value:json_encode($value)];if($extra)$content['annotations']=[['type'=>'url_citation','url'=>'https://example.com/pilot','title'=>'Pilot study']];
   $response=['status'=>'completed','usage'=>['input_tokens'=>20,'output_tokens'=>30],'output'=>array_merge($extra,[['type'=>'message','content'=>[$content]]])];
   ($GLOBALS['exploration_options'][CURLOPT_WRITEFUNCTION])($h,"event: response.completed\ndata: ".json_encode(['type'=>'response.completed','response'=>$response])."\n\n");return true;
